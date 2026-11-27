@@ -9,6 +9,10 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"golang.org/x/sys/unix"
+
+	"github.com/ikigenba/ikigenba/accounts/internal/machine"
 )
 
 type fileChange struct {
@@ -45,11 +49,74 @@ func (h *Host) mkdir(hostPath string) error {
 		if err := h.mkdir(filepath.Dir(hostPath)); err != nil {
 			return err
 		}
-		if err := os.Mkdir(path, 0o700); err != nil {
+		if err := os.Mkdir(path, 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
 			return hostError(hostPath, err)
 		}
 	}
 	return h.mode(hostPath, 0o755)
+}
+
+// readBounded reads a protected state file without following its final entry.
+func (h *Host) readBounded(path string) ([]byte, error) {
+	full := h.path(path)
+	fd, err := unix.Open(full, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, hostError(path, err)
+	}
+	f := os.NewFile(uintptr(fd), full)
+	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, hostError(path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, hostError(path, fs.ErrInvalid)
+	}
+	if info.Size() > MaxCapture {
+		return nil, hostError(path, machine.ErrTooLarge)
+	}
+	value, err := io.ReadAll(io.LimitReader(f, MaxCapture))
+	if err != nil {
+		return nil, hostError(path, err)
+	}
+	return value, nil
+}
+
+// writeAtomic replaces a state file without touching Apply's isolation tracking.
+func (h *Host) writeAtomic(path string, data []byte, mode fs.FileMode) (bool, error) {
+	full := h.path(path)
+	if same, _ := sameContents(full, data); same {
+		return false, h.mode(path, mode)
+	}
+	temp, err := h.stageFile(path, data, mode)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = os.Remove(temp) }()
+	if err := os.Rename(temp, full); err != nil {
+		return false, hostError(path, err)
+	}
+	return true, nil
+}
+
+func (h *Host) stageFile(path string, data []byte, mode fs.FileMode) (string, error) {
+	if err := h.mkdir(filepath.Dir(path)); err != nil {
+		return "", err
+	}
+	temp, err := os.CreateTemp(filepath.Dir(h.path(path)), ".accountsd-")
+	if err != nil {
+		return "", hostError(path, err)
+	}
+	if err := errors.Join(temp.Chmod(mode), writeFileBytes(temp, data), temp.Close()); err != nil {
+		_ = os.Remove(temp.Name())
+		return "", hostError(path, err)
+	}
+	return temp.Name(), nil
+}
+
+func writeFileBytes(file *os.File, data []byte) error {
+	_, err := file.Write(data)
+	return err
 }
 
 func (h *Host) dir(hostPath string, mode fs.FileMode) (bool, error) {

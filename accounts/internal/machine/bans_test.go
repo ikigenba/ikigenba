@@ -13,7 +13,7 @@ import (
 )
 
 func TestMemoryBanLifecycle(t *testing.T) {
-	// R-ZTND-DZE7 R-W8S5-OZKJ R-ZW36-5IVL R-ZUV9-RR4W R-BFDK-ZTUM
+	// R-ZTND-DZE7 R-W8S5-OZKJ R-ZW36-5IVL R-ZUV9-RR4W
 	if duration, ok := any(machine.MemoryBanTime).(time.Duration); !ok || duration != 10*time.Minute {
 		t.Fatalf("MemoryBanTime = %s", machine.MemoryBanTime)
 	}

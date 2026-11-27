@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	accounts "github.com/ikigenba/ikigenba/accounts"
@@ -27,7 +28,7 @@ type callCase struct {
 	want string
 }
 
-// R-ESC3-AJ89 R-Z1SS-ZWHY R-ZOFG-PH5V R-Y4VI-O3H7 R-D1GS-WBBJ
+// R-ESC3-AJ89 R-Z1SS-ZWHY R-ZOFG-PH5V R-2QGF-7TAD R-D1GS-WBBJ
 func TestDisabledAndUnavailableTools(t *testing.T) {
 	for _, configured := range []bool{false, true} {
 		t.Run(fmt.Sprint(configured), func(t *testing.T) {
@@ -105,7 +106,7 @@ func toolEvents(t *testing.T, f *fixture) []telemetry.Event {
 	return events
 }
 
-// R-ZCRW-FU67 R-XZZX-50IF R-104G-66SU R-1OF3-PKX6 R-1PN0-3CNV R-14H4-3DXP
+// R-ZCRW-FU67 R-GTAN-47LS R-1OF3-PKX6 R-1PN0-3CNV
 func TestHostOperations(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
@@ -221,8 +222,12 @@ func checkHostOperation(t *testing.T, f *fixture, name, host, kind, state string
 	return op.ID
 }
 
-// R-XV4B-LXJN R-XYS0-R8RQ R-1GCH-JWOD
+// R-2O0M-G9SZ R-2P8I-U1JO R-2LKT-OQBL
 func TestCreateAccountDNS(t *testing.T) {
+	synctest.Test(t, testCreateAccountDNS)
+}
+
+func testCreateAccountDNS(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
 	host, _ := f.seedHost(true)
@@ -241,8 +246,8 @@ func TestCreateAccountDNS(t *testing.T) {
 	} {
 		refusal(t, f.call(c.name, c.args), c.want)
 	}
-	if len(f.cloud.lookups) != 0 {
-		t.Fatal(f.cloud.lookups)
+	if len(f.cloud.lookups) != 0 || len(f.cloud.backupLookups) != 0 {
+		t.Fatal(f.cloud.lookups, f.cloud.backupLookups)
 	}
 	f.cloud.find = func(context.Context, string, string) ([]cloud.Record, error) {
 		return []cloud.Record{{Type: "TXT"}}, nil
@@ -266,7 +271,7 @@ func TestCreateAccountDNS(t *testing.T) {
 	short, cancel := context.WithDeadline(ctx, shortDeadline)
 	defer cancel()
 	refusal(t, f.callContext(short, tools.ToolCreateAccount, place), tools.CloudFailed)
-	if len(f.cloud.lookups) != 3 || !f.cloud.lookups[2].deadline.Equal(shortDeadline) {
+	if len(f.cloud.lookups) != 3 || len(f.cloud.backupLookups) != 0 || !f.cloud.lookups[2].deadline.Equal(shortDeadline) {
 		t.Fatalf("did not use the shorter request deadline: %v", f.cloud.lookups)
 	}
 
@@ -313,7 +318,7 @@ func TestCreateAccountDNS(t *testing.T) {
 	refusal(t, f.call(tools.ToolCreateAccount, tools.CreateAccountArgs{Account: "overflow", Host: lastSlot.Name}), tools.HostFull)
 	aboutToDelete, _ := f.seedHost(true)
 	f.cloud.find = func(context.Context, string, string) ([]cloud.Record, error) {
-		_, _, err := f.st.DeleteHost(ctx, aboutToDelete.Name, true, f.caller)
+		_, _, err := f.st.DeleteHost(ctx, aboutToDelete.Name, true, false, f.caller)
 		return nil, err
 	}
 	refusal(t, f.call(tools.ToolCreateAccount, tools.CreateAccountArgs{Account: "too-late", Host: aboutToDelete.Name}), tools.HostGone)
@@ -322,7 +327,6 @@ func TestCreateAccountDNS(t *testing.T) {
 	}
 }
 
-// R-0XON-ENBG
 func TestRemoveAccount(t *testing.T) {
 	t.Run("missing", func(t *testing.T) {
 		f := setup(t)
@@ -536,7 +540,7 @@ func TestAccountUserCapacity(t *testing.T) {
 	refusal(t, f.call(tools.ToolAddUser, tools.UserKeyArgs{Account: "beta", User: "overflow", Key: k.Line}), tools.AccountFull)
 }
 
-// R-0NEI-QLJZ R-FO1H-8KIB R-0R27-VWS2
+// R-H31U-6DJC R-FO1H-8KIB R-AR65-3I4X
 func TestChangeTrailAndWake(t *testing.T) {
 	f := setup(t)
 	f.serveLoopback()

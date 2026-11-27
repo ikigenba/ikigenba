@@ -60,6 +60,23 @@ const (
 	StepRecord          = "record"
 	StepWaitRecord      = "wait_record"
 	StepWaitApplied     = "wait_applied"
+	StepWaitFinal       = "wait_final"
+	StepWaitOpened      = "wait_opened"
+	StepRetire          = "retire"
+	StepWaitRetired     = "wait_retired"
+	StepRelaunch        = "relaunch"
+	StepWaitRelaunched  = "wait_relaunched"
+	StepNewVolume       = "new_volume"
+	StepWaitNewVolume   = "wait_new_volume"
+	StepReattach        = "reattach"
+	StepWaitReattached  = "wait_reattached"
+	StepTagOld          = "tag_old"
+	StepReassociate     = "reassociate"
+	StepRestore         = "restore"
+	StepAdmit           = "admit"
+	StepWaitAdmitted    = "wait_admitted"
+	StepWaitRestored    = "wait_restored"
+	StepDeleteBackups   = "delete_backups"
 )
 
 // Reasons recorded when a step cannot finish.
@@ -72,6 +89,9 @@ const (
 	ReasonModifyFailed   = "The volume modification failed."
 	ReasonVolumeFailed   = "The data volume failed."
 	ReasonBadSize        = "The volume size is out of range."
+	ReasonFinalFailed    = "A final backup failed."
+	ReasonRestoreFailed  = "A restore failed."
+	ReasonNotEmpty       = "A restore target is not empty."
 )
 
 // Config supplies the engine's store, cloud, and scheduling seams.
@@ -153,6 +173,9 @@ func (e *Engine) pass(ctx context.Context, first bool) error {
 		return err
 	}
 	if err := e.deleteKeptVolumes(ctx, now); err != nil {
+		return err
+	}
+	if err := e.deleteAccountBackups(ctx, now); err != nil {
 		return err
 	}
 	if err := e.silence(ctx, now); err != nil {
@@ -304,6 +327,14 @@ func firstStep(op store.Operation) string {
 		return StepUnrecord
 	case store.OpResize:
 		return resizeAfter(op, "")
+	case store.OpClose:
+		return StepWaitFinal
+	case store.OpOpen:
+		return StepWaitOpened
+	case store.OpReplace:
+		return StepRetire
+	case store.OpRestore:
+		return StepWaitRestored
 	default:
 		return ""
 	}

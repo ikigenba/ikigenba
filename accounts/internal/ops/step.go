@@ -70,7 +70,8 @@ func stepStoreError(err error) error {
 func (s step) run() error {
 	if s.expired() {
 		switch s.op.Step {
-		case StepWaitAddress, StepWaitApplied, StepGrowRoot, StepGrowData, StepWaitRoot, StepWaitData:
+		case StepWaitAddress, StepWaitApplied, StepWaitFinal, StepRestore, StepWaitAdmitted, StepWaitRestored,
+			StepGrowRoot, StepGrowData, StepWaitRoot, StepWaitData:
 			// EBS steps determine their exceptions using the volume's modification.
 		default:
 			return s.fail(ReasonTimedOut)
@@ -82,10 +83,16 @@ func (s step) run() error {
 		if s.deletesData() {
 			return s.next(StepDeleteData)
 		}
-	case StepDeleteData, StepWaitDataDeleted:
+	case StepDeleteData, StepWaitDataDeleted, StepDeleteBackups:
 		if s.op.Kind == store.OpDelete && !s.deletesData() {
 			return s.next(StepOrphan)
 		}
+	}
+	switch s.op.Kind {
+	case store.OpClose, store.OpOpen, store.OpRestore:
+		return s.runBackupWait()
+	case store.OpReplace:
+		return s.runReplace()
 	}
 	switch s.op.Step {
 	case StepAddress:
@@ -151,7 +158,15 @@ func (s step) run() error {
 		if s.deletesData() {
 			return s.waitDataDeleted()
 		}
+	case StepDeleteBackups:
+		if s.deletesData() {
+			return s.deleteHostBackups()
+		}
 	}
+	return s.unknownStep()
+}
+
+func (s step) unknownStep() error {
 	return fmt.Errorf("%w: unknown operation step %q for %q", store.ErrUnreachable, s.op.Step, s.op.Kind)
 }
 
@@ -173,7 +188,14 @@ func (s step) advance(u store.Update) error {
 	if err := s.ctx.Err(); err != nil {
 		return err
 	}
-	return s.cfg.Store.Advance(s.ctx, s.op.ID, u)
+	if err := s.cfg.Store.Advance(s.ctx, s.op.ID, u); err != nil {
+		return err
+	}
+	if w := s.cfg.Telemetry; w != nil && u.HostState != "" && u.HostState != s.h.State {
+		ctx := identity.NewContext(s.ctx, s.op.Caller)
+		trail.HostChanged(ctx, w, s.h.Name, s.h.State, u.HostState, s.op.ID)
+	}
+	return nil
 }
 
 func (s step) next(name string) error { return s.advance(store.Update{Step: name}) }
@@ -260,6 +282,8 @@ func (s step) tell(status, reason string) {
 		if status == store.OpDone {
 			trail.AccountChanged(ctx, w, s.a.Slug, s.h.Name, store.AccountRemoving, trail.AccountRemoved)
 		}
+	case store.OpRestore:
+		// A partial restore never changes its host's state.
 	default:
 		state := endState(op, status)
 		if state != s.h.State {

@@ -22,8 +22,10 @@ func (s *Store) NoteStray(ctx context.Context, resource, kind, hostTag string, n
 func (s *recordReader) Explains(ctx context.Context, resource string) (bool, error) {
 	return read(ctx, s, resource != "", func(q query) (bool, error) {
 		var found bool
-		err := q.row(`SELECT EXISTS (SELECT 1 FROM hosts WHERE instance_id = ? OR root_volume = ? OR data_volume = ? OR allocation_id = ?)`,
-			resource, resource, resource, resource).Scan(&found)
+		err := q.row(`SELECT EXISTS (SELECT 1 FROM hosts WHERE instance_id = ? OR root_volume = ? OR data_volume = ? OR allocation_id = ?
+			UNION ALL SELECT 1 FROM kept_volumes WHERE volume = ?
+			UNION ALL SELECT 1 FROM replacements WHERE old_instance = ? OR old_volume = ?)`,
+			resource, resource, resource, resource, resource, resource, resource).Scan(&found)
 		return found, err
 	})
 }

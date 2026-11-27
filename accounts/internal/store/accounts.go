@@ -61,7 +61,10 @@ func claimName(q query, name string) error {
 	return err
 }
 
-func purgeAccount(q query, slug string) error {
+func purgeAccount(q query, slug string, stamp time.Time) error {
+	if err := moveRemovedBackup(q, slug, stamp); err != nil {
+		return err
+	}
 	if err := deleteAccountInvites(q, slug); err != nil {
 		return err
 	}
@@ -72,8 +75,9 @@ func purgeAccount(q query, slug string) error {
 }
 
 type accountOp struct {
-	account Account
-	op      Operation
+	account   Account
+	op        Operation
+	cancelled []string
 }
 
 // PlaceAccount adds a business to one host and starts its placement.
@@ -92,6 +96,14 @@ func (s *Store) PlaceAccount(ctx context.Context, slug, host string, c identity.
 		if h.Accounts >= valid.MaxAccountsPerHost {
 			return accountOp{}, ErrHostFull
 		}
+		var deleting bool
+		if err := w.row("SELECT EXISTS (SELECT 1 FROM backups_deletes WHERE account = ? AND state = 'deleting')",
+			slug).Scan(&deleting); err != nil {
+			return accountOp{}, err
+		}
+		if deleting {
+			return accountOp{}, ErrBackupsDeleting
+		}
 		stamp := s.stamp()
 		gid, err := allocate(w.query, "uid_gid", FirstID)
 		if err != nil {
@@ -107,7 +119,7 @@ func (s *Store) PlaceAccount(ctx context.Context, slug, host string, c identity.
 		}
 		a := Account{Slug: slug, Host: host, State: AccountPending, GID: gid, Version: version, Operation: op.ID,
 			Created: stamp, CreatedBy: c.UserID}
-		return accountOp{a, op}, w.exec("INSERT INTO accounts ("+accountFields+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		return accountOp{account: a, op: op}, w.exec("INSERT INTO accounts ("+accountFields+") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 			a.Slug, a.Host, a.State, a.Reason, a.GID, a.Version, a.RemovedVersion, a.Change, a.Operation, a.Created.Unix(), a.CreatedBy)
 	})
 	return out.account, out.op, err
@@ -144,7 +156,7 @@ func beginRemoval(w *writing, a *Account, stamp time.Time) (string, error) {
 }
 
 // RemoveAccount starts removal or starts a new operation after a failed removal.
-func (s *Store) RemoveAccount(ctx context.Context, slug string, c identity.Caller) (Account, Operation, error) {
+func (s *Store) RemoveAccount(ctx context.Context, slug string, c identity.Caller) (Account, Operation, []string, error) {
 	out, err := write(ctx, s, slug != "" && validCaller(c), func(w *writing) (accountOp, error) {
 		a, err := getAccount(w.query, slug)
 		if err != nil {
@@ -168,10 +180,18 @@ func (s *Store) RemoveAccount(ctx context.Context, slug string, c identity.Calle
 			return accountOp{}, err
 		}
 		a.Operation = op.ID
-		return accountOp{a, op}, w.exec("UPDATE accounts SET state = ?, reason = ?, removed_version = ?, operation = ? WHERE slug = ?",
+		var seq int64
+		if err := w.row("SELECT seq FROM hosts WHERE name = ?", a.Host).Scan(&seq); err != nil {
+			return accountOp{}, err
+		}
+		cancelled, err := cancelRestores(w.query, seq, slug, stamp)
+		if err != nil {
+			return accountOp{}, err
+		}
+		return accountOp{account: a, op: op, cancelled: cancelled}, w.exec("UPDATE accounts SET state = ?, reason = ?, removed_version = ?, operation = ? WHERE slug = ?",
 			a.State, a.Reason, a.RemovedVersion, a.Operation, a.Slug)
 	})
-	return out.account, out.op, err
+	return out.account, out.op, out.cancelled, err
 }
 
 // Account reads a business by slug.

@@ -10,7 +10,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
 
-// R-1397-PM70 R-14H4-3DXP R-1BSI-E0DV R-0R27-VWS2
+// R-GVQF-VR36 R-GWYC-9ITV R-HE0X-MB7L R-GTAN-47LS R-AR65-3I4X
 func TestDeleteHostChoice(t *testing.T) {
 	f := setup(t)
 	f.serveLoopback()
@@ -42,6 +42,14 @@ func TestDeleteHostChoice(t *testing.T) {
 			assertChoice(host.Name, store.HostRunning, "")
 			args := map[string]any{"host": host.Name}
 			tc.add(args)
+			if tc.choice == store.OnDeleteDelete {
+				refusal(t, f.call(tools.ToolDeleteHost, args), tools.HostNotClosed)
+				args["lost"] = nil
+				refusal(t, f.call(tools.ToolDeleteHost, args), tools.HostNotClosed)
+				args["lost"] = false
+				refusal(t, f.call(tools.ToolDeleteHost, args), tools.HostNotClosed)
+				args["lost"] = true
+			}
 			before := len(toolEvents(t, f))
 			operation := answer[tools.HostChange](t, f.call(tools.ToolDeleteHost, args))
 			assertDeleteHostChange(t, f, operation, host.Name, tc.choice)
@@ -57,8 +65,8 @@ func TestDeleteHostChoice(t *testing.T) {
 				}
 				assertHostDeleteEvents(t, toolEvents(t, f)[before:], f, tools.ToolRetryHost, store.HostFailed, retry)
 				f.fail(retry.Operation, "provider failed again")
-				keep := true
-				replacement := answer[tools.HostChange](t, f.call(tools.ToolDeleteHost, tools.DeleteHostArgs{Host: host.Name, KeepData: &keep}))
+				keep, lost := true, true
+				replacement := answer[tools.HostChange](t, f.call(tools.ToolDeleteHost, tools.DeleteHostArgs{Host: host.Name, KeepData: &keep, Lost: &lost}))
 				if replacement.Operation == operation.Operation {
 					t.Fatalf("new delete reused failed operation %+v", replacement)
 				}
@@ -72,13 +80,19 @@ func TestDeleteHostChoice(t *testing.T) {
 	f.finish(op.ID, store.Update{})
 	before := f.host(protected.Name)
 	wakes := f.wakes
-	refusal(t, f.call(tools.ToolDeleteHost, map[string]any{"host": protected.Name, "keep_data": false}), tools.HostHasAccounts)
+	refusal(t, f.call(tools.ToolDeleteHost, map[string]any{"host": protected.Name, "keep_data": false, "lost": true}), tools.HostHasAccounts)
 	if after := f.host(protected.Name); !reflect.DeepEqual(after, before) || f.wakes != wakes {
 		t.Fatalf("refusal changed host %+v to %+v or woke engine", before, after)
 	}
 	if got := readAccount(t, f, account.Slug); got.State != store.AccountActive || got.Host != protected.Name {
 		t.Fatal(got)
 	}
+
+	closed, _ := f.seedHost(true)
+	closure := answer[tools.HostChange](t, f.call(tools.ToolCloseHost, tools.HostArgs{Host: closed.Name}))
+	f.finish(closure.Operation, store.Update{})
+	deleted := answer[tools.HostChange](t, f.call(tools.ToolDeleteHost, map[string]any{"host": closed.Name, "keep_data": false}))
+	assertDeleteHostChange(t, f, deleted, closed.Name, store.OnDeleteDelete)
 
 	removed, _ := f.seedHost(true)
 	f.finishKeeping(f.host(removed.Name))

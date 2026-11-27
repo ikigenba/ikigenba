@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/route53"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/smithy-go"
 
@@ -24,6 +25,7 @@ type adapter struct {
 	ec2    *ec2.Client
 	dns    *route53.Client
 	sts    *sts.Client
+	s3     *s3.Client
 	caller aws.HTTPClient
 }
 
@@ -36,17 +38,23 @@ func Open(ctx context.Context, region string) (cloud.Cloud, error) {
 
 // OpenWithLoader builds the cloud with the configuration returned by load.
 func OpenWithLoader(ctx context.Context, region string, load ConfigLoader) (cloud.Cloud, error) {
-	cfg, err := load(ctx, region)
+	loaded, err := load(ctx, region)
 	if err != nil {
 		return nil, err
 	}
-	// The engine decides when to retry. An allocation, in particular, has
-	// no client token, so retrying it here can create a second address.
-	cfg.Retryer = func() aws.Retryer { return aws.NopRetryer{} }
+	// Use the loader's identity and transport with the SDK's standard AWS
+	// endpoints. The engine owns retries, including allocations without a token.
+	cfg := aws.Config{
+		Region:      region,
+		Credentials: loaded.Credentials,
+		HTTPClient:  loaded.HTTPClient,
+		Retryer:     func() aws.Retryer { return aws.NopRetryer{} },
+	}
 	return &adapter{
 		ec2:    ec2.NewFromConfig(cfg),
 		dns:    route53.NewFromConfig(cfg, func(o *route53.Options) { o.Region = "us-east-1" }),
-		sts:    sts.NewFromConfig(cfg, func(o *sts.Options) { o.Region = region }),
+		sts:    sts.NewFromConfig(cfg),
+		s3:     s3.NewFromConfig(cfg),
 		caller: callerClient(cfg.HTTPClient),
 	}, nil
 }
@@ -130,13 +138,13 @@ func classify(code string, status int) cloud.Class {
 	}
 	switch code {
 	case "InvalidInstanceID.NotFound", "InvalidVolume.NotFound", "InvalidAllocationID.NotFound",
-		"InvalidAssociationID.NotFound", "InvalidVolumeModification.NotFound", "NoSuchChange":
+		"InvalidAssociationID.NotFound", "InvalidVolumeModification.NotFound", "NoSuchChange", "NoSuchBucket":
 		return cloud.ClassNotFound
 	case "IdempotentParameterMismatch":
 		return cloud.ClassMismatch
 	case "VolumeModificationRateExceeded", "RequestLimitExceeded", "Throttling", "ThrottlingException",
 		"PriorRequestNotComplete", "InternalError", "InternalFailure", "ServiceUnavailable",
-		"Unavailable", "IncorrectInstanceState", "IncorrectState", cloud.CodeNoResponse:
+		"Unavailable", "IncorrectInstanceState", "IncorrectState", "SlowDown", "RequestTimeout", cloud.CodeNoResponse:
 		return cloud.ClassTransient
 	default:
 		return cloud.ClassRefused

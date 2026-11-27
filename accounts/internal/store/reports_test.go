@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -8,7 +9,7 @@ import (
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 )
 
-// R-GVGS-XTNW R-HBBH-WUAX R-27BJ-H0XA R-263N-396L R-IXUO-9TW9 R-IZ2K-NLMY
+// R-GVGS-XTNW R-HBBH-WUAX R-IXUO-9TW9 R-IZ2K-NLMY R-ZIHY-2QU5
 // R-J0AH-1DDN R-J1ID-F54C R-J2Q9-SWV1 R-J6DY-Y834 R-IQJ9-Z7G3
 func TestDesiredReportAndWatch(t *testing.T) {
 	_, s, now := fixture(t)
@@ -27,11 +28,38 @@ func TestDesiredReportAndWatch(t *testing.T) {
 	eq(t, d, protocol.DesiredState{Protocol: protocol.Version, Host: h.Name, Version: h.Version,
 		DataVolume: h.DataVolume, RootGB: h.RootGB, DataGB: h.DataGB,
 		Allowlist: []string{}, Unban: []string{},
+		Backup:   &protocol.Backup{HostPrefix: protocol.HostPrefix(h.Name, h.Seq), Restores: []protocol.RestoreRequest{}},
 		Accounts: []protocol.Account{{Slug: a.Slug, GID: a.GID, State: protocol.AccountActive}},
 		Users: []protocol.User{
 			{Name: user.Name, Account: a.Slug, UID: user.UID, State: protocol.UserActive, Keys: []string{firstKey.Line}},
 			{Name: tombstone.Name, Account: a.Slug, UID: tombstone.UID, State: protocol.UserDeleted, Keys: []string{firstKey.Line}},
 		}})
+	var wire struct {
+		Protocol   int                `json:"protocol"`
+		Host       string             `json:"host"`
+		Version    int64              `json:"version"`
+		Daemon     *string            `json:"daemon"`
+		DataVolume string             `json:"data_volume"`
+		RootGB     int                `json:"root_gb"`
+		DataGB     int                `json:"data_gb"`
+		Accounts   []protocol.Account `json:"accounts"`
+		Users      []protocol.User    `json:"users"`
+		Allowlist  []string           `json:"allowlist"`
+		Unban      []string           `json:"unban"`
+	}
+	checkErr(t, json.Unmarshal(value(t, result(json.Marshal(d))), &wire), nil)
+	eq(t, wire.Protocol, protocol.Version)
+	eq(t, wire.Host, h.Name)
+	eq(t, wire.Version, h.Version)
+	eq(t, wire.Daemon, new(string))
+	eq(t, wire.DataVolume, h.DataVolume)
+	eq(t, wire.RootGB, h.RootGB)
+	eq(t, wire.DataGB, h.DataGB)
+	eq(t, wire.Accounts, d.Accounts)
+	eq(t, wire.Users, d.Users)
+	eq(t, wire.Allowlist, []string{})
+	eq(t, wire.Unban, []string{})
+
 	eq(t, value(t, result(s.Report(ctx, h.Name))), (*store.Report)(nil))
 	_, err := s.RecordReport(ctx, "missing", protocol.Report{}, *now)
 	checkErr(t, err, store.ErrNotFound)

@@ -47,14 +47,20 @@ const (
 	claudeHTTPStatus       = "GET: HTTP status %d"
 )
 
-// Get makes a single GET and leaves a successful response body to the caller.
+// Get follows bounded HTTP redirects and leaves a successful body to the caller.
 func Get(ctx context.Context, url string) (io.ReadCloser, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
-	client := http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
-		return http.ErrUseLastResponse
+	client := http.Client{CheckRedirect: func(next *http.Request, previous []*http.Request) error {
+		scheme := next.URL.Scheme
+		if len(previous) > MaxRedirects ||
+			(scheme != "http" && scheme != "https") ||
+			(previous[len(previous)-1].URL.Scheme == "https" && scheme != "https") {
+			return http.ErrUseLastResponse
+		}
+		return nil
 	}}
 	res, err := client.Do(req)
 	if err != nil {

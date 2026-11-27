@@ -368,7 +368,7 @@ func TestCentralUserAndKeyChangesTreatAdminsLikeUsers(t *testing.T) {
 	}
 }
 
-// R-EURW-22PN R-FWKR-WYP6 R-FXSO-AQFV R-FZ0K-OI6K
+// R-2ROB-LL12 R-FWKR-WYP6 R-FXSO-AQFV R-FZ0K-OI6K
 func TestAdminInviteTrail(t *testing.T) {
 	base := accountsURL
 	f := setupWithURL(t, true, func() (string, error) {

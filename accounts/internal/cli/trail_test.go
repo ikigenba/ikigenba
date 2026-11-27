@@ -39,7 +39,7 @@ func TestRunReadAndPageTrail(t *testing.T) {
 	run.call(tools.ToolAddUser, tools.UserKeyArgs{Account: "acme", User: "daffy", Key: validKey()}, nil)
 
 	requests := map[string]bool{}
-	calls := readCalls()
+	calls := append(readCalls(), backupReadCalls()...)
 	successes := len(calls)
 	calls = append(calls,
 		catalogCall{tools.ToolHost, map[string]any{"host": "missing"}},

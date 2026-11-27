@@ -432,7 +432,7 @@ func TestInviteTokensStayOutOfStoreAnswers(t *testing.T) {
 	})
 }
 
-// R-759B-PGTT R-78X0-US1W R-RAJ3-7PFM R-RBQZ-LH6B R-RCYV-Z8X0 R-RE6S-D0NP R-RFEO-QSEE
+// R-759B-PGTT R-RBQZ-LH6B R-RE6S-D0NP R-RFEO-QSEE
 func TestRecordedCallersAreLimitedByBytes(t *testing.T) {
 	d, s, _ := fixture(t)
 	h, op := create(t, s)
@@ -446,7 +446,7 @@ func TestRecordedCallersAreLimitedByBytes(t *testing.T) {
 		observe2(guarded.StartHostOp(ctx, h.Name, store.OpStop, store.Target{}, long)),
 		observe2(guarded.RetryHost(ctx, h.Name, long)),
 		observe2(guarded.PlaceAccount(ctx, "other", h.Name, long)),
-		observe2(guarded.RemoveAccount(ctx, a.Slug, long)),
+		observe3(guarded.RemoveAccount(ctx, a.Slug, long)),
 		observe(guarded.AddUser(ctx, a.Slug, "user", firstKey, long)),
 		observe2(guarded.CreateInvite(ctx, a.Slug, false, long)),
 		observe2(guarded.CreateInviteAs(ctx, "user", long)),

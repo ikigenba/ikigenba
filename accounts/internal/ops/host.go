@@ -36,6 +36,11 @@ func (s step) allocate() error {
 }
 
 func (s step) launch() error {
+	typ, size, next := s.h.Type, s.h.RootGB, StepWaitRunning
+	if s.op.Kind == store.OpReplace {
+		typ, size, _ = s.replacementTarget()
+		next = StepWaitRelaunched
+	}
 	if s.cfg.AccountsURL == nil {
 		return s.fail(ReasonNoAccountsURL)
 	}
@@ -43,7 +48,7 @@ func (s step) launch() error {
 	if err != nil || url == "" {
 		return s.fail(ReasonNoAccountsURL)
 	}
-	size, ok := checkedSize(s.h.RootGB)
+	rootGB, ok := checkedSize(size)
 	if !ok {
 		return s.fail(ReasonBadSize)
 	}
@@ -64,7 +69,7 @@ func (s step) launch() error {
 	if instance.ID == "" {
 		instance, err = cl.RunInstance(s.ctx, cloud.Launch{
 			Template: s.cfg.Hosts.LaunchTemplate, InstanceProfile: s.cfg.Hosts.InstanceProfile,
-			Type: s.h.Type, RootGB: size, ClientToken: s.token(),
+			Type: typ, RootGB: rootGB, ClientToken: s.token(),
 			Tags: s.tags(cloud.KindHost), InstanceTags: cloud.Tags{cloud.TagAccountsURL: url},
 		})
 		if err != nil {
@@ -74,7 +79,7 @@ func (s step) launch() error {
 	if instanceGone(instance) {
 		return s.newGeneration()
 	}
-	return s.advance(store.Update{Step: StepWaitRunning, InstanceID: instance.ID})
+	return s.advance(store.Update{Step: next, InstanceID: instance.ID})
 }
 
 func instanceGone(i cloud.Instance) bool {
@@ -85,7 +90,11 @@ func (s step) newGeneration() error {
 	if s.op.Generation >= MaxGenerations {
 		return s.fail(ReasonTerminated)
 	}
-	return s.advance(store.Update{Step: StepLaunch, Generation: s.op.Generation + 1})
+	next := StepLaunch
+	if s.op.Kind == store.OpReplace {
+		next = StepRelaunch
+	}
+	return s.advance(store.Update{Step: next, Generation: s.op.Generation + 1})
 }
 
 func (s step) waitRunning() error {
@@ -114,7 +123,12 @@ func (s step) waitRunning() error {
 }
 
 func (s step) createVolume() error {
-	size, ok := checkedSize(s.h.DataGB)
+	sizeGB, next := s.h.DataGB, StepWaitVolume
+	if s.op.Kind == store.OpReplace {
+		_, _, sizeGB = s.replacementTarget()
+		next = StepWaitNewVolume
+	}
+	size, ok := checkedSize(sizeGB)
 	if !ok {
 		return s.fail(ReasonBadSize)
 	}
@@ -137,7 +151,11 @@ func (s step) createVolume() error {
 			return err
 		}
 	}
-	return s.advance(store.Update{Step: StepWaitVolume, DataVolume: volume.ID})
+	update := store.Update{Step: next, DataVolume: volume.ID}
+	if s.op.Kind == store.OpReplace {
+		update.DataGB = sizeGB
+	}
+	return s.advance(update)
 }
 
 func (s step) waitVolume() error {
@@ -150,9 +168,15 @@ func (s step) waitVolume() error {
 	}
 	switch v.State {
 	case cloud.VolumeAvailable:
+		if s.op.Kind == store.OpReplace {
+			return s.next(StepReattach)
+		}
 		return s.next(StepAttach)
 	case cloud.VolumeInUse:
 		if v.Attachment.InstanceID == s.h.InstanceID {
+			if s.op.Kind == store.OpReplace {
+				return s.next(StepReattach)
+			}
 			return s.next(StepAssociate)
 		}
 	case cloud.VolumeError:

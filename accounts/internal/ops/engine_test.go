@@ -124,7 +124,7 @@ func (f *fixture) start(h store.Host, kind string, target store.Target) store.Op
 
 func (f *fixture) deleteHost(h store.Host, keep bool, caller identity.Caller) store.Operation {
 	f.t.Helper()
-	_, op, err := f.st.DeleteHost(f.ctx, h.Name, keep, caller)
+	_, op, err := f.st.DeleteHost(f.ctx, h.Name, keep, !keep, caller)
 	ok(f.t, err)
 	return op
 }
@@ -138,7 +138,7 @@ func (f *fixture) place(slug, host string) (store.Account, store.Operation) {
 
 func (f *fixture) remove(slug string) (store.Account, store.Operation) {
 	f.t.Helper()
-	a, op, err := f.st.RemoveAccount(f.ctx, slug, author)
+	a, op, _, err := f.st.RemoveAccount(f.ctx, slug, author)
 	ok(f.t, err)
 	return a, op
 }

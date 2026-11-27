@@ -6,15 +6,23 @@ import (
 	"encoding/xml"
 	"errors"
 	"io"
+	"math"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/aws/smithy-go/middleware"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
 )
 
-const getCallerIdentity = "GetCallerIdentity"
+const (
+	getCallerIdentity = "GetCallerIdentity"
+	assumeRole        = "AssumeRole"
+)
 
 func (a *adapter) Account(ctx context.Context) (string, error) {
 	out, err := a.sts.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
@@ -22,6 +30,77 @@ func (a *adapter) Account(ctx context.Context) (string, error) {
 		return "", failed("sts", getCallerIdentity, "", err)
 	}
 	return aws.ToString(out.Account), nil
+}
+
+func (a *adapter) Identity(ctx context.Context) (cloud.Caller, error) {
+	out, err := a.sts.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		return cloud.Caller{}, failed("sts", getCallerIdentity, "", err)
+	}
+	caller := cloud.Caller{Account: aws.ToString(out.Account), Arn: aws.ToString(out.Arn), UserID: aws.ToString(out.UserId)}
+	if caller.Account == "" || caller.Arn == "" {
+		return cloud.Caller{}, callerError(cloud.CodeBadResponse, cloud.ClassRefused, nil)
+	}
+	return caller, nil
+}
+
+func (a *adapter) AssumeRole(ctx context.Context, r cloud.RoleRequest) (cloud.Credentials, error) {
+	in := &sts.AssumeRoleInput{
+		RoleArn:         aws.String(r.RoleARN),
+		RoleSessionName: aws.String(r.SessionName),
+	}
+	if r.Policy != "" {
+		in.Policy = aws.String(r.Policy)
+	}
+	seconds := r.Duration / time.Second
+	var options []func(*sts.Options)
+	if seconds >= math.MinInt32 && seconds <= math.MaxInt32 {
+		in.DurationSeconds = aws.Int32(int32(seconds))
+	} else {
+		options = append(options, sts.WithAPIOptions(encodeDurationSeconds(int64(seconds))))
+	}
+	out, err := a.sts.AssumeRole(ctx, in, options...)
+	if err != nil {
+		return cloud.Credentials{}, failed("sts", assumeRole, "", err)
+	}
+	if c := out.Credentials; c != nil {
+		creds := cloud.Credentials{
+			AccessKeyID:     aws.ToString(c.AccessKeyId),
+			SecretAccessKey: aws.ToString(c.SecretAccessKey),
+			SessionToken:    aws.ToString(c.SessionToken),
+			Expires:         aws.ToTime(c.Expiration),
+		}
+		if creds.AccessKeyID != "" && creds.SecretAccessKey != "" && creds.SessionToken != "" && !creds.Expires.IsZero() {
+			return creds, nil
+		}
+	}
+	return cloud.Credentials{}, &cloud.Error{Service: "sts", Operation: assumeRole, Code: cloud.CodeBadResponse, Class: cloud.ClassRefused}
+}
+
+// encodeDurationSeconds adds the full value before the SDK hashes and signs
+// the request when the SDK's typed field cannot represent it.
+func encodeDurationSeconds(seconds int64) func(*middleware.Stack) error {
+	return func(stack *middleware.Stack) error {
+		return stack.Build.Add(middleware.BuildMiddlewareFunc("AccountsRoleDuration",
+			func(ctx context.Context, in middleware.BuildInput, next middleware.BuildHandler) (middleware.BuildOutput, middleware.Metadata, error) {
+				req, ok := in.Request.(*smithyhttp.Request)
+				if !ok {
+					return middleware.BuildOutput{}, middleware.Metadata{}, errors.New("invalid STS request transport")
+				}
+				var body bytes.Buffer
+				if _, err := body.ReadFrom(req.GetStream()); err != nil {
+					return middleware.BuildOutput{}, middleware.Metadata{}, err
+				}
+				body.WriteString("&DurationSeconds=")
+				body.WriteString(strconv.FormatInt(seconds, 10))
+				var err error
+				in.Request, err = req.SetStream(bytes.NewReader(body.Bytes()))
+				if err != nil {
+					return middleware.BuildOutput{}, middleware.Metadata{}, err
+				}
+				return next.HandleBuild(ctx, in)
+			}), middleware.After)
+	}
 }
 
 func (a *adapter) CallerOf(ctx context.Context, presignedURL, binding string) (cloud.Caller, error) {

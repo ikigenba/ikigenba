@@ -1,6 +1,8 @@
 package ops
 
 import (
+	"errors"
+
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 )
@@ -135,10 +137,7 @@ func (s step) orphan() error {
 	}
 	err := s.creates(func(id string) error {
 		return eachResource(s.ctx, lookup(cloud.KindHostData, id), cl.FindVolumes, func(v cloud.Volume) error {
-			if v.ID == s.h.DataVolume {
-				return nil
-			}
-			return orphan(v.ID)
+			return s.useOtherDataVolume(v, func(id, _ string) error { return orphan(id) })
 		})
 	})
 	if err != nil {
@@ -147,7 +146,18 @@ func (s step) orphan() error {
 	return s.finish(store.Update{})
 }
 
-func (s step) findDataVolumes(skipStored bool, use func(id, state string) error) error {
+func (s step) useOtherDataVolume(v cloud.Volume, use func(id, state string) error) error {
+	if v.ID == s.h.DataVolume {
+		return nil
+	}
+	_, err := s.cfg.Store.KeptVolume(s.ctx, v.ID)
+	if errors.Is(err, store.ErrNotFound) {
+		return use(v.ID, v.State)
+	}
+	return err
+}
+
+func (s step) findDataVolumes(use func(id, state string) error) error {
 	cl := s.cfg.Cloud
 	if s.h.DataVolume != "" {
 		v, err := cl.DescribeVolume(s.ctx, s.h.DataVolume)
@@ -162,16 +172,13 @@ func (s step) findDataVolumes(skipStored bool, use func(id, state string) error)
 	}
 	return s.creates(func(id string) error {
 		return eachResource(s.ctx, lookup(cloud.KindHostData, id), cl.FindVolumes, func(v cloud.Volume) error {
-			if skipStored && v.ID == s.h.DataVolume {
-				return nil
-			}
-			return use(v.ID, v.State)
+			return s.useOtherDataVolume(v, use)
 		})
 	})
 }
 
 func (s step) deleteData() error {
-	if err := s.findDataVolumes(true, func(id, state string) error {
+	if err := s.findDataVolumes(func(id, state string) error {
 		if state == cloud.VolumeDeleting || state == cloud.VolumeDeleted {
 			return nil
 		}
@@ -184,7 +191,7 @@ func (s step) deleteData() error {
 
 func (s step) waitDataDeleted() error {
 	pending := false
-	if err := s.findDataVolumes(false, func(_, state string) error {
+	if err := s.findDataVolumes(func(_, state string) error {
 		pending = pending || state != cloud.VolumeDeleted
 		return nil
 	}); err != nil {
@@ -193,5 +200,5 @@ func (s step) waitDataDeleted() error {
 	if pending {
 		return s.wait()
 	}
-	return s.finish(store.Update{})
+	return s.next(StepDeleteBackups)
 }

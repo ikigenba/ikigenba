@@ -90,7 +90,7 @@ func (c *resizeCloud) ModifyVolume(_ context.Context, _ string, target int32) er
 	return c.err
 }
 
-// R-MNTG-22XB R-UFK7-TLG8 R-NAZJ-BQ0I R-L0E6-07I2
+// R-MNTG-22XB R-UFK7-TLG8 R-NAZJ-BQ0I
 func TestGrowResumesAndNotesOnlyFirstAttempt(t *testing.T) {
 	f := setup(t)
 	h := f.ready()
@@ -137,7 +137,7 @@ func TestGrowResumesAndNotesOnlyFirstAttempt(t *testing.T) {
 	equal(t, grows, 1)
 }
 
-// R-UFK7-TLG8 R-NAZJ-BQ0I R-NDFC-39HW R-L0E6-07I2
+// R-UFK7-TLG8 R-NAZJ-BQ0I R-NDFC-39HW
 func TestVolumeStepDecisions(t *testing.T) {
 	for _, tc := range []struct {
 		name, step, state string

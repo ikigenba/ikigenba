@@ -179,7 +179,7 @@ func TestUnbanRunningAppliesToTheWholeRunningSet(t *testing.T) {
 	closed(t, chC, false)
 }
 
-// R-27BJ-H0XA R-263N-396L R-28JF-USNZ
+// R-28JF-USNZ
 func TestDesiredBanEditsAndReportPurge(t *testing.T) {
 	_, s, now := fixture(t)
 	h := runningHost(t, s, "host")
@@ -226,7 +226,7 @@ func TestDesiredBanEditsAndReportPurge(t *testing.T) {
 	eq(t, value(t, result(s.Desired(ctx, h.Name))), want)
 }
 
-// R-263N-396L
+// R-ZIHY-2QU5
 func TestDesiredOrdersAccountsUsersAndKeys(t *testing.T) {
 	_, s, _ := fixture(t)
 	h := runningHost(t, s, "host")

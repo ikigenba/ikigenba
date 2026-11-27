@@ -20,7 +20,7 @@ import (
 )
 
 func TestSeedListing(t *testing.T) {
-	// R-JD9R-GCEW
+	// R-DC3W-JAJR
 	path := filepath.Join(t.TempDir(), "listing")
 	b := newSandbox(t, "", path, 2, nil)
 	first := b.hosts[0]
@@ -36,14 +36,10 @@ func TestSeedListing(t *testing.T) {
 	defer func() { must(t, reader.Close()) }()
 	before, err := reader.Stat()
 	must(t, err)
-	watch, err := syscall.InotifyInit1(syscall.IN_NONBLOCK | syscall.IN_CLOEXEC)
-	must(t, err)
-	t.Cleanup(func() { must(t, syscall.Close(watch)) })
-	_, err = syscall.InotifyAddWatch(watch, filepath.Dir(path), syscall.IN_CREATE|syscall.IN_DELETE|syscall.IN_MODIFY|syscall.IN_MOVED_FROM|syscall.IN_MOVED_TO)
-	must(t, err)
+	watch := watchDirectory(t, filepath.Dir(path))
 	applySeedState(b, 2, "acme")
 	b.look()
-	assertSeedRename(t, watch, filepath.Base(path))
+	assertListingRename(t, watch, filepath.Base(path), false)
 	assertSeedListing(t, path, seedListing(t, "host02", "host02", "acme")+previous)
 	after, err := os.Lstat(path)
 	must(t, err)
@@ -62,12 +58,19 @@ func TestSeedListing(t *testing.T) {
 	assertSeedListing(t, path, seedListing(t, "host02", "host02", "acme"))
 }
 
-func assertSeedRename(t *testing.T, watch int, destination string) {
+func watchDirectory(t *testing.T, path string) int {
+	t.Helper()
+	watch, err := syscall.InotifyInit1(syscall.IN_NONBLOCK | syscall.IN_CLOEXEC)
+	must(t, err)
+	t.Cleanup(func() { must(t, syscall.Close(watch)) })
+	_, err = syscall.InotifyAddWatch(watch, path, syscall.IN_CREATE|syscall.IN_DELETE|syscall.IN_MODIFY|syscall.IN_MOVED_FROM|syscall.IN_MOVED_TO)
+	must(t, err)
+	return watch
+}
+
+func readDirectoryEvents(t *testing.T, watch int, visit func(event syscall.InotifyEvent, name string)) {
 	t.Helper()
 	var buf [4096]byte
-	temps := make(map[string]bool)
-	moves := make(map[uint32]bool)
-	var published bool
 	for {
 		n, err := syscall.Read(watch, buf[:])
 		if errors.Is(err, syscall.EAGAIN) {
@@ -83,37 +86,47 @@ func assertSeedRename(t *testing.T, watch int, destination string) {
 			end := size + int(event.Len)
 			name := strings.TrimRight(string(pending[size:end]), "\x00")
 			pending = pending[end:]
-			if name == destination {
-				if published || event.Mask != syscall.IN_MOVED_TO || !moves[event.Cookie] {
-					t.Fatalf("unexpected seed listing event %+v for %q", event, destination)
-				}
-				published = true
-				continue
-			}
-			switch event.Mask {
-			case syscall.IN_CREATE:
-				temps[name] = false
-			case syscall.IN_MODIFY:
-				if _, found := temps[name]; found {
-					temps[name] = true
-				}
-			case syscall.IN_DELETE:
-				delete(temps, name)
-			case syscall.IN_MOVED_FROM:
-				if temps[name] && event.Cookie != 0 {
-					moves[event.Cookie] = true
-				}
-				delete(temps, name)
-			}
+			visit(event, name)
 		}
 	}
+}
+
+func assertListingRename(t *testing.T, watch int, destination string, dotFile bool) {
+	t.Helper()
+	temps := make(map[string]bool)
+	moves := make(map[uint32]bool)
+	var published bool
+	readDirectoryEvents(t, watch, func(event syscall.InotifyEvent, name string) {
+		if name == destination {
+			if published || event.Mask != syscall.IN_MOVED_TO || !moves[event.Cookie] {
+				t.Fatalf("unexpected listing event %+v for %q", event, destination)
+			}
+			published = true
+			return
+		}
+		switch event.Mask {
+		case syscall.IN_CREATE:
+			temps[name] = false
+		case syscall.IN_MODIFY:
+			if _, found := temps[name]; found {
+				temps[name] = true
+			}
+		case syscall.IN_DELETE:
+			delete(temps, name)
+		case syscall.IN_MOVED_FROM:
+			if temps[name] && (!dotFile || strings.HasPrefix(name, ".")) && event.Cookie != 0 {
+				moves[event.Cookie] = true
+			}
+			delete(temps, name)
+		}
+	})
 	if !published {
-		t.Fatalf("seed listing %q was not published by renaming a populated temporary file", destination)
+		t.Fatalf("listing %q was not published by renaming a populated temporary file", destination)
 	}
 }
 
 func TestSeedListingStreamsOneHostAndLineAtATime(t *testing.T) {
-	// R-JD9R-GCEW
+	// R-DC3W-JAJR
 	type hostSeed struct {
 		id, tag string
 		seed    machine.Seed
@@ -220,11 +233,32 @@ func TestSeedListingLeavesNonregularPath(t *testing.T) {
 
 const seedDomain = "example.test"
 
+func TestLoopsShareDisks(t *testing.T) {
+	// R-D60E-MFUA
+	path := filepath.Join(t.TempDir(), "listing")
+	b := newSandbox(t, "", path, 2, nil)
+	applySeedState(b, 1, "acme")
+	b.look()
+	assertSeedListing(t, path, seedListing(t, "host01", "host01", "acme"))
+	must(t, b.cloud.StopInstance(t.Context(), b.hosts[0].ID))
+	b.look()
+	expectAbsent(t, path)
+	// The second loop applies a state with the original disk and its account.
+	// A fresh disk would seed it with the second host's commit email instead.
+	b.applyState(2, protocol.DesiredState{
+		Protocol: protocol.Version, Host: "host02", Domain: seedDomain, Version: 1, Daemon: "same",
+		DataVolume: "vol-" + b.hosts[0].ID, DataGB: 100, RootGB: 20,
+		Accounts: []protocol.Account{{Slug: "acme", GID: 4040, State: protocol.AccountActive}},
+	})
+	b.look()
+	assertSeedListing(t, path, seedListing(t, "host02", "host01", "acme"))
+}
+
 func applySeedState(b *sandboxBox, host int, slugs ...string) {
 	b.t.Helper()
 	state := protocol.DesiredState{
 		Protocol: protocol.Version, Host: b.hosts[host-1].Tags[cloud.TagHost], Domain: seedDomain,
-		Version: 1, Daemon: "same", DataVolume: "vol-data", DataGB: 100, RootGB: 20,
+		Version: 1, Daemon: "same", DataVolume: "vol-" + b.hosts[host-1].ID, DataGB: 100, RootGB: 20,
 	}
 	for i, slug := range slugs {
 		state.Accounts = append(state.Accounts, protocol.Account{

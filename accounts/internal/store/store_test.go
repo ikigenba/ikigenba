@@ -90,7 +90,7 @@ func start(t *testing.T, s *store.Store, name, kind string, target store.Target)
 
 func deleteHost(t *testing.T, s *store.Store, name string, keepData bool) (store.Host, store.Operation) {
 	t.Helper()
-	h, op, err := s.DeleteHost(ctx, name, keepData, caller)
+	h, op, err := s.DeleteHost(ctx, name, keepData, true, caller)
 	checkErr(t, err, nil)
 	return h, op
 }
@@ -104,7 +104,7 @@ func place(t *testing.T, s *store.Store, slug, host string) (store.Account, stor
 
 func remove(t *testing.T, s *store.Store, slug string) (store.Account, store.Operation) {
 	t.Helper()
-	a, op, err := s.RemoveAccount(ctx, slug, caller)
+	a, op, _, err := s.RemoveAccount(ctx, slug, caller)
 	checkErr(t, err, nil)
 	return a, op
 }
@@ -195,14 +195,16 @@ func TestOperationIDCollisionsRollBack(t *testing.T) {
 	eq(t, h.Seq, int64(3))
 }
 
-// R-1WCG-1391 R-BYG6-N24Z R-RJ2D-W3MH R-6Z5T-SM4C
+// R-1WCG-1391 R-BYG6-N24Z R-RJ2D-W3MH R-6Z5T-SM4C R-5HSB-KP8M R-GWWF-0TU4
 func TestErrorClasses(t *testing.T) {
 	base := []error{store.ErrUnreachable, store.ErrNotFound, store.ErrTaken, store.ErrConflict}
-	groups := [][]error{base, {store.ErrNotInAccount, store.ErrKeyNotHeld}, {store.ErrBusy, store.ErrHostFailed,
+	groups := [][]error{base, {store.ErrNotInAccount, store.ErrKeyNotHeld, store.ErrNoDatabase, store.ErrNoSnapshot, store.ErrNoUser}, {store.ErrBusy, store.ErrHostFailed,
 		store.ErrNotFailed, store.ErrNotRunning, store.ErrNotStopped, store.ErrHasAccounts, store.ErrHostFull,
 		store.ErrHostGone, store.ErrNothingToChange, store.ErrShrinks, store.ErrGrowLimit, store.ErrHasUsers,
 		store.ErrAccountRemoving, store.ErrAccountFull, store.ErrTooManyKeys, store.ErrNotLocked, store.ErrUserRemoving,
-		store.ErrTooManyUnbans, store.ErrAllowlistFull, store.ErrTooManyInvites, store.ErrLastKey, store.ErrNotActive, store.ErrNotAdmin, store.ErrSelf, store.ErrVolumeDeleting}}
+		store.ErrTooManyUnbans, store.ErrAllowlistFull, store.ErrTooManyInvites, store.ErrLastKey, store.ErrNotActive, store.ErrNotAdmin, store.ErrSelf, store.ErrVolumeDeleting,
+		store.ErrNotClosed, store.ErrNoDataVolume, store.ErrAccountNotActive, store.ErrTooManyRestores,
+		store.ErrAccountExists, store.ErrBackupsDeleting, store.ErrNoAddress, store.ErrNotRestorable}}
 	seen := map[error]bool{}
 	for i, group := range groups {
 		for pos, e := range group {
@@ -218,20 +220,25 @@ func TestErrorClasses(t *testing.T) {
 	}
 }
 
-// R-GWOP-BLEL R-0K9R-765T R-GZ4I-34VZ R-H0CE-GWMO R-H2S7-8G42 R-6VI4-NAW9
+// R-0K9R-765T R-GZ4I-34VZ R-H2S7-8G42 R-6VI4-NAW9 R-4NAU-0FP9 R-4M2X-MNYK R-5814-IJB2 R-5990-WB1R
 func TestPublishedValues(t *testing.T) {
 	eq(t, []string{store.OnDeleteKeep, store.OnDeleteDelete, store.VolumeKept, store.VolumeDeleting, store.VolumeDeleted},
 		[]string{"keep", "delete", "kept", "deleting", "deleted"})
 	eq(t, []string{store.HostProvisioning, store.HostRunning, store.HostStopping, store.HostStopped, store.HostStarting,
-		store.HostResizing, store.HostDeleting, store.HostFailed, store.HostDeleted},
-		[]string{"provisioning", "running", "stopping", "stopped", "starting", "resizing", "deleting", "failed", "deleted"})
+		store.HostResizing, store.HostDeleting, store.HostFailed, store.HostDeleted,
+		store.HostClosing, store.HostOpening, store.HostReplacing, store.HostRestoring},
+		[]string{"provisioning", "running", "stopping", "stopped", "starting", "resizing", "deleting", "failed", "deleted", "closing", "opening", "replacing", "restoring"})
 	eq(t, []string{store.AccountPending, store.AccountActive, store.AccountFailed, store.AccountRemoving, store.UserActive,
 		store.UserLocked, store.UserRemoving}, []string{"pending", "active", "failed", "removing", "active", "locked", "removing"})
 	eq(t, []string{store.HealthSync, store.HealthPending, store.HealthError, store.HealthSilent, store.HealthNone, store.AlarmNone,
 		store.AlarmSilent, store.AlarmError}, []string{"sync", "pending", "error", "silent", "none", "", "silent", "error"})
 	eq(t, []string{store.OpRunning, store.OpFailed, store.OpDone, store.OpCancelled, store.OpCreate, store.OpStop, store.OpStart,
-		store.OpResize, store.OpDelete, store.OpPlace, store.OpUnplace},
-		[]string{"running", "failed", "done", "cancelled", "create", "stop", "start", "resize", "delete", "place", "unplace"})
+		store.OpResize, store.OpDelete, store.OpPlace, store.OpUnplace, store.OpClose, store.OpOpen, store.OpReplace, store.OpRestore},
+		[]string{"running", "failed", "done", "cancelled", "create", "stop", "start", "resize", "delete", "place", "unplace", "close", "open", "replace", "restore"})
+	eq(t, []string{store.ReplaceVolume, store.ReplaceBackup, store.CauseDeleted, store.CauseReplaced},
+		[]string{"volume", "backup", "deleted", "replaced"})
+	eq(t, []string{store.BackupHealthy, store.BackupStale, store.BackupError, store.BackupNone, store.BackupsRemoved,
+		store.DeleteBackupsDeleting, store.DeleteBackupsFailed}, []string{"healthy", "stale", "error", "none", "removed", "deleting", "failed"})
 	eq(t, []time.Duration{store.SilentAfter, store.GrowWindow}, []time.Duration{5 * time.Minute, 24 * time.Hour})
 	eq(t, []int{store.FirstID, store.BatchSize, store.MaxGrows}, []int{20000, 50, 4})
 }

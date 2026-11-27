@@ -22,13 +22,13 @@ func listKept(t *testing.T, f *fixture, args any) tools.KeptVolumeList {
 
 func (f *fixture) finishKeeping(host store.Host) tools.KeptVolume {
 	f.t.Helper()
-	_, op, err := f.st.DeleteHost(f.t.Context(), host.Name, true, f.caller)
+	_, op, err := f.st.DeleteHost(f.t.Context(), host.Name, true, false, f.caller)
 	if err != nil {
 		f.t.Fatal(err)
 	}
 	f.finish(op.ID, store.Update{})
 	return tools.KeptVolume{
-		Volume: host.DataVolume, Host: host.Name, SizeGB: host.DataGB,
+		Volume: host.DataVolume, Host: host.Name, Cause: store.CauseDeleted, SizeGB: host.DataGB,
 		Deleted: f.now.UTC().Format(time.RFC3339), State: store.VolumeKept,
 	}
 }
@@ -187,7 +187,7 @@ func TestKeptVolumePagingArguments(t *testing.T) {
 	}
 }
 
-// R-121B-BUGB R-0NEI-QLJZ R-1D0E-RS4K R-1E8B-5JV9 R-1FG7-JBLY R-1GO3-X3CN
+// R-2SW7-ZCRR R-H31U-6DJC R-1D0E-RS4K R-1E8B-5JV9 R-1FG7-JBLY R-1GO3-X3CN
 func TestDeleteKeptVolume(t *testing.T) {
 	f := setup(t)
 	f.serveLoopback()
@@ -283,6 +283,46 @@ func assertVolumeToolEvents(t *testing.T, f *fixture, volume tools.KeptVolume) {
 		expected := want[i]
 		if event.Name != expected.name || !reflect.DeepEqual(event.Attrs, expected.attrs) || event.User != f.caller.UserID {
 			t.Fatalf("event %d = %+v, want %+v", i, event, expected)
+		}
+	}
+}
+
+// R-RNHX-7Y3H R-MBKM-ROR1
+func TestKeptVolumePagingRange(t *testing.T) {
+	f := setup(t)
+	var want []tools.KeptVolume
+	dates := []time.Time{
+		time.Date(1678, time.January, 1, 0, 0, 0, 0, time.UTC),
+		time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC),
+		time.Date(2261, time.December, 31, 23, 59, 59, 0, time.UTC),
+	}
+	hosts := make([]store.Host, len(dates))
+	for i := range hosts {
+		host, _ := f.seedHost(true)
+		hosts[i] = f.host(host.Name)
+	}
+	for i, date := range dates {
+		f.now = date
+		want = append(want, f.finishKeeping(hosts[i]))
+	}
+	slices.Reverse(want)
+	if got := listKept(t, f, tools.KeptVolumesArgs{}); !slices.Equal(got.KeptVolumes, want) {
+		t.Fatalf("kept volumes = %+v, want %+v", got.KeptVolumes, want)
+	}
+	token := paging.Token{Tool: tools.ToolKeptVolumes}
+	one := 1
+	args := tools.KeptVolumesArgs{Limit: &one}
+	for i, row := range want {
+		got := listKept(t, f, args)
+		if !slices.Equal(got.KeptVolumes, []tools.KeptVolume{row}) || (got.Next == nil) != (i == len(want)-1) {
+			t.Fatalf("window %d = %+v, want %+v", i, got, row)
+		}
+		args.Page = got.Next
+		if args.Page != nil {
+			deleted := f.keptOnRecord(row.Volume).Deleted
+			if *args.Page != token.Encode(deleted.UnixNano(), row.Volume) {
+				t.Fatalf("unexpected token %q for volume %+v", *args.Page, row)
+			}
 		}
 	}
 }

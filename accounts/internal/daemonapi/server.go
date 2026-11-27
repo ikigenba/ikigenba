@@ -13,9 +13,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
+	"github.com/ikigenba/ikigenba/accounts/internal/access"
 	"github.com/ikigenba/ikigenba/accounts/internal/hostauth"
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
+	"github.com/ikigenba/ikigenba/accounts/internal/settings"
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 	"github.com/ikigenba/ikigenba/accounts/internal/trail"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
@@ -23,9 +26,10 @@ import (
 
 // Poll and download limits, and the protocol's plain-text responses.
 const (
-	MaxWaiters    = 1000
-	CopyBuffer    = 32 << 10
-	MaxBoxServing = 32
+	MaxWaiters         = 1000
+	CopyBuffer         = 32 << 10
+	MaxBoxServing      = 32
+	MaxCredentialBytes = 2048
 
 	NotFound    = "Daemon resource not found."
 	NotAllowed  = "Method not allowed."
@@ -49,6 +53,8 @@ type Config struct {
 	BoxUser    http.Handler
 	BoxAdmin   http.Handler
 	Domain     string
+	Access     *access.Access
+	Hosts      settings.Hosts
 }
 
 // Server handles the daemon endpoints for one accounts process.
@@ -70,6 +76,7 @@ type hostStore interface {
 	Host(context.Context, string) (store.Host, error)
 	Watch(string) (<-chan struct{}, func())
 	Desired(context.Context, string) (protocol.DesiredState, error)
+	BackupSettings(context.Context) (store.BackupSettings, error)
 	RecordReport(context.Context, string, protocol.Report, time.Time) (store.Transition, error)
 	ActiveUserByUID(context.Context, string, int64) (store.User, error)
 }
@@ -322,11 +329,81 @@ func (s *Server) state(ctx context.Context, w http.ResponseWriter, name string) 
 		storeFailure(w, err)
 		return
 	}
+	backupSettings, err := s.store.BackupSettings(ctx)
+	if ctx.Err() != nil {
+		return
+	}
+	if err != nil {
+		http.Error(w, store.Unreachable, http.StatusServiceUnavailable)
+		return
+	}
 	desired.Daemon = s.digest
 	desired.Domain = s.cfg.Domain
+	desired.Backup = s.backup(ctx, name, desired, backupSettings)
 	w.Header().Set("Content-Type", protocol.ContentJSON)
 	w.Header().Set("Cache-Control", "no-store")
-	_ = json.NewEncoder(w).Encode(desired)
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(desired)
+}
+
+func (s *Server) backup(ctx context.Context, name string, desired protocol.DesiredState, backupSettings store.BackupSettings) *protocol.Backup {
+	var b protocol.Backup
+	if desired.Backup != nil {
+		b = *desired.Backup
+	}
+	b.Bucket = s.cfg.Hosts.BackupBucket()
+	b.Region = s.cfg.Hosts.Region
+	b.Settings = protocol.Settings(backupSettings)
+	b.Host = protocol.Credentials{}
+	b.Accounts = []protocol.AccountCredentials{}
+	if s.cfg.Access == nil {
+		return &b
+	}
+	var slugs []string
+	for _, account := range desired.Accounts {
+		if account.State == protocol.AccountActive {
+			slugs = append(slugs, account.Slug)
+		}
+	}
+	if b.Restore != nil {
+		for _, account := range b.Restore.Accounts {
+			slugs = append(slugs, account.Slug)
+		}
+	}
+	// Issue sorts and deduplicates slugs. Its error can accompany usable sets.
+	host, accounts, _ := s.cfg.Access.Issue(ctx, name, b.HostPrefix, slugs)
+	b.Host = boundedCredentials(host)
+	for _, account := range accounts {
+		account.Credentials = boundedCredentials(account.Credentials)
+		b.Accounts = append(b.Accounts, account)
+	}
+	return &b
+}
+
+func boundedCredentials(c protocol.Credentials) protocol.Credentials {
+	// Start with the quotes around all three JSON strings.
+	size := 6
+	for _, value := range [...]string{c.AccessKeyID, c.SecretAccessKey, c.SessionToken} {
+		for len(value) != 0 {
+			r, width := utf8.DecodeRuneInString(value)
+			value = value[width:]
+			switch {
+			case r == utf8.RuneError && width == 1, r == '\u2028', r == '\u2029':
+				size += 6
+			case r == '"' || r == '\\' || r == '\b' || r == '\f' || r == '\n' || r == '\r' || r == '\t':
+				size += 2
+			case r < 0x20:
+				size += 6
+			default:
+				size += width
+			}
+			if size > MaxCredentialBytes {
+				return protocol.Credentials{}
+			}
+		}
+	}
+	return c
 }
 
 func (s *Server) report(w http.ResponseWriter, r *http.Request, name string) {

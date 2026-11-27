@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ikigenba/ikigenba/accounts/internal/machine"
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
@@ -23,8 +24,16 @@ const (
 )
 
 var volumeID = regexp.MustCompile(`^vol-[0-9a-f]{8,17}$`)
+var backupID = regexp.MustCompile(`^[a-z0-9_]{1,64}$`)
+
+func validBackupID(id string) bool { return backupID.MatchString(id) }
 
 func validateState(s protocol.DesiredState) error {
+	if b := s.Backup; b != nil {
+		if (b.Close != "" && !validBackupID(b.Close)) || (b.Restore != nil && !validBackupID(b.Restore.ID)) {
+			return machine.ErrInvalidState
+		}
+	}
 	if s.DataVolume != "" && !volumeID.MatchString(s.DataVolume) {
 		return machine.ErrInvalidState
 	}
@@ -61,6 +70,22 @@ func validateState(s protocol.DesiredState) error {
 		}
 	}
 	return nil
+}
+
+const closeLockPath = BackupDir + "/status/locked"
+
+func (h *Host) recordCloseLock(s protocol.DesiredState) error {
+	if s.Backup == nil || s.Backup.Close == "" {
+		return nil
+	}
+	prefix := fmt.Sprintf("%s %d ", s.Backup.Close, s.Version)
+	current, err := h.readBounded(closeLockPath)
+	if err == nil && strings.HasPrefix(string(current), prefix) {
+		return nil
+	}
+	record := prefix + h.env.Now().UTC().Format(time.RFC3339) + "\n"
+	_, err = h.writeAtomic(closeLockPath, []byte(record), 0o600)
+	return err
 }
 
 func (h *Host) groups(visit func(name string, gid int64, members []string)) error {
@@ -163,7 +188,7 @@ func (h *Host) locks(ctx context.Context, s protocol.DesiredState) error {
 			}
 		}
 	}
-	return nil
+	return h.recordCloseLock(s)
 }
 
 func (h *Host) stopActiveSlice(ctx context.Context, unit string) error {

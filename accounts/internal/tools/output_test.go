@@ -17,7 +17,7 @@ type hostShape = struct {
 	RootGB, DataGB                                       int
 	EIP                                                  string
 	Accounts                                             int
-	Reported                                             string
+	Reported, Closed, Replace                            string
 }
 type accountShape = struct {
 	Account, Host, DNSName, State, Reason string
@@ -25,7 +25,7 @@ type accountShape = struct {
 	Created, CreatedBy                    string
 }
 
-// R-0HB0-TQUI R-0JQT-LABW check Go shapes alongside their wire encodings below.
+// R-GLZ8-TL5M R-0JQT-LABW check Go shapes alongside their wire encodings below.
 func TestOutputTypes(t *testing.T) {
 	t.Helper()
 	_ = hostShape(tools.Host{})
@@ -123,9 +123,9 @@ func wireArray(t *testing.T, obj json.RawMessage, name string, members ...string
 	wireMembers(t, items[0], members...)
 }
 
-// R-0HB0-TQUI R-YS1L-XQKE R-0JQT-LABW R-CHE6-U55F R-CEYE-2LO1 R-CG6A-GDEQ R-XTWF-85SY
+// R-GLZ8-TL5M R-YS1L-XQKE R-0JQT-LABW R-CHE6-U55F R-CEYE-2LO1 R-CG6A-GDEQ R-XTWF-85SY
 func TestOutputEncoding(t *testing.T) {
-	hostFields := []string{"host", "dns_name", "state", "reason", "on_delete", "health", "type", "root_gb", "data_gb", "eip", "accounts", "reported"}
+	hostFields := []string{"host", "dns_name", "state", "reason", "on_delete", "health", "type", "root_gb", "data_gb", "eip", "accounts", "reported", "closed", "replace"}
 	accountFields := []string{"account", "host", "dns_name", "state", "reason", "users", "invites", "created", "created_by"}
 	userFields := []string{"user", "account", "admin", "state", "pending", "keys", "last_sign_in", "created", "created_by"}
 	opFields := []string{"operation", "kind", "step", "status", "error", "started"}
@@ -179,21 +179,21 @@ func TestOutputEncoding(t *testing.T) {
 	refusal(t, f.call(tools.ToolHost, tools.HostArgs{Host: "missing"}), tools.NoHost)
 }
 
-// R-0IIX-7IL7
+// R-GN75-7CWB
 func TestHostReadEncoding(t *testing.T) {
 	_ = struct {
 		Host, DNSName, State, Reason, OnDelete, Health, Type string
 		RootGB, DataGB                                       int
 		EIP                                                  string
 		Accounts                                             int
-		Reported, InstanceID, DataVolume                     string
+		Reported, Closed, Replace, InstanceID, DataVolume    string
 		Version, Applied                                     int64
 		Created, CreatedBy                                   string
 		AccountNames, Allowlist                              []string
 		Operation                                            *tools.Operation
 		Report                                               json.RawMessage
 	}(tools.HostRead{})
-	base := []string{"host", "dns_name", "state", "reason", "on_delete", "health", "type", "root_gb", "data_gb", "eip", "accounts", "reported",
+	base := []string{"host", "dns_name", "state", "reason", "on_delete", "health", "type", "root_gb", "data_gb", "eip", "accounts", "reported", "closed", "replace",
 		"instance_id", "data_volume", "version", "applied", "created", "created_by", "account_names", "allowlist"}
 	for _, names := range [][]string{nil, {}} {
 		raw := testEncoding(t, tools.HostRead{AccountNames: names, Allowlist: names})
@@ -281,10 +281,10 @@ func TestSuccessfulToolsUseDeclaredOutput(t *testing.T) {
 	answer[tools.HostChange](t, f.call(tools.ToolDeleteHost, tools.DeleteHostArgs{Host: host.Host}))
 }
 
-// R-0ZLI-KAYX
+// R-GOF1-L4N0
 func TestKeptVolumeOutputEncoding(t *testing.T) {
 	_ = struct {
-		Volume, Host           string
+		Volume, Host, Cause    string
 		SizeGB                 int
 		Deleted, State, Reason string
 	}(tools.KeptVolume{})
@@ -296,12 +296,12 @@ func TestKeptVolumeOutputEncoding(t *testing.T) {
 	const next = "next-page"
 	nextPage := next
 	volume := tools.KeptVolume{
-		Volume: "vol-example", Host: "host-example", SizeGB: 43,
+		Volume: "vol-example", Host: "host-example", Cause: store.CauseReplaced, SizeGB: 43,
 		Deleted: "2026-10-29T14:03:07Z", State: store.VolumeKept, Reason: "example reason",
 	}
 	list := testEncoding(t, tools.KeptVolumeList{KeptVolumes: []tools.KeptVolume{volume}, Next: &nextPage})
 	wireMembers(t, list, "kept_volumes", "next")
-	fields := []string{"volume", "host", "size_gb", "deleted", "state", "reason"}
+	fields := []string{"volume", "host", "cause", "size_gb", "deleted", "state", "reason"}
 	wireArray(t, list, "kept_volumes", fields...)
 	if raw := field(t, list, "next"); string(raw) != `"next-page"` {
 		t.Fatal(string(raw))
@@ -317,4 +317,53 @@ func TestKeptVolumeOutputEncoding(t *testing.T) {
 	if err != nil || string(one) != string(want) {
 		t.Fatalf("encoded volume = %s, want %s (%v)", one, want, err)
 	}
+}
+
+// R-XAGL-KTXQ R-HSNQ-7K3X R-HTVM-LBUM R-HV3I-Z3LB
+func TestBackupOutputEncoding(t *testing.T) {
+	_ = struct {
+		Account, Host, State, Health, Snapshot, Checked, Error                   string
+		Databases, DatabaseErrors                                                int
+		Synced, Written, Final, FinalAt, Restore, Reported, Delete, DeleteReason string
+	}(tools.AccountBackups{})
+	_ = struct {
+		Accounts []tools.AccountBackups
+		Next     *string
+	}(tools.BackupStatusList{})
+	_ = struct{ Path, Health, Oldest, Written, Synced, Error string }(tools.DatabasePoint{})
+	_ = struct {
+		Account, Host, Reported string
+		Snapshots               []string
+		Databases               []tools.DatabasePoint
+		DatabaseTotal           int
+	}(tools.RestorePoints{})
+	_ = struct{ Restore, Account, Host, Kind, Path, User, AsOf, State string }(tools.RestoreMade{})
+	_ = struct{ Account, State string }(tools.BackupsDeletion{})
+
+	next := "answer-token"
+	list := testEncoding(t, tools.BackupStatusList{Accounts: []tools.AccountBackups{{Account: "acme", Databases: 3, DatabaseErrors: 2}}, Next: &next})
+	wireMembers(t, list, "accounts", "next")
+	wireArray(t, list, "accounts", "account", "host", "state", "health", "snapshot", "checked", "error",
+		"databases", "database_errors", "synced", "written", "final", "final_at", "restore", "reported", "delete", "delete_reason")
+	if got := string(field(t, list, "next")); got != `"answer-token"` {
+		t.Fatal(got)
+	}
+	for _, entries := range [][]tools.AccountBackups{nil, {}} {
+		empty := testEncoding(t, tools.BackupStatusList{Accounts: entries})
+		wireMembers(t, empty, "accounts")
+		wireArray(t, empty, "accounts")
+	}
+	for _, points := range []tools.RestorePoints{{}, {Snapshots: []string{}, Databases: []tools.DatabasePoint{}}} {
+		raw := testEncoding(t, points)
+		wireMembers(t, raw, "account", "host", "reported", "snapshots", "databases", "database_total")
+		wireArray(t, raw, "snapshots")
+		wireArray(t, raw, "databases")
+	}
+	raw := testEncoding(t, tools.RestorePoints{Snapshots: []string{"one"}, Databases: []tools.DatabasePoint{{Path: "data/example"}}})
+	wireArray(t, raw, "databases", "path", "health", "oldest", "written", "synced", "error")
+	if got := string(field(t, raw, "snapshots")); got != `["one"]` {
+		t.Fatal(got)
+	}
+	wireMembers(t, testEncoding(t, tools.RestoreMade{}), "restore", "account", "host", "kind", "path", "user", "as_of", "state")
+	wireMembers(t, testEncoding(t, tools.BackupsDeletion{}), "account", "state")
 }

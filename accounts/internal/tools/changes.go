@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 	"github.com/ikigenba/ikigenba/accounts/internal/valid"
 	"github.com/ikigenba/ikigenba/appkit/identity"
@@ -30,7 +31,7 @@ func (cfg Config) deleteHost(ctx context.Context, c identity.Caller, a DeleteHos
 	if _, err := cfg.Store.Host(ctx, a.Host); err != nil {
 		return HostChange{}, storeError(err, NoHost)
 	}
-	h, op, err := cfg.Store.DeleteHost(ctx, a.Host, value(a.KeepData, true), c)
+	h, op, err := cfg.Store.DeleteHost(ctx, a.Host, value(a.KeepData, true), value(a.Lost, false), c)
 	if err != nil {
 		if errors.Is(err, store.ErrHostGone) {
 			return HostChange{}, errors.New(NoHost)
@@ -147,6 +148,9 @@ func (cfg Config) createAccount(ctx context.Context, c identity.Caller, a Create
 	if err := cfg.checkDNS(ctx, a.Account); err != nil {
 		return Account{}, err
 	}
+	if err := cfg.checkBackups(ctx, a.Account); err != nil {
+		return Account{}, err
+	}
 	account, op, err := cfg.Store.PlaceAccount(ctx, a.Account, a.Host, c)
 	if err != nil {
 		return Account{}, storeError(err, NoHost)
@@ -168,17 +172,31 @@ func (cfg Config) checkDNS(ctx context.Context, slug string) error {
 	return nil
 }
 
+func (cfg Config) checkBackups(ctx context.Context, slug string) error {
+	check, cancel := context.WithTimeout(ctx, BackupCheckTimeout)
+	defer cancel()
+	exists, err := cfg.Cloud.HasKeys(check, cfg.Hosts.BackupBucket(), protocol.AccountPrefix(slug))
+	if err != nil {
+		return errors.New(CloudFailed)
+	}
+	if exists {
+		return errors.New(NameHasBackups)
+	}
+	return nil
+}
+
 func (cfg Config) removeAccount(ctx context.Context, c identity.Caller, a AccountArgs, r *changeRecord) (Account, error) {
 	before, err := cfg.Store.Account(ctx, a.Account)
 	if err != nil {
 		return Account{}, storeError(err, NoAccount)
 	}
 	r.host = before.Host
-	after, op, err := cfg.Store.RemoveAccount(ctx, a.Account, c)
+	after, op, cancelled, err := cfg.Store.RemoveAccount(ctx, a.Account, c)
 	if err != nil {
 		return Account{}, storeError(err, NoAccount)
 	}
 	r.host, r.before, r.after, r.operation = after.Host, op.ResumeState, after.State, op
+	r.cancelledRestores = cancelled
 	return cfg.accountAnswer(after), nil
 }
 

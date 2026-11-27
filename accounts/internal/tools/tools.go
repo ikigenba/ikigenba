@@ -41,6 +41,14 @@ func Register(srv *mcp.Server, cfg Config) {
 	mcp.AddTool(srv, mcp.Tool[UnbanArgs, Unbanned]{Name: ToolUnbanIP, Description: DescribeUnbanIP, Effect: mcp.Additive, Handler: change(cfg, ToolUnbanIP, cfg.unbanIP)})
 	mcp.AddTool(srv, mcp.Tool[HostIPArgs, AllowlistChange]{Name: ToolAllowIP, Description: DescribeAllowIP, Effect: mcp.Additive, Handler: change(cfg, ToolAllowIP, cfg.allowlistOperation(cfg.Store.Allow))})
 	mcp.AddTool(srv, mcp.Tool[HostIPArgs, AllowlistChange]{Name: ToolDisallowIP, Description: DescribeDisallowIP, Effect: mcp.Destructive, Handler: change(cfg, ToolDisallowIP, cfg.allowlistOperation(cfg.Store.Disallow))})
+	mcp.AddTool(srv, mcp.Tool[HostArgs, HostChange]{Name: ToolCloseHost, Description: DescribeCloseHost, Effect: mcp.Additive, Handler: change(cfg, ToolCloseHost, cfg.backupHostOperation(cfg.Store.CloseHost))})
+	mcp.AddTool(srv, mcp.Tool[HostArgs, HostChange]{Name: ToolOpenHost, Description: DescribeOpenHost, Effect: mcp.Additive, Handler: change(cfg, ToolOpenHost, cfg.backupHostOperation(cfg.Store.OpenHost))})
+	mcp.AddTool(srv, mcp.Tool[ReplaceHostArgs, HostChange]{Name: ToolReplaceHost, Description: DescribeReplaceHost, Effect: mcp.Destructive, Handler: change(cfg, ToolReplaceHost, cfg.replaceHost)})
+	mcp.AddTool(srv, mcp.Tool[BackupStatusArgs, BackupStatusList]{Name: ToolBackupStatus, Description: DescribeBackupStatus, Effect: mcp.Read, Handler: read(cfg, cfg.backupStatus)})
+	mcp.AddTool(srv, mcp.Tool[AccountArgs, RestorePoints]{Name: ToolRestorePoints, Description: DescribeRestorePoints, Effect: mcp.Read, Handler: read(cfg, cfg.restorePoints)})
+	mcp.AddTool(srv, mcp.Tool[RestoreDatabaseArgs, RestoreMade]{Name: ToolRestoreDatabase, Description: DescribeRestoreDatabase, Effect: mcp.Additive, Handler: change(cfg, ToolRestoreDatabase, cfg.restoreDatabase)})
+	mcp.AddTool(srv, mcp.Tool[RestoreFilesArgs, RestoreMade]{Name: ToolRestoreFiles, Description: DescribeRestoreFiles, Effect: mcp.Additive, Handler: change(cfg, ToolRestoreFiles, cfg.restoreFiles)})
+	mcp.AddTool(srv, mcp.Tool[AccountArgs, BackupsDeletion]{Name: ToolDeleteAccountBackups, Description: DescribeDeleteAccountBackups, Effect: mcp.Destructive, Handler: change(cfg, ToolDeleteAccountBackups, cfg.deleteAccountBackups)})
 }
 
 func read[A, R any](cfg Config, handle func(context.Context, A) (R, error)) func(context.Context, identity.Caller, A) (R, error) {
@@ -59,6 +67,8 @@ type changeRecord struct {
 	before, after           string
 	onDelete, volume        string
 	operation               store.Operation
+	cancelledRestores       []string
+	backupDeleteStarted     bool
 }
 
 func change[A, R any](cfg Config, name string, handle func(context.Context, identity.Caller, A, *changeRecord) (R, error)) func(context.Context, identity.Caller, A) (R, error) {
@@ -83,7 +93,13 @@ func changeNames(args any) changeRecord {
 		return changeRecord{host: a.Host}
 	case ResizeHostArgs:
 		return changeRecord{host: a.Host}
+	case ReplaceHostArgs:
+		return changeRecord{host: a.Host}
 	case AccountArgs:
+		return changeRecord{account: a.Account}
+	case RestoreDatabaseArgs:
+		return changeRecord{account: a.Account}
+	case RestoreFilesArgs:
 		return changeRecord{account: a.Account}
 	case CreateAccountArgs:
 		return changeRecord{host: a.Host, account: a.Account}
@@ -108,12 +124,30 @@ func changeNames(args any) changeRecord {
 func (cfg Config) tellChange(ctx context.Context, name string, r changeRecord, err error) {
 	op := r.operation
 	if op.Supersedes != "" {
-		trail.OperationFinished(ctx, cfg.Telemetry, op.Supersedes, store.OpPlace, r.host, r.account, store.OpCancelled, "", "")
+		switch op.Kind {
+		case store.OpUnplace:
+			trail.OperationFinished(ctx, cfg.Telemetry, op.Supersedes, store.OpPlace, r.host, r.account, store.OpCancelled, "", "")
+		case store.OpOpen:
+			if name == ToolOpenHost {
+				trail.OperationFinished(ctx, cfg.Telemetry, op.Supersedes, store.OpClose, r.host, "", store.OpCancelled, "", "")
+			}
+		}
+	}
+	for _, id := range r.cancelledRestores {
+		account := r.account
+		if account == "" {
+			restore, err := cfg.Store.Operation(ctx, id)
+			if err != nil {
+				continue
+			}
+			account = restore.Account
+		}
+		trail.OperationFinished(ctx, cfg.Telemetry, id, store.OpRestore, r.host, account, store.OpCancelled, "", "")
 	}
 	if op.ID != "" {
 		if r.account == "" {
 			trail.HostChanged(ctx, cfg.Telemetry, r.host, r.before, r.after, op.ID)
-		} else if r.before != r.after {
+		} else if op.Kind != store.OpRestore && r.before != r.after {
 			trail.AccountChanged(ctx, cfg.Telemetry, r.account, r.host, r.before, r.after)
 		}
 		trail.OperationStarted(ctx, cfg.Telemetry, op.ID, op.Kind, r.host, r.account, r.onDelete)
@@ -129,7 +163,7 @@ func (cfg Config) tellChange(ctx context.Context, name string, r changeRecord, e
 		}
 	}
 	trail.Change(ctx, cfg.Telemetry, name, r.host, r.account, r.user, r.ip, result)
-	if op.ID != "" || r.volume != "" {
+	if op.ID != "" || r.volume != "" || r.backupDeleteStarted {
 		cfg.Wake()
 	}
 }
@@ -162,6 +196,17 @@ var storeRefusals = []struct {
 	{store.ErrTooManyUnbans, TooManyUnbans},
 	{store.ErrAllowlistFull, AllowlistFull},
 	{store.ErrVolumeDeleting, VolumeDeleting},
+	{store.ErrNotClosed, HostNotClosed},
+	{store.ErrNoDataVolume, NoDataVolume},
+	{store.ErrNoAddress, NoAddress},
+	{store.ErrAccountNotActive, AccountNotActive},
+	{store.ErrNoDatabase, NoDatabase},
+	{store.ErrNoSnapshot, NoSnapshot},
+	{store.ErrNoUser, NoUser},
+	{store.ErrNotRestorable, NotRestorable},
+	{store.ErrTooManyRestores, TooManyRestores},
+	{store.ErrAccountExists, AccountExists},
+	{store.ErrBackupsDeleting, BackupsDeleting},
 }
 
 func storeError(err error, missing string) error {

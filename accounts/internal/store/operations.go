@@ -14,6 +14,22 @@ const operationFields = `id, host, account, kind, step, status, generation, targ
 
 const operationSelect = "SELECT " + operationFields + " FROM operations"
 
+const backupOperationFields = `id, (SELECT name FROM hosts WHERE seq = host_seq) AS host, account, kind, step,
+	status, generation, target_type, target_root_gb, target_data_gb, resume_state, error, attempts, started, step_started,
+	next_try, finished, CASE WHEN kind = 'close' THEN '' ELSE supersedes END AS supersedes,
+	caller_user, caller_email, caller_request`
+
+const backupOperationSelect = "SELECT " + backupOperationFields + " FROM backup_operations"
+
+func operationTable(kind string) string {
+	switch kind {
+	case OpClose, OpOpen, OpReplace, OpRestore:
+		return "backup_operations"
+	default:
+		return "operations"
+	}
+}
+
 func scanOperation(r scanner) (op Operation, err error) {
 	err = r.Scan(&op.ID, &op.Host, &op.Account, &op.Kind, &op.Step, &op.Status, &op.Generation,
 		&op.Target.Type, &op.Target.RootGB, &op.Target.DataGB, &op.ResumeState, &op.Error, &op.Attempts,
@@ -23,11 +39,11 @@ func scanOperation(r scanner) (op Operation, err error) {
 }
 
 func getOperation(q query, id string) (Operation, error) {
-	return scanOperation(q.row(operationSelect+" WHERE id = ?", id))
+	return scanOperation(q.row(operationSelect+" WHERE id = ? UNION ALL "+backupOperationSelect+" WHERE id = ?", id, id))
 }
 
 func saveOperation(q query, op Operation) error {
-	return q.exec(`UPDATE operations SET step = ?, status = ?, generation = ?, error = ?, attempts = ?,
+	return q.exec(`UPDATE `+operationTable(op.Kind)+` SET step = ?, status = ?, generation = ?, error = ?, attempts = ?,
 		step_started = ?, next_try = ?, finished = ?, caller_user = ?, caller_email = ?, caller_request = ? WHERE id = ?`,
 		op.Step, op.Status, op.Generation, op.Error, op.Attempts, op.StepStarted.Unix(), op.NextTry.Unix(),
 		op.Finished.Unix(), op.Caller.UserID, op.Caller.Email, op.Caller.RequestID, op.ID)
@@ -43,12 +59,28 @@ func (s *Store) newOperation(q query, op Operation, stamp time.Time) (Operation,
 		}
 		op.ID = "op_" + hex.EncodeToString(buf[:])
 		var id string
-		err := q.row(`INSERT INTO operations (`+operationFields+`) VALUES
-			(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-			ON CONFLICT (id) DO NOTHING RETURNING id`, op.ID, op.Host, op.Account, op.Kind, op.Step, op.Status,
-			op.Generation, op.Target.Type, op.Target.RootGB, op.Target.DataGB, op.ResumeState, op.Error, op.Attempts,
+		fields := operationFields
+		values := "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+		args := []any{op.ID, op.Host, op.Account, op.Kind, op.Step, op.Status, op.Generation,
+			op.Target.Type, op.Target.RootGB, op.Target.DataGB, op.ResumeState, op.Error, op.Attempts,
 			op.Started.Unix(), op.StepStarted.Unix(), op.NextTry.Unix(), op.Finished.Unix(), op.Supersedes,
-			op.Caller.UserID, op.Caller.Email, op.Caller.RequestID).Scan(&id)
+			op.Caller.UserID, op.Caller.Email, op.Caller.RequestID}
+		other := "backup_operations"
+		if operationTable(op.Kind) == "backup_operations" {
+			fields += ", host_seq"
+			values = values[:len(values)-1] + ", (SELECT seq FROM hosts WHERE name = ?))"
+			args = append(args, op.Host)
+			other = "operations"
+		}
+		var collision bool
+		if err := q.row("SELECT EXISTS (SELECT 1 FROM "+other+" WHERE id = ?)", op.ID).Scan(&collision); err != nil {
+			return Operation{}, err
+		}
+		if collision {
+			continue
+		}
+		err := q.row("INSERT INTO "+operationTable(op.Kind)+" ("+fields+") VALUES "+values+
+			" ON CONFLICT (id) DO NOTHING RETURNING id", args...).Scan(&id)
 		if !errors.Is(err, sql.ErrNoRows) {
 			return op, err
 		}
@@ -64,15 +96,18 @@ func (s *recordReader) Operation(ctx context.Context, id string) (Operation, err
 // OperationsOf reads a page of one host's operations.
 func (s *recordReader) OperationsOf(ctx context.Context, host, after string, limit int) ([]Operation, error) {
 	return read(ctx, s, host != "" && validLimit(limit), func(q query) ([]Operation, error) {
-		return collect(q, scanOperation, operationSelect+" WHERE host = ? AND id > ? ORDER BY id LIMIT ?", host, after, limit)
+		return collect(q, scanOperation, operationSelect+" WHERE host = ? AND id > ? UNION ALL "+
+			backupOperationSelect+" WHERE host_seq = (SELECT seq FROM hosts WHERE name = ?) AND id > ? ORDER BY id LIMIT ?",
+			host, after, host, after, limit)
 	})
 }
 
 // Runnable reads a page of operations due at now.
 func (s *recordReader) Runnable(ctx context.Context, now time.Time, after string, limit int) ([]Operation, error) {
 	return read(ctx, s, validLimit(limit), func(q query) ([]Operation, error) {
-		return collect(q, scanOperation, operationSelect+" WHERE status = ? AND id > ? AND next_try <= ? ORDER BY id LIMIT ?",
-			OpRunning, after, now.Unix(), limit)
+		return collect(q, scanOperation, operationSelect+" WHERE status = ? AND id > ? AND next_try <= ? UNION ALL "+
+			backupOperationSelect+" WHERE status = ? AND id > ? AND next_try <= ? ORDER BY id LIMIT ?",
+			OpRunning, after, now.Unix(), OpRunning, after, now.Unix(), limit)
 	})
 }
 
@@ -82,7 +117,11 @@ func (s *recordReader) NextTry(ctx context.Context) (time.Time, error) {
 		err = q.row(`SELECT next_try FROM (
 			SELECT min(next_try) AS next_try FROM operations WHERE status = ?
 			UNION ALL
+			SELECT min(next_try) AS next_try FROM backup_operations WHERE status = 'running'
+			UNION ALL
 			SELECT min(next_try) AS next_try FROM kept_volumes WHERE state = 'deleting'
+			UNION ALL
+			SELECT min(next_try) AS next_try FROM backups_deletes WHERE state = 'deleting'
 		) WHERE next_try IS NOT NULL ORDER BY next_try LIMIT 1`, OpRunning).Scan(storedTime{&next})
 		if errors.Is(err, sql.ErrNoRows) {
 			err = nil
@@ -158,7 +197,15 @@ func assign[T comparable](dest *T, src T) {
 	}
 }
 
-func applyHost(w *writing, h *Host, u Update) error {
+func applyHost(w *writing, h *Host, op Operation, u Update, stamp time.Time) error {
+	if u.HostState != "" && (op.Kind != OpReplace || u.HostState != HostRestoring && u.HostState != HostReplacing) {
+		return ErrUnreachable
+	}
+	if op.Kind == OpReplace && u.DataVolume != "" && h.DataVolume != "" && h.DataVolume != u.DataVolume {
+		if err := recordReplacedVolume(w.query, *h, stamp); err != nil {
+			return err
+		}
+	}
 	if u.InstanceID != "" && u.InstanceID != h.InstanceID {
 		var taken bool
 		if err := w.row("SELECT EXISTS (SELECT 1 FROM hosts WHERE instance_id = ? AND name <> ? AND state <> ?)",
@@ -180,9 +227,10 @@ func applyHost(w *writing, h *Host, u Update) error {
 	assign(&h.Type, u.Type)
 	assign(&h.RootGB, u.RootGB)
 	assign(&h.DataGB, u.DataGB)
+	assign(&h.State, u.HostState)
 	if h.InstanceID == before.InstanceID && h.RootVolume == before.RootVolume && h.DataVolume == before.DataVolume &&
 		h.AllocationID == before.AllocationID && h.AssociationID == before.AssociationID && h.EIP == before.EIP &&
-		h.AZ == before.AZ && h.Type == before.Type && h.RootGB == before.RootGB && h.DataGB == before.DataGB {
+		h.AZ == before.AZ && h.Type == before.Type && h.RootGB == before.RootGB && h.DataGB == before.DataGB && h.State == before.State {
 		return nil
 	}
 	if h.DataVolume != before.DataVolume || h.RootGB != before.RootGB || h.DataGB != before.DataGB {
@@ -190,8 +238,8 @@ func applyHost(w *writing, h *Host, u Update) error {
 		w.noteVersionChange(h.Name)
 	}
 	return w.exec(`UPDATE hosts SET instance_id = ?, root_volume = ?, data_volume = ?, allocation_id = ?, association_id = ?,
-		eip = ?, az = ?, instance_type = ?, root_gb = ?, data_gb = ?, version = ? WHERE name = ?`,
-		h.InstanceID, h.RootVolume, h.DataVolume, h.AllocationID, h.AssociationID, h.EIP, h.AZ, h.Type, h.RootGB, h.DataGB, h.Version, h.Name)
+		eip = ?, az = ?, instance_type = ?, root_gb = ?, data_gb = ?, version = ?, state = ? WHERE name = ?`,
+		h.InstanceID, h.RootVolume, h.DataVolume, h.AllocationID, h.AssociationID, h.EIP, h.AZ, h.Type, h.RootGB, h.DataGB, h.Version, h.State, h.Name)
 }
 
 func applyOperation(op *Operation, u Update, stamp time.Time) {
@@ -203,15 +251,19 @@ func applyOperation(op *Operation, u Update, stamp time.Time) {
 // Advance applies an engine checkpoint and its learned host fields.
 func (s *Store) Advance(ctx context.Context, opID string, u Update) error {
 	return modifyOperation(ctx, s, opID, u.Generation >= 0 && u.RootGB >= 0 && u.DataGB >= 0, func(w *writing, op *Operation) error {
-		applyOperation(op, u, s.stamp())
+		stamp := s.stamp()
+		applyOperation(op, u, stamp)
 		if transitional[op.Kind] == "" {
+			if u.HostState != "" {
+				return ErrUnreachable
+			}
 			return nil
 		}
 		h, err := getHost(w.query, op.Host)
 		if err != nil {
 			return err
 		}
-		return applyHost(w, &h, u)
+		return applyHost(w, &h, *op, u, stamp)
 	})
 }
 
@@ -224,6 +276,8 @@ func (s *Store) Fail(ctx context.Context, opID, reason string) error {
 			return w.exec("UPDATE accounts SET state = ?, reason = ? WHERE slug = ?", AccountFailed, reason, op.Account)
 		case OpUnplace:
 			return nil
+		case OpRestore:
+			return w.exec("UPDATE restores SET state = 'failed' WHERE id = ? AND state = 'pending'", op.ID)
 		default:
 			return w.exec("UPDATE hosts SET state = ?, reason = ? WHERE name = ?", HostFailed, reason, op.Host)
 		}
@@ -244,21 +298,40 @@ func FinishWithRemoved(ctx context.Context, s *Store, opID string, u Update) ([]
 		stamp := s.stamp()
 		applyOperation(op, u, stamp)
 		op.Status, op.Finished = OpDone, stamp
+		if u.HostState != "" && op.Kind != OpReplace {
+			return ErrUnreachable
+		}
 		switch op.Kind {
+		case OpRestore:
+			return nil
 		case OpPlace:
 			return w.exec("UPDATE accounts SET state = ? WHERE slug = ?", AccountActive, op.Account)
 		case OpUnplace:
-			return purgeAccount(w.query, op.Account)
+			return purgeAccount(w.query, op.Account, stamp)
 		}
 		h, err := getHost(w.query, op.Host)
 		if err != nil {
 			return err
 		}
-		if err := applyHost(w, &h, u); err != nil {
+		if err := applyHost(w, &h, *op, u, stamp); err != nil {
 			return err
 		}
+		if op.Kind == OpReplace {
+			withheld, err := backupReplacementWithheld(w.query, op.ID)
+			if err != nil {
+				return err
+			}
+			if withheld {
+				return ErrConflict
+			}
+		}
 		switch op.Kind {
-		case OpCreate, OpStart:
+		case OpClose:
+			if err := setClose(w.query, h, stamp); err != nil {
+				return err
+			}
+			h.State = HostRunning
+		case OpCreate, OpStart, OpOpen, OpReplace:
 			h.State = HostRunning
 		case OpStop:
 			h.State = HostStopped
@@ -302,7 +375,7 @@ func deleteHostAccounts(q query, name string, stamp time.Time) ([]Operation, err
 			return nil, err
 		}
 		removed = append(removed, op)
-		if err := purgeAccount(q, a.Slug); err != nil {
+		if err := purgeAccount(q, a.Slug, stamp); err != nil {
 			return nil, err
 		}
 	}

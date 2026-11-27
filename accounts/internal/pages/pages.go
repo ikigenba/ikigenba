@@ -48,14 +48,26 @@ func Handler(cfg Config) http.Handler {
 			}
 			cfg.Pages.Write(w, r, http.StatusOK, "tools", ToolsData{Banner: banner, Tools: rows})
 		case "/about":
-			banner.Trail = []page.Level{AboutLevel}
-			cfg.Pages.Write(w, r, http.StatusOK, "about", AboutData{
-				Banner: banner, Description: Description, DefaultType: valid.DefaultType,
-				DefaultRootGB: valid.DefaultRootGB, DefaultDataGB: valid.DefaultDataGB,
-			})
+			about(w, r, cfg, banner)
 		default:
 			hostDetail(w, r, cfg, banner, host, notFound)
 		}
+	})
+}
+
+func about(w http.ResponseWriter, r *http.Request, cfg Config, banner page.Banner) {
+	settings, err := cfg.Store.BackupSettings(r.Context())
+	if err != nil {
+		refusal(w, r, store.Unreachable)
+		return
+	}
+	banner.Trail = []page.Level{AboutLevel}
+	cfg.Pages.Write(w, r, http.StatusOK, "about", AboutData{
+		Banner: banner, Description: Description, DefaultType: valid.DefaultType,
+		DefaultRootGB: valid.DefaultRootGB, DefaultDataGB: valid.DefaultDataGB,
+		BackupEveryMinutes: settings.EveryMinutes, BackupHourly: settings.Hourly,
+		BackupDaily: settings.Daily, BackupMonthly: settings.Monthly, BackupWindowDays: settings.WindowDays,
+		BackupFilesStaleMinutes: settings.FilesStaleMinutes, BackupDatabaseStaleMinutes: settings.DatabaseStaleMinutes,
 	})
 }
 
@@ -70,14 +82,18 @@ func landing(w http.ResponseWriter, r *http.Request, cfg Config, banner page.Ban
 		notFound()
 		return
 	}
-	var hosts []store.Host
+	data.Domain = cfg.Domain
 	var volumes []store.KeptVolume
-	var accounts []store.Account
 	var users []store.User
 	var hw, vw, aw, uw window
 	ctx := r.Context()
 	err := store.ReadSnapshot(ctx, cfg.Store, func(snapshot *store.Snapshot) error {
-		var err error
+		settings, err := snapshot.BackupSettings(ctx)
+		if err != nil {
+			return err
+		}
+		var hosts []store.Host
+		var accounts []store.Account
 		hosts, hw, err = hostListing(snapshot).read(ctx, positions.hosts, positions.hostSeq)
 		if err != nil {
 			return err
@@ -91,7 +107,10 @@ func landing(w http.ResponseWriter, r *http.Request, cfg Config, banner page.Ban
 			return err
 		}
 		users, uw, err = userListing(snapshot).read(ctx, positions.users, userKey{positions.userAccount, positions.userName})
-		return err
+		if err != nil || hw.underflow || vw.underflow || aw.underflow || uw.underflow {
+			return err
+		}
+		return landingBackupRows(ctx, snapshot, &data, hosts, accounts, settings, cfg.Now())
 	})
 	if err != nil {
 		refusal(w, r, store.Unreachable)
@@ -101,19 +120,9 @@ func landing(w http.ResponseWriter, r *http.Request, cfg Config, banner page.Ban
 		redirect(w, http.StatusSeeOther, canonicalLanding(hw, aw, uw, vw))
 		return
 	}
-	data.Domain = cfg.Domain
-	data.Hosts = make([]HostRow, 0, len(hosts))
-	now := cfg.Now()
-	for _, h := range hosts {
-		data.Hosts = append(data.Hosts, hostRow(h, cfg.Domain, now))
-	}
 	data.KeptVolumes = make([]KeptVolumeRow, 0, len(volumes))
 	for _, v := range volumes {
 		data.KeptVolumes = append(data.KeptVolumes, keptVolumeRow(v))
-	}
-	data.Accounts = make([]AccountRow, 0, len(accounts))
-	for _, a := range accounts {
-		data.Accounts = append(data.Accounts, accountRow(a, cfg.Domain))
 	}
 	data.Users = make([]UserRow, 0, len(users))
 	for _, u := range users {
@@ -131,17 +140,36 @@ func hostDetail(w http.ResponseWriter, r *http.Request, cfg Config, banner page.
 		notFound()
 		return
 	}
-	var h store.Host
-	var report *store.Report
+	data := HostData{Banner: banner}
 	ctx := r.Context()
 	err := store.ReadSnapshot(ctx, cfg.Store, func(snapshot *store.Snapshot) error {
-		var err error
-		h, err = snapshot.Host(ctx, name)
+		h, err := snapshot.Host(ctx, name)
 		if err != nil {
 			return err
 		}
-		report, err = snapshot.Report(ctx, name)
-		return err
+		report, err := snapshot.Report(ctx, name)
+		if err != nil {
+			return err
+		}
+		settings, err := snapshot.BackupSettings(ctx)
+		if err != nil {
+			return err
+		}
+		facts, err := snapshot.BackupsOn(ctx, name)
+		if err != nil {
+			return err
+		}
+		restores, total, err := snapshot.RestoresOn(ctx, name, MaxRestoreRows)
+		if err != nil {
+			return err
+		}
+		now := cfg.Now()
+		data.Banner.Trail = []page.Level{HostLevel(h.Name)}
+		data.Host = hostView(h, cfg.Domain, now, flaggedBackups(facts, settings, now))
+		data.Report = reportView(report, h.Version)
+		data.Backups, data.DatabaseCount = backupRows(facts, report, settings, now)
+		data.Restores, data.RestoreTotal = restoreRows(restores), total
+		return nil
 	})
 	if errors.Is(err, store.ErrNotFound) {
 		notFound()
@@ -151,8 +179,7 @@ func hostDetail(w http.ResponseWriter, r *http.Request, cfg Config, banner page.
 		refusal(w, r, store.Unreachable)
 		return
 	}
-	banner.Trail = []page.Level{HostLevel(h.Name)}
-	cfg.Pages.Write(w, r, http.StatusOK, "host", HostData{Banner: banner, Host: hostView(h, cfg.Domain, cfg.Now()), Report: reportView(report, h.Version)})
+	cfg.Pages.Write(w, r, http.StatusOK, "host", data)
 }
 
 func redirect(w http.ResponseWriter, status int, location string) {

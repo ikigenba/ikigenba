@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/accounts"
+	"github.com/ikigenba/ikigenba/accounts/internal/access"
 	"github.com/ikigenba/ikigenba/accounts/internal/box"
 	"github.com/ikigenba/ikigenba/accounts/internal/boxmcp"
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
@@ -38,37 +39,52 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
 
-func TestWatchAndRestartLoop(t *testing.T) {
-	// R-R2AD-AZ4L R-XT9N-QE7C
+func TestSimulatorContract(t *testing.T) {
+	// R-D4SI-8O3L
 	const (
-		_ int64  = MaxBanFileBytes
-		_ uint64 = MaxBanFileBytes
-		_ int64  = MaxSocketPath
-		_ uint64 = MaxSocketPath
+		_ time.Duration = WatchInterval
+		_ time.Duration = ApplyDelay
+		_ string        = SocketList
+		_ string        = StatusServed
+		_ string        = StatusTooLong
+		_ string        = StatusFailed
+		_ int64         = MaxBanFileBytes
+		_ uint64        = MaxBanFileBytes
+		_ int64         = MaxBackupFileBytes
+		_ uint64        = MaxBackupFileBytes
+		_ int64         = MaxSocketPath
+		_ uint64        = MaxSocketPath
 	)
 	var _ = struct {
-		Cloud    *memory.Cloud
-		Handler  http.Handler
-		Binding  string
-		Digest   func() string
-		Now      func() time.Time
-		Sleep    func(context.Context, time.Duration)
-		After    func(time.Duration) <-chan time.Time
-		BanFile  string
-		BoxDir   string
-		SeedFile string
+		Cloud      *memory.Cloud
+		Handler    http.Handler
+		Binding    string
+		Digest     func() string
+		Now        func() time.Time
+		Sleep      func(context.Context, time.Duration)
+		After      func(time.Duration) <-chan time.Time
+		BanFile    string
+		BoxDir     string
+		SeedFile   string
+		BackupFile string
 	}(Config{})
+	_ = [1]func(Config) *Sim{New}
+	_ = [1]func(*Sim, context.Context) error{(*Sim).Run}
 	for _, field := range reflect.VisibleFields(reflect.TypeFor[Sim]()) {
 		if field.IsExported() {
 			t.Errorf("Sim exports field %s", field.Name)
 		}
 	}
-	if WatchInterval != 2*time.Second || ApplyDelay != 3*time.Second || MaxBanFileBytes != 64<<10 || MaxSocketPath != 107 {
-		t.Fatalf("WatchInterval = %v, ApplyDelay = %v, MaxBanFileBytes = %d, MaxSocketPath = %d", WatchInterval, ApplyDelay, MaxBanFileBytes, MaxSocketPath)
+	if WatchInterval != 2*time.Second || ApplyDelay != 3*time.Second || MaxBanFileBytes != 64<<10 || MaxBackupFileBytes != 64<<10 || MaxSocketPath != 107 {
+		t.Fatalf("WatchInterval = %v, ApplyDelay = %v, MaxBanFileBytes = %d, MaxBackupFileBytes = %d, MaxSocketPath = %d", WatchInterval, ApplyDelay, MaxBanFileBytes, MaxBackupFileBytes, MaxSocketPath)
 	}
 	if SocketList != "sockets.txt" || StatusServed != "served" || StatusTooLong != "too-long" || StatusFailed != "failed" {
 		t.Fatalf("socket listing contract = %q, %q, %q, %q", SocketList, StatusServed, StatusTooLong, StatusFailed)
 	}
+}
+
+func TestWatchAndRestartLoop(t *testing.T) {
+	// R-D60E-MFUA
 	clock := &simClock{}
 	c, i := sandboxCloud(t, clock)
 	started, canceled := make(chan string, 8), make(chan string, 8)
@@ -113,8 +129,9 @@ func TestWatchAndRestartLoop(t *testing.T) {
 	})
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	s := New(Config{c, h, expectedBinding, func() string { return "sandbox-digest" }, clock.now,
-		func(ctx context.Context, _ time.Duration) { <-ctx.Done() }, watchTimer(t, watches), "", "", "",
+	s := New(Config{
+		Cloud: c, Handler: h, Binding: expectedBinding, Digest: func() string { return "sandbox-digest" }, Now: clock.now,
+		Sleep: func(ctx context.Context, _ time.Duration) { <-ctx.Done() }, After: watchTimer(t, watches),
 	})
 	done := make(chan error, 1)
 	go func() { done <- s.Run(ctx) }()
@@ -209,7 +226,7 @@ func TestNoStartWhenCanceledAndWaitForLoops(t *testing.T) {
 }
 
 func TestDesiredChangeReachesApplied(t *testing.T) {
-	// R-VEXD-3XPG and the real-loop wiring of R-XT9N-QE7C.
+	// R-VEXD-3XPG and the real-loop wiring of R-D60E-MFUA.
 	t.Setenv(services.Variable, "")
 	ctx := t.Context()
 	clock := &simClock{}
@@ -254,6 +271,7 @@ func TestDesiredChangeReachesApplied(t *testing.T) {
 	ds, err := daemonapi.New(ctx, daemonapi.Config{
 		Store: st, Verifier: verifier, Binary: binary, Telemetry: w, Now: clock.now, Configured: true,
 		BoxUser: boxUser, BoxAdmin: boxAdmin,
+		Hosts: hosts, Access: access.New(access.Config{STS: c, Hosts: hosts, Now: clock.now}),
 		After: func(d time.Duration) <-chan time.Time {
 			if d != protocol.LongPoll {
 				t.Errorf("long poll duration = %v", d)
@@ -296,16 +314,28 @@ func TestDesiredChangeReachesApplied(t *testing.T) {
 	}
 	applies := make(chan pause, 4)
 	watches := make(chan chan time.Time, 4)
+	streams, backups := make(chan chan time.Time, 2), make(chan chan time.Time, 2)
 	banFile := filepath.Join(dir, "drop")
+	backupFile := filepath.Join(dir, "sandbox-backups")
 	boxDir := filepath.Join(shortTempDir(t), "box")
 	const initialBan = "192.0.2.76"
 	must(t, os.WriteFile(banFile, []byte(host.Name+" "+initialBan+"\n"), 0600))
 	s := New(Config{Cloud: c, Handler: observed, Binding: binding, Digest: ds.Digest, Now: clock.now, After: func(d time.Duration) <-chan time.Time {
-		if d == daemon.BoxTimeout {
+		switch d {
+		case daemon.BoxTimeout:
 			return make(chan time.Time)
+		case daemon.StreamTick, daemon.BackupTick:
+			tick := make(chan time.Time, 1)
+			if d == daemon.StreamTick {
+				streams <- tick
+			} else {
+				backups <- tick
+			}
+			return tick
+		default:
+			return watchTimer(t, watches)(d)
 		}
-		return watchTimer(t, watches)(d)
-	}, BanFile: banFile, BoxDir: boxDir,
+	}, BanFile: banFile, BackupFile: backupFile, BoxDir: boxDir,
 		Sleep: func(ctx context.Context, d time.Duration) {
 			if d != ApplyDelay {
 				clock.advance(d)
@@ -332,7 +362,7 @@ func TestDesiredChangeReachesApplied(t *testing.T) {
 		close(p.proceed)
 		return appliedAt
 	}
-	// R-7Y5B-L74L. Collect both initial reports after the first look has run.
+	// R-D78B-07KZ. Collect both initial reports after the first look has run.
 	watch := await(t, watches)
 	assertNoBanFile(t, banFile)
 	finishApply(await(t, applies))
@@ -393,7 +423,7 @@ func TestDesiredChangeReachesApplied(t *testing.T) {
 		return r.Body
 	}
 
-	// R-7Y5B-L74L
+	// R-D78B-07KZ
 	const allowed = "198.51.100.0/24"
 	const banned = "192.0.2.77"
 	clock.advance(machine.MemoryBanTime)
@@ -432,7 +462,7 @@ func TestDesiredChangeReachesApplied(t *testing.T) {
 		t.Fatalf("drop for allowlisted address %s caused bans %+v", covered, r.Bans)
 	}
 
-	// R-7ZD7-YYVA
+	// R-D8G7-DZBO
 	for range 2 {
 		nextLook()
 		assertNoBanFile(t, banFile)
@@ -477,7 +507,7 @@ func TestDesiredChangeReachesApplied(t *testing.T) {
 	must(t, err)
 	finishApply(await(t, applies))
 	await(t, reports)
-	await(t, polls)
+	poll = await(t, polls)
 	if r := readReport(host.Name).Body; r.Applied != user.Version {
 		t.Fatalf("report applied version = %d, want %d", r.Applied, user.Version)
 	}
@@ -505,6 +535,9 @@ func TestDesiredChangeReachesApplied(t *testing.T) {
 	if strings.Count(response, "\n") != 1 || result.ID != 1 || len(result.Result) == 0 {
 		t.Fatalf("stdio did not relay the handler's result: %q", response)
 	}
+	checkBackupDrops(t, backupFile, clock, c, streams, backups, nextLook, func() protocol.Report {
+		return nextReport(host.Name, &poll)
+	})
 }
 
 func assertNoBanFile(t *testing.T, path string) {

@@ -17,42 +17,99 @@ func (s *recordReader) Desired(ctx context.Context, host string) (protocol.Desir
 		if err != nil {
 			return protocol.DesiredState{}, err
 		}
-		as, err := hostAccounts(q, host)
-		if err != nil {
-			return protocol.DesiredState{}, err
-		}
-		us, err := usersWithKeys(q, userSelect+" WHERE a.host = ? ORDER BY u.name", host)
-		if err != nil {
-			return protocol.DesiredState{}, err
-		}
 		unban, err := collect(q, scanString, "SELECT address FROM host_unbans WHERE host = ? ORDER BY address", host)
 		if err != nil {
 			return protocol.DesiredState{}, err
 		}
 		d := protocol.DesiredState{Protocol: protocol.Version, Host: h.Name, Version: h.Version,
 			DataVolume: h.DataVolume, RootGB: h.RootGB, DataGB: h.DataGB,
-			Allowlist: h.Allowlist, Unban: unban,
-			Accounts: make([]protocol.Account, 0, len(as)), Users: make([]protocol.User, 0, len(us))}
-		for _, a := range as {
-			state := protocol.AccountActive
-			if a.State == AccountRemoving {
-				state = protocol.AccountRemoved
-			}
-			d.Accounts = append(d.Accounts, protocol.Account{Slug: a.Slug, GID: a.GID, State: state})
+			Allowlist: h.Allowlist, Unban: unban, Accounts: []protocol.Account{}, Users: []protocol.User{}}
+		d.Backup = &protocol.Backup{HostPrefix: protocol.HostPrefix(h.Name, h.Seq)}
+		d.Backup.Restores, err = pendingRestores(q, h)
+		if err != nil {
+			return protocol.DesiredState{}, err
 		}
-		for _, u := range us {
-			state := u.State
-			if u.State == UserRemoving {
-				state = protocol.UserDeleted
+		current, err := getOperation(q, h.Operation)
+		if err != nil {
+			return protocol.DesiredState{}, err
+		}
+		if current.Kind == OpClose && current.Status == OpRunning {
+			d.Backup.Close = current.ID
+		}
+		if h.Replace != "" {
+			replacement, err := getReplacement(q, current.ID)
+			if err != nil {
+				return protocol.DesiredState{}, err
 			}
-			keys := make([]string, 0, len(u.Keys))
-			for _, k := range u.Keys {
-				keys = append(keys, k.Line)
+			if replacement.Retired && !replacement.Admitted {
+				if replacement.Mode == ReplaceBackup {
+					d.Backup.Restore, err = desiredHostRestore(q, h, current.ID)
+				}
+				return d, err
 			}
-			d.Users = append(d.Users, protocol.User{Name: u.Name, Account: u.Account, UID: u.UID, State: state, Keys: keys})
+		}
+		if err := desiredAccountsAndUsers(q, h, &d); err != nil {
+			return protocol.DesiredState{}, err
 		}
 		return d, nil
 	})
+}
+
+func desiredAccountsAndUsers(q query, h Host, d *protocol.DesiredState) error {
+	accounts, err := hostAccounts(q, h.Name)
+	if err != nil {
+		return err
+	}
+	users, err := usersWithKeys(q, userSelect+" WHERE a.host = ? ORDER BY u.name", h.Name)
+	if err != nil {
+		return err
+	}
+	locked, err := lockedOver(q, h)
+	if err != nil {
+		return err
+	}
+	for _, a := range accounts {
+		state := protocol.AccountActive
+		if a.State == AccountRemoving {
+			state = protocol.AccountRemoved
+		}
+		d.Accounts = append(d.Accounts, protocol.Account{Slug: a.Slug, GID: a.GID, State: state})
+	}
+	for _, u := range users {
+		state := u.State
+		switch {
+		case u.State == UserRemoving:
+			state = protocol.UserDeleted
+		case locked && u.State == UserActive:
+			state = protocol.UserLocked
+		}
+		keys := make([]string, 0, len(u.Keys))
+		for _, k := range u.Keys {
+			keys = append(keys, k.Line)
+		}
+		d.Users = append(d.Users, protocol.User{Name: u.Name, Account: u.Account, UID: u.UID, State: state, Keys: keys})
+	}
+	return nil
+}
+
+func desiredHostRestore(q query, h Host, opID string) (*protocol.HostRestore, error) {
+	accounts, err := hostAccounts(q, h.Name)
+	if err != nil {
+		return nil, err
+	}
+	r := &protocol.HostRestore{ID: opID, Accounts: make([]protocol.RestoreAccount, 0, len(accounts))}
+	for _, a := range accounts {
+		if a.State == AccountRemoving {
+			continue
+		}
+		paths, err := collect(q, scanString, "SELECT path FROM restore_databases WHERE operation_id = ? AND account = ? ORDER BY path",
+			opID, a.Slug)
+		if err != nil {
+			return nil, err
+		}
+		r.Accounts = append(r.Accounts, protocol.RestoreAccount{Slug: a.Slug, GID: a.GID, Databases: paths})
+	}
+	return r, nil
 }
 
 func reportSignIns(q query, h Host, entries []protocol.SignIn, now time.Time) ([]protocol.SignIn, error) {
@@ -134,6 +191,53 @@ func foldReport(h *Host, r protocol.Report, now time.Time) Transition {
 	return tr
 }
 
+func recordBackupReport(q query, h Host, r *protocol.Report) error {
+	op, err := getOperation(q, h.Operation)
+	if err != nil {
+		return err
+	}
+	closeRunning := op.Kind == OpClose && op.Status == OpRunning
+	replaceRunning := op.Kind == OpReplace && op.Status == OpRunning
+	if closeRunning || replaceRunning {
+		step := r.HostBackup.Final
+		if replaceRunning {
+			step = r.HostBackup.Restored
+		}
+		if err := settleBackupStep(q, op.ID, "", step, r.HostBackup.Error); err != nil {
+			return err
+		}
+	}
+	var kept []protocol.AccountBackup
+	if r.Backups != nil {
+		kept = make([]protocol.AccountBackup, 0, min(len(r.Backups), protocol.MaxBackupAccounts))
+	}
+	for _, entry := range r.Backups {
+		account, err := getAccount(q, entry.Account)
+		if errors.Is(err, sql.ErrNoRows) || err == nil && account.Host != h.Name {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		kept = append(kept, entry)
+		if err := writeAccountBackup(q, account, entry, h.Reported); err != nil {
+			return err
+		}
+		if account.State == AccountRemoving || !closeRunning && !replaceRunning {
+			continue
+		}
+		step := entry.Final
+		if replaceRunning {
+			step = entry.Restored
+		}
+		if err := settleBackupStep(q, op.ID, account.Slug, step, entry.Error); err != nil {
+			return err
+		}
+	}
+	r.Backups = kept
+	return recordRestoreResults(q, h, r.Restores)
+}
+
 // RecordReport replaces the host's report and purges applied user removals and unbans.
 func (s *Store) RecordReport(ctx context.Context, host string, r protocol.Report, now time.Time) (Transition, error) {
 	valid := host != "" && len(r.SignIns) <= protocol.MaxSignIns && len(r.Slices) <= protocol.MaxSlices
@@ -149,6 +253,9 @@ func (s *Store) RecordReport(ctx context.Context, host string, r protocol.Report
 		}
 		r.Slices, err = reportSlices(w.query, host, r.Slices)
 		if err != nil {
+			return Transition{}, err
+		}
+		if err := recordBackupReport(w.query, h, &r); err != nil {
 			return Transition{}, err
 		}
 		body, err := json.Marshal(r)
@@ -179,17 +286,21 @@ func (s *recordReader) Report(ctx context.Context, host string) (*Report, error)
 		if _, err := liveHost(q, host); err != nil {
 			return nil, err
 		}
-		r := Report{Host: host}
-		var body []byte
-		err := q.row("SELECT received, body FROM reports WHERE host = ?", host).Scan(storedTime{&r.Received}, &body)
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
-		}
-		if err != nil {
-			return nil, err
-		}
-		return &r, json.Unmarshal(body, &r.Body)
+		return latestReport(q, host)
 	})
+}
+
+func latestReport(q query, host string) (*Report, error) {
+	r := Report{Host: host}
+	var body []byte
+	err := q.row("SELECT received, body FROM reports WHERE host = ?", host).Scan(storedTime{&r.Received}, &body)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &r, json.Unmarshal(body, &r.Body)
 }
 
 // Health classifies the host's last reconciliation result at now.

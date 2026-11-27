@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/accounts"
+	"github.com/ikigenba/ikigenba/accounts/internal/access"
 	"github.com/ikigenba/ikigenba/accounts/internal/box"
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud/awssdk"
@@ -169,16 +170,17 @@ func serve(ctx context.Context, p Process, ln net.Listener, s settings.Settings)
 	binding := func() (string, error) { return s.Binding(path) }
 	accountsURL := func() (string, error) { return s.AccountsURL(path) }
 	hosts := s.HostsInUse()
-	domain := hosts.Domain
 	c, mc, err := openCloud(ctx, p, s, rnd)
 	if err != nil {
 		diagnostic(stderr, NoCloud+": "+err.Error())
-		c, mc, hosts = nil, nil, settings.Hosts{}
+		c, mc = nil, nil
 	}
 	configured := c != nil
 	binary := ""
+	var backupAccess *access.Access
 	if configured {
 		binary = daemonBinary(p.Executable)
+		backupAccess = access.New(access.Config{STS: c, Hosts: hosts, Now: p.Now})
 	}
 
 	verifier := hostauth.NewVerifier(hostauth.VerifierConfig{Region: hosts.Region, Role: hosts.InstanceProfile, Binding: binding, STS: c, Now: p.Now})
@@ -188,7 +190,10 @@ func serve(ctx context.Context, p Process, ln net.Listener, s settings.Settings)
 	box.RegisterAdmin(admin, boxConfig)
 	// A cancelled start still needs a handler so the ordinary shutdown path
 	// can close the writer. An interrupted digest simply disables the download.
-	daemonConfig := daemonapi.Config{Store: st, Verifier: verifier, Binary: binary, Telemetry: writer, Now: p.Now, Configured: configured, After: p.After, BoxUser: user, BoxAdmin: admin, Domain: domain}
+	daemonConfig := daemonapi.Config{
+		Store: st, Verifier: verifier, Binary: binary, Telemetry: writer, Now: p.Now, Configured: configured, After: p.After,
+		BoxUser: user, BoxAdmin: admin, Domain: hosts.Domain, Access: backupAccess, Hosts: hosts,
+	}
 	ds, err := daemonapi.New(ctx, daemonConfig)
 	if err != nil {
 		daemonConfig.Binary = ""
@@ -217,9 +222,10 @@ func serve(ctx context.Context, p Process, ln net.Listener, s settings.Settings)
 		b, _ := binding()
 		simulator := sim.New(sim.Config{
 			Cloud: mc, Handler: handler, Binding: b, Digest: ds.Digest, Now: p.Now, Sleep: p.Sleep, After: p.After,
-			BanFile:  filepath.Join(p.Dir, "state", "sandbox-bans"),
-			BoxDir:   filepath.Join(p.Dir, "state", "box"),
-			SeedFile: filepath.Join(p.Dir, "state", "sandbox-seeds"),
+			BanFile:    filepath.Join(p.Dir, "state", "sandbox-bans"),
+			BoxDir:     filepath.Join(p.Dir, "state", "box"),
+			SeedFile:   filepath.Join(p.Dir, "state", "sandbox-seeds"),
+			BackupFile: filepath.Join(p.Dir, "state", "sandbox-backups"),
 		})
 		background.Go(func() { _ = simulator.Run(work) })
 	}

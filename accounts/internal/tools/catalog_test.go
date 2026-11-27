@@ -63,7 +63,7 @@ func catalog() []entry {
 		entryFor[tools.HostArgs](tools.ToolStartHost, "start_host", tools.DescribeStartHost, mcp.Additive, nil, host),
 		entryFor[tools.ResizeHostArgs](tools.ToolResizeHost, "resize_host", tools.DescribeResizeHost, mcp.Additive, sizeFields, host),
 		entryFor[tools.HostArgs](tools.ToolRetryHost, "retry_host", tools.DescribeRetryHost, mcp.Additive, nil, host),
-		entryFor[tools.DeleteHostArgs](tools.ToolDeleteHost, "delete_host", tools.DescribeDeleteHost, mcp.Destructive, []string{"keep_data"}, host),
+		entryFor[tools.DeleteHostArgs](tools.ToolDeleteHost, "delete_host", tools.DescribeDeleteHost, mcp.Destructive, []string{"keep_data", "lost"}, host),
 		entryFor[tools.KeptVolumesArgs](tools.ToolKeptVolumes, "kept_volumes", tools.DescribeKeptVolumes, mcp.Read, pagingFields, nil),
 		entryFor[tools.KeptVolumeArgs](tools.ToolDeleteKeptVolume, "delete_kept_volume", tools.DescribeDeleteKeptVolume, mcp.Destructive, nil, []string{"volume"}),
 		entryFor[tools.AccountsArgs](tools.ToolAccounts, "accounts", tools.DescribeAccounts, mcp.Read, pagingFields, nil),
@@ -84,6 +84,14 @@ func catalog() []entry {
 		entryFor[tools.UnbanArgs](tools.ToolUnbanIP, "unban_ip", tools.DescribeUnbanIP, mcp.Additive, host, []string{"ip"}),
 		entryFor[tools.HostIPArgs](tools.ToolAllowIP, "allow_ip", tools.DescribeAllowIP, mcp.Additive, nil, []string{"host", "ip"}),
 		entryFor[tools.HostIPArgs](tools.ToolDisallowIP, "disallow_ip", tools.DescribeDisallowIP, mcp.Destructive, nil, []string{"host", "ip"}),
+		entryFor[tools.HostArgs](tools.ToolCloseHost, "close_host", tools.DescribeCloseHost, mcp.Additive, nil, host),
+		entryFor[tools.HostArgs](tools.ToolOpenHost, "open_host", tools.DescribeOpenHost, mcp.Additive, nil, host),
+		entryFor[tools.ReplaceHostArgs](tools.ToolReplaceHost, "replace_host", tools.DescribeReplaceHost, mcp.Destructive, sizeFields, []string{"host", "from"}),
+		entryFor[tools.BackupStatusArgs](tools.ToolBackupStatus, "backup_status", tools.DescribeBackupStatus, mcp.Read, []string{"host", "page", "limit"}, nil),
+		entryFor[tools.AccountArgs](tools.ToolRestorePoints, "restore_points", tools.DescribeRestorePoints, mcp.Read, nil, account),
+		entryFor[tools.RestoreDatabaseArgs](tools.ToolRestoreDatabase, "restore_database", tools.DescribeRestoreDatabase, mcp.Additive, nil, []string{"account", "path", "as_of"}),
+		entryFor[tools.RestoreFilesArgs](tools.ToolRestoreFiles, "restore_files", tools.DescribeRestoreFiles, mcp.Additive, []string{"user", "path"}, []string{"account", "snapshot"}),
+		entryFor[tools.AccountArgs](tools.ToolDeleteAccountBackups, "delete_account_backups", tools.DescribeDeleteAccountBackups, mcp.Destructive, nil, account),
 	}
 }
 
@@ -151,8 +159,8 @@ func checkRequired(t *testing.T, s schema) {
 	}
 }
 
-// R-51DJ-TTH0 R-YDET-CHO2 R-YEMP-Q9ER R-CL1V-ZGDI R-0M6M-CTTA R-CNHO-QZUW R-COPL-4RLL R-CTL6-NUKD R-CUT3-1MB2 R-CW0Z-FE1R R-Z7CV-COS5 R-Z8KR-QGIU R-ZDGD-9JHM R-0SA4-9OIR R-0TI0-NG9G
-// R-9O8N-SZRE R-0X5P-SRHJ R-0YDM-6J88 R-YFUM-415G R-0UPX-1805
+// R-51DJ-TTH0 R-YDET-CHO2 R-YEMP-Q9ER R-CL1V-ZGDI R-GPMX-YWDP R-CNHO-QZUW R-COPL-4RLL R-CTL6-NUKD R-CUT3-1MB2 R-CW0Z-FE1R R-Z7CV-COS5 R-Z8KR-QGIU R-ZDGD-9JHM R-0SA4-9OIR R-0TI0-NG9G
+// R-GQUU-CO4E R-GS2Q-QFV3 R-HMK8-APEG R-HNS4-OH55 R-HP01-28VU R-HQ7X-G0MJ R-HF8U-02YA R-HGGQ-DUOZ R-HHOM-RMFO R-0YDM-6J88 R-YFUM-415G R-0UPX-1805
 func TestCatalogAndSchemas(t *testing.T) {
 	const (
 		_ = tools.DescribeHosts
@@ -183,6 +191,19 @@ func TestCatalogAndSchemas(t *testing.T) {
 		_ = tools.DescribeUnbanIP
 		_ = tools.DescribeAllowIP
 		_ = tools.DescribeDisallowIP
+		_ = tools.DescribeCloseHost
+		_ = tools.DescribeOpenHost
+		_ = tools.DescribeReplaceHost
+		_ = tools.DescribeBackupStatus
+		_ = tools.DescribeRestorePoints
+		_ = tools.DescribeRestoreDatabase
+		_ = tools.DescribeRestoreFiles
+		_ = tools.DescribeDeleteAccountBackups
+		_ = tools.ArgFrom
+		_ = tools.ArgLost
+		_ = tools.ArgPath
+		_ = tools.ArgAsOf
+		_ = tools.ArgSnapshot
 	)
 	f := setup(t)
 	f.serveLoopback()
@@ -234,7 +255,6 @@ func schemaProbeClient(t *testing.T, writer *telemetry.Writer, entries []entry) 
 	return mcp.NewClient(mcp.ClientConfig{Endpoint: server.URL})
 }
 
-// R-9O8N-SZRE
 func TestMCPArgumentValidation(t *testing.T) {
 	f := setup(t)
 	f.serveLoopback()
@@ -270,7 +290,7 @@ func TestMCPArgumentValidation(t *testing.T) {
 				case "admin":
 					wrong[n] = "true"
 					assertAppkitRefusal(t, f, probe, tool.wire, wrong)
-				case "keep_data":
+				case "keep_data", "lost":
 					wrong[n] = "false"
 					assertAppkitRefusal(t, f, probe, tool.wire, wrong)
 				}
@@ -352,13 +372,17 @@ func checkInput(t *testing.T, info mcp.ToolInfo, expected entry) {
 		"page": paging.PageDescription, "limit": paging.LimitDescription,
 		"host": tools.ArgHost, "account": tools.ArgAccount, "user": tools.ArgUser, "ip": tools.ArgIP,
 		"key": tools.ArgKey, "admin": tools.ArgAdmin, "invite": tools.ArgInvite, "type": tools.ArgType, "root_gb": tools.ArgRootGB, "data_gb": tools.ArgDataGB,
-		"keep_data": tools.ArgKeepData, "volume": tools.ArgVolume,
+		"keep_data": tools.ArgKeepData, "volume": tools.ArgVolume, "lost": tools.ArgLost,
+		"from": tools.ArgFrom, "path": tools.ArgPath, "as_of": tools.ArgAsOf, "snapshot": tools.ArgSnapshot,
 	}
 	var in schema
 	if err := json.Unmarshal(info.InputSchema, &in); err != nil {
 		t.Fatal(err)
 	}
 	fields := slices.Concat(expected.required, expected.optional)
+	if expected.wire == tools.ToolRestoreFiles {
+		fields = []string{"account", "user", "path", "snapshot"}
+	}
 	if !slices.Equal(objectMembers(t, in.Properties), fields) || !slices.Equal(in.Required, expected.required) {
 		t.Fatalf("input schema %s", info.InputSchema)
 	}
@@ -372,7 +396,7 @@ func checkInput(t *testing.T, info mcp.ToolInfo, expected entry) {
 	for _, n := range fields {
 		kind := "string"
 		switch n {
-		case "admin", "keep_data":
+		case "admin", "keep_data", "lost":
 			kind = "boolean"
 		case "limit", "root_gb", "data_gb":
 			kind = "integer"
@@ -398,7 +422,7 @@ func validArgs(expected entry) map[string]any {
 			args[n] = key(1)
 		case "ip":
 			args[n] = "192.0.2.7"
-		case "admin", "keep_data":
+		case "admin", "keep_data", "lost":
 			args[n] = false
 		case "invite":
 			args[n] = store.InvitePrefix + "0000000000000000"
@@ -414,13 +438,19 @@ func validArgs(expected entry) map[string]any {
 			args[n] = valid.DefaultType
 		case "volume":
 			args[n] = "vol-example"
+		case "from":
+			args[n] = store.ReplaceBackup
+		case "path":
+			args[n] = "data/test.db"
+		case "as_of", "snapshot":
+			args[n] = "2026-10-01T00:00:00Z"
 		}
 	}
 	return args
 }
 
 // R-CDQH-OTXC R-YIAE-VKMU R-YJIB-9CDJ R-YKQ7-N448 R-YLY4-0VUX R-YN60-ENLM
-// R-0X5P-SRHJ R-0YDM-6J88
+// R-GS2Q-QFV3 R-0YDM-6J88 R-HMK8-APEG R-HNS4-OH55 R-HP01-28VU R-HQ7X-G0MJ
 func TestInputTypes(t *testing.T) {
 	t.Helper()
 	// Conversion to an anonymous struct checks the declared field names, order and types.
@@ -449,7 +479,23 @@ func TestInputTypes(t *testing.T) {
 	_ = struct {
 		Host     string
 		KeepData *bool
+		Lost     *bool
 	}(tools.DeleteHostArgs{})
+	_ = struct {
+		Host, From     string
+		Type           *string
+		RootGB, DataGB *int
+	}(tools.ReplaceHostArgs{})
+	_ = struct {
+		Host, Page *string
+		Limit      *int
+	}(tools.BackupStatusArgs{})
+	_ = struct{ Account, Path, AsOf string }(tools.RestoreDatabaseArgs{})
+	_ = struct {
+		Account    string
+		User, Path *string
+		Snapshot   string
+	}(tools.RestoreFilesArgs{})
 	_ = struct {
 		Page  *string
 		Limit *int

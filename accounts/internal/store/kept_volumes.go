@@ -9,12 +9,13 @@ import (
 )
 
 const keptVolumeFields = `volume, host, size_gb, deleted, state, reason, attempts, next_try, caller_user, caller_email, caller_request`
-const keptVolumeSelect = "SELECT " + keptVolumeFields + " FROM kept_volumes"
+const keptVolumeSelect = "SELECT " + keptVolumeFields +
+	", coalesce((SELECT cause FROM kept_causes WHERE kept_causes.volume = kept_volumes.volume), 'deleted') FROM kept_volumes"
 const keptVolumeListed = "state <> 'deleted'"
 
 func scanKeptVolume(r scanner) (v KeptVolume, err error) {
 	err = r.Scan(&v.Volume, &v.Host, &v.SizeGB, storedTime{&v.Deleted}, &v.State, &v.Reason, &v.Attempts,
-		storedTime{&v.NextTry}, &v.Caller.UserID, &v.Caller.Email, &v.Caller.RequestID)
+		storedTime{&v.NextTry}, &v.Caller.UserID, &v.Caller.Email, &v.Caller.RequestID, &v.Cause)
 	return v, err
 }
 
@@ -130,6 +131,19 @@ func recordDeletedHostVolume(q query, h Host, stamp time.Time) error {
 	}
 	return q.exec(insertKeptVolume+` VALUES (?, ?, ?, ?, ?, '', 0, ?, '', '', '') ON CONFLICT (volume) DO NOTHING`,
 		h.DataVolume, h.Name, h.DataGB, stamp.Unix(), state, time.Time{}.Unix())
+}
+
+func recordReplacedVolume(q query, h Host, stamp time.Time) error {
+	res, err := q.ExecContext(q.Context, insertKeptVolume+` VALUES (?, ?, ?, ?, 'kept', '', 0, ?, '', '', '')
+		ON CONFLICT (volume) DO NOTHING`, h.DataVolume, h.Name, h.DataGB, stamp.Unix(), time.Time{}.Unix())
+	if err != nil {
+		return err
+	}
+	count, err := res.RowsAffected()
+	if err != nil || count == 0 {
+		return err
+	}
+	return q.exec("INSERT INTO kept_causes (volume, cause) VALUES (?, ?)", h.DataVolume, CauseReplaced)
 }
 
 const adoptKeptVolume = insertKeptVolume + `

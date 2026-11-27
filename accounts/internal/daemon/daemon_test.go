@@ -42,6 +42,8 @@ type machineProbe struct {
 	apply   func(context.Context, protocol.DesiredState) error
 	inspect func(context.Context, protocol.DesiredState) (protocol.Report, error)
 	install func(context.Context, io.Reader, string) error
+	stream  func(context.Context, protocol.DesiredState) error
+	backup  func(context.Context, protocol.DesiredState) error
 }
 
 func (m machineProbe) Apply(ctx context.Context, s protocol.DesiredState) error {
@@ -63,6 +65,20 @@ func (m machineProbe) InstallDaemon(ctx context.Context, body io.Reader, digest 
 		return m.install(ctx, body, digest)
 	}
 	return m.Machine.InstallDaemon(ctx, body, digest)
+}
+
+func (m machineProbe) Stream(ctx context.Context, s protocol.DesiredState) error {
+	if m.stream != nil {
+		return m.stream(ctx, s)
+	}
+	return nil
+}
+
+func (m machineProbe) Backup(ctx context.Context, s protocol.DesiredState) error {
+	if m.backup != nil {
+		return m.backup(ctx, s)
+	}
+	return nil
 }
 
 type transportFunc func(*http.Request) (*http.Response, error)
@@ -136,7 +152,7 @@ func newScenario(t *testing.T, replies ...reply) *scenario {
 		Metadata: metadataFunc(func(context.Context) (cloud.InstanceFacts, error) {
 			return cloud.InstanceFacts{InstanceID: "i-fake", Type: "test.type", AMI: "ami-fake"}, nil
 		}),
-		Machine: s.memory,
+		Machine: machineProbe{Machine: s.memory},
 		Digest:  "my-digest",
 		Now:     func() time.Time { return s.now },
 		Sleep: func(_ context.Context, d time.Duration) {
@@ -144,6 +160,7 @@ func newScenario(t *testing.T, replies ...reply) *scenario {
 			s.now = s.now.Add(d)
 		},
 		Stderr: &s.diagnostics,
+		After:  func(time.Duration) <-chan time.Time { return nil },
 	}
 	transport := srv.Client().Transport
 	s.HTTP = &http.Client{Transport: transportFunc(func(req *http.Request) (*http.Response, error) {
@@ -267,7 +284,7 @@ func TestRunRejectsBadBaseURL(t *testing.T) {
 	}
 }
 
-// R-6GZK-0IJW R-95C2-ZTFX R-97RV-RCXB R-3UZX-Y177 R-6VMC-LRG8
+// R-6GZK-0IJW R-95C2-ZTFX R-97RV-RCXB R-8Y2T-65MG R-6VMC-LRG8
 func TestFetchFailuresBackOffWithoutChangingHost(t *testing.T) {
 	bad := reply{http.StatusOK, "partial document"}
 	noContent := reply{http.StatusNoContent, ""}
@@ -428,11 +445,11 @@ func TestSelfUpdateStreamsAndExitsBeforeApplyOrReport(t *testing.T) {
 	}
 }
 
-// R-3W7U-BSXW R-6PIU-OWQR R-6QQR-2OHG R-98ZS-54O0 R-3SK5-6HPT
+// R-8ZAP-JXD5 R-6PIU-OWQR R-6QQR-2OHG R-98ZS-54O0 R-3SK5-6HPT
 func TestCyclesReportAndUpdateFailuresBackOffIndependently(t *testing.T) {
 	ack := reply{http.StatusNoContent, ""}
 	s := newScenario(t,
-		state(1, "previous-digest"), reply{http.StatusBadGateway, ""}, reply{http.StatusBadRequest, ""},
+		state(1, "previous-digest"), reply{http.StatusOK, "update"}, reply{http.StatusBadRequest, ""},
 		state(2, "previous-digest"), reply{http.StatusOK, "invalid"}, ack,
 		state(3, "my-digest"), ack,
 		state(4, "previous-digest"), reply{http.StatusServiceUnavailable, ""}, ack,
@@ -441,6 +458,7 @@ func TestCyclesReportAndUpdateFailuresBackOffIndependently(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	applyErr := errors.New(strings.Repeat("x", protocol.MaxErrorBytes-1) + "é")
+	installErr := errors.New("cannot replace daemon\r\nfile still open")
 	var order []string
 	s.Machine = machineProbe{
 		Machine: s.memory,
@@ -465,6 +483,7 @@ func TestCyclesReportAndUpdateFailuresBackOffIndependently(t *testing.T) {
 			}
 			return facts, err
 		},
+		install: func(context.Context, io.Reader, string) error { return installErr },
 	}
 	metadata := s.Metadata
 	metadataCalls := 0
@@ -496,6 +515,11 @@ func TestCyclesReportAndUpdateFailuresBackOffIndependently(t *testing.T) {
 	wantPauses(t, s, 750*time.Millisecond, daemon.MinBackoff, time.Second, 2*daemon.MinBackoff, time.Second, time.Second,
 		time.Second, daemon.MinBackoff, time.Second)
 	wantDiagnostics(t, s, daemon.DiagUpdate, daemon.DiagReport, daemon.DiagUpdate, daemon.DiagApply, daemon.DiagUpdate, daemon.DiagApply)
+	lines := strings.Split(s.diagnostics.String(), "\n")
+	wantInstallDiagnostic := "accountsd: " + daemon.DiagUpdate + ": cannot replace daemon  file still open"
+	if lines[0] != wantInstallDiagnostic || lines[2] != wantInstallDiagnostic {
+		t.Errorf("install diagnostics = %q and %q, want %q", lines[0], lines[2], wantInstallDiagnostic)
+	}
 	if want := slices.Repeat([]string{"apply", "inspect", "metadata", "report"}, 5); !slices.Equal(order, want) {
 		t.Errorf("calls = %v, want %v", order, want)
 	}
@@ -526,12 +550,12 @@ func TestCyclesReportAndUpdateFailuresBackOffIndependently(t *testing.T) {
 			t.Errorf("report %d applied = %d, want %d", i, got, applied)
 		}
 	}
-	if s.reports[0].Error == "" || s.reports[2].Error != "" || s.reports[3].Error == "" || s.reports[4].Error != truncated {
+	if s.reports[0].Error != installErr.Error() || s.reports[2].Error != "" || s.reports[3].Error == "" || s.reports[4].Error != truncated {
 		t.Error("reports did not carry the update/apply errors in their respective cycles")
 	}
 }
 
-// R-3W7U-BSXW R-6QQR-2OHG R-98ZS-54O0
+// R-8ZAP-JXD5 R-6QQR-2OHG R-98ZS-54O0
 func TestTransportFailuresAndInitiallyUnappliedState(t *testing.T) {
 	s := newScenario(t, state(7, "another"), state(8, "my-digest"), reply{http.StatusNoContent, ""})
 	ctx, cancel := context.WithCancel(t.Context())
@@ -654,7 +678,7 @@ func TestSigningAcrossSecondBoundaryStillAvoidsReplay(t *testing.T) {
 	}
 }
 
-// R-3W7U-BSXW
+// R-8ZAP-JXD5
 func TestUpdateFailuresCapTheirBackoff(t *testing.T) {
 	var replies []reply
 	const cycles = 6

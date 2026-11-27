@@ -27,7 +27,7 @@ import (
 var _ machine.Machine = (*linux.Host)(nil)
 
 func TestLinuxSeam(t *testing.T) {
-	// R-SABI-JHU5 R-BNWV-O81H R-BP4S-1ZS6 R-BQCO-FRIV
+	// R-XUKR-ZUNU R-BNWV-O81H R-BP4S-1ZS6 R-BQCO-FRIV
 	var host machine.Machine = linux.New(linux.Env{
 		Root:    t.TempDir(),
 		Execute: func(context.Context, linux.Command) (linux.Result, error) { return linux.Result{}, nil },
@@ -114,7 +114,7 @@ exit 19
 }
 
 func TestExecUsesFixedPath(t *testing.T) {
-	// R-AWMT-N6LM
+	// R-XVSO-DMEJ
 	dir := t.TempDir()
 	root, err := os.OpenRoot(dir)
 	if err != nil {
@@ -137,6 +137,18 @@ printf '%s\n' "$PATH"
 		t.Fatal(err)
 	}
 	const want = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin\n"
+	envScript := filepath.Join(dir, "environment.sh")
+	const envBody = "printf '%s\\n' \"$PATH\" \"$ACCOUNTSD_EXEC_TEST\" \"$ACCOUNTSD_ADDED\"\n"
+	if err := os.WriteFile(envScript, []byte(envBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := linux.Exec(t.Context(), linux.Command{
+		Name: "/bin/sh", Args: []string{envScript},
+		Env: []string{"ACCOUNTSD_EXEC_TEST=first", "ACCOUNTSD_EXEC_TEST=last", "ACCOUNTSD_ADDED=added"},
+	})
+	if err != nil || result.ExitCode != 0 || string(result.Stdout) != want+"last\nadded\n" {
+		t.Fatalf("Exec environment probe = %+v, %v", result, err)
+	}
 	for _, callerPath := range []string{dir, ""} {
 		t.Setenv("PATH", callerPath)
 		if got, err := linux.Exec(t.Context(), linux.Command{Name: name, Args: []string{marker}}); err == nil {
@@ -150,6 +162,14 @@ printf '%s\n' "$PATH"
 			t.Fatalf("Exec with caller PATH %q returned PATH %q, status %d, error %v", callerPath, got.Stdout, got.ExitCode, err)
 		}
 	}
+	for _, invalid := range []string{"PATH=/tmp", "MISSING_EQUAL", "=empty", "NUL=bad\x00value"} {
+		if _, err := linux.Exec(t.Context(), linux.Command{Name: script, Args: []string{marker}, Env: []string{invalid}}); err == nil {
+			t.Fatalf("Exec accepted invalid environment entry %q", invalid)
+		}
+		if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("Exec started a command with invalid environment entry %q", invalid)
+		}
+	}
 }
 
 type endlessBytes struct{ read int }
@@ -161,7 +181,7 @@ func (b *endlessBytes) Read(p []byte) (int, error) {
 }
 
 func TestInstallDaemon(t *testing.T) {
-	// R-D5KG-I4O1 R-B0TM-V8Q5
+	// R-D5KG-I4O1 R-CH20-784X
 	f := newHardeningFixture(t)
 	const staging = "/usr/local/bin/.accountsd.new"
 	const body = "\x7fELFhost replacement"
@@ -192,7 +212,7 @@ func TestInstallDaemon(t *testing.T) {
 }
 
 func TestInspectHost(t *testing.T) {
-	// R-5DW4-003H R-D0OU-Z1P9 R-D1WR-CTFY R-D34N-QL6N R-D4CK-4CXC R-B0TM-V8Q5
+	// R-5DW4-003H R-D0OU-Z1P9 R-D1WR-CTFY R-D34N-QL6N R-D4CK-4CXC R-CH20-784X
 	f := newHardeningFixture(t)
 	const cgroups = "/sys/fs/cgroup/acct.slice/"
 	for path, text := range map[string]string{
@@ -504,7 +524,7 @@ func hardeningPaths() []string {
 }
 
 func TestApplyChangesOnlyManagedFilesWithUsersAndData(t *testing.T) {
-	// R-ZWIA-KLSM R-ZNYZ-W7LR R-B0TM-V8Q5
+	// R-ZWIA-KLSM R-ZNYZ-W7LR R-CH20-784X
 	f := newHardeningFixture(t)
 	const unitDir = "/etc/systemd/system/"
 	const folder = "/srv/citron"

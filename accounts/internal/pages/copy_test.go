@@ -6,7 +6,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/accounts/internal/cli"
 	"github.com/ikigenba/ikigenba/accounts/internal/pages"
-	"github.com/ikigenba/ikigenba/accounts/internal/valid"
+	"github.com/ikigenba/ikigenba/accounts/internal/store"
 	"github.com/ikigenba/ikigenba/appkit/page"
 )
 
@@ -21,5 +21,5 @@ func TestDescriptionCopy(t *testing.T) {
 	}
 	f := setup(t)
 	target := "/about"
-	same(t, answer(f, "GET", target, "viewer"), expected(f, "GET", target, "about", 200, pages.AboutData{Banner: banner(f, target, []page.Level{pages.AboutLevel}), Description: description, DefaultType: valid.DefaultType, DefaultRootGB: valid.DefaultRootGB, DefaultDataGB: valid.DefaultDataGB}))
+	same(t, answer(f, "GET", target, "viewer"), expected(f, "GET", target, "about", 200, aboutData(banner(f, target, []page.Level{pages.AboutLevel}), store.DefaultBackupSettings())))
 }

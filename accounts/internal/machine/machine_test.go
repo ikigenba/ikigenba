@@ -21,7 +21,14 @@ import (
 var _ machine.Machine = (*machine.Memory)(nil)
 
 func TestMachineContracts(t *testing.T) {
-	// R-B9A3-2Z55 R-7QOL-B9O2 R-BBPV-UIMJ
+	// R-XPP6-GRP2 R-7QOL-B9O2 R-Y9A9-165I
+	var _ machine.Machine = (interface {
+		Apply(context.Context, protocol.DesiredState) error
+		Inspect(context.Context, protocol.DesiredState) (protocol.Report, error)
+		InstallDaemon(context.Context, io.Reader, string) error
+		Stream(context.Context, protocol.DesiredState) error
+		Backup(context.Context, protocol.DesiredState) error
+	})(nil)
 	const delay = 33 * time.Second
 	ctx, cancel := context.WithCancel(t.Context())
 	var sleeps int
@@ -45,6 +52,12 @@ func TestMachineContracts(t *testing.T) {
 	}
 	if err := m.InstallDaemon(t.Context(), strings.NewReader(""), ""); !errors.Is(err, machine.ErrNotExecutable) {
 		t.Fatalf("InstallDaemon with empty body = %v", err)
+	}
+	if err := m.Stream(t.Context(), protocol.DesiredState{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Backup(t.Context(), protocol.DesiredState{}); err != nil {
+		t.Fatal(err)
 	}
 	if got := m.(*machine.Memory).State(); !reflect.DeepEqual(got, machine.Snapshot{
 		Accounts: nil, Users: nil, Folders: nil, Daemon: "", Applies: 0, Allowlist: nil, Bans: nil,
@@ -85,7 +98,7 @@ func apply(t *testing.T, m *machine.Memory, s protocol.DesiredState) {
 }
 
 func TestMemoryApplyAndSnapshot(t *testing.T) {
-	// R-BFDK-ZTUM R-BGLH-DLLB R-ZKBA-QWDO R-ZLJ7-4O4D
+	// R-YE5U-K94A R-BGLH-DLLB R-ZKBA-QWDO R-ZLJ7-4O4D
 	m := fixedMachine()
 	if got := m.State().Hostname; got != "" {
 		t.Fatalf("initial hostname = %q", got)
@@ -161,7 +174,7 @@ func TestMemoryApplyAndSnapshot(t *testing.T) {
 	}
 }
 
-// R-QZUK-JFN7
+// R-XS4Z-8B6G
 func TestSnapshotShape(_ *testing.T) {
 	var _ struct {
 		Accounts  []machine.Account
@@ -173,6 +186,9 @@ func TestSnapshotShape(_ *testing.T) {
 		Bans      []protocol.Ban
 		Hostname  string
 		Seeds     []machine.Seed
+		Backups   []protocol.AccountBackup
+		Restored  []string
+		Restores  []protocol.RestoreResult
 	} = fixedMachine().State()
 	var _ struct {
 		Slug string
@@ -192,7 +208,7 @@ func TestSnapshotShape(_ *testing.T) {
 	} = machine.Seed{}
 }
 
-// R-R12G-X7DW R-H6HF-3CTF
+// R-YFDQ-Y0UZ R-H6HF-3CTF
 func TestMemorySeeds(t *testing.T) {
 	const message string = machine.SeedMessage
 	if message == "" || strings.ContainsAny(message, "\r\n") {
@@ -291,7 +307,7 @@ func TestMemorySeeds(t *testing.T) {
 }
 
 func TestMemoryInspect(t *testing.T) {
-	// R-BE5O-M23X R-ZMR3-IFV2
+	// R-BE5O-M23X R-YP4Y-06SJ
 	m := fixedMachine()
 	s := protocol.DesiredState{Host: "host01", Domain: "hosts.example.com", RootGB: 20, DataGB: 30, DataVolume: "vol-00000001", Accounts: []protocol.Account{
 		{Slug: "zebra", GID: 20000, State: protocol.AccountActive},
@@ -319,6 +335,7 @@ func TestMemoryInspect(t *testing.T) {
 		BanTotal:  2,
 		Allowlist: []string{"198.51.100.0/24", "2001:db8::1"},
 		Hostname:  "host01.hosts.example.com",
+		Backups:   []protocol.AccountBackup{{Account: "alpaca"}, {Account: "zebra"}},
 	}
 	s.Domain = ""
 	for _, volume := range []string{s.DataVolume, ""} {

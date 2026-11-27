@@ -2,17 +2,19 @@ package store_test
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 	"github.com/ikigenba/ikigenba/accounts/internal/valid"
+	"github.com/ikigenba/ikigenba/appkit/identity"
 )
 
-// R-H8VP-5ATJ R-HL2O-Z08H R-0MPJ-YPN7 R-IAOL-06T2
-// R-RCYV-Z8X0 R-0NXG-CHDW R-RFUT-UU0N R-IFK6-J9RU R-IGS2-X1IJ R-I5SZ-H3UA
-// R-I3D6-PKCW R-0LHN-KXWI R-IU6Z-4IO6 R-HW1S-EXWQ R-I4L3-3C3L
+// R-HL2O-Z08H R-0MPJ-YPN7 R-IAOL-06T2
+// R-IFK6-J9RU R-IGS2-X1IJ R-I5SZ-H3UA
+// R-I3D6-PKCW R-IU6Z-4IO6 R-I4L3-3C3L R-NNM2-IYVY R-NOTY-WQMN R-PLSC-ZG5U
 func TestAccountLifecycle(t *testing.T) {
 	_, s, now := fixture(t)
 	h, c := create(t, s)
@@ -37,10 +39,9 @@ func TestAccountLifecycle(t *testing.T) {
 	_, _, err = s.PlaceAccount(ctx, a.Slug, b.Name, caller)
 	checkErr(t, err, store.ErrTaken)
 	eq(t, value(t, result(s.Host(ctx, h.Name))).Accounts, 2)
-	_, _, err = s.RemoveAccount(ctx, "missing", caller)
-	checkErr(t, err, store.ErrNotFound)
-	_, _, err = s.RemoveAccount(ctx, a.Slug, caller)
-	checkErr(t, err, store.ErrHasUsers)
+	observe3(s.RemoveAccount(ctx, a.Slug, identity.Caller{UserID: strings.Repeat("x", valid.MaxUserIDBytes+1)})).assertZero(t, store.ErrUnreachable)
+	observe3(s.RemoveAccount(ctx, "missing", caller)).assertZero(t, store.ErrNotFound)
+	observe3(s.RemoveAccount(ctx, a.Slug, caller)).assertZero(t, store.ErrHasUsers)
 	checkErr(t, s.RecordChange(ctx, placeOp.ID, bc.Slug, "change"), store.ErrNotFound)
 	checkErr(t, s.RecordChange(ctx, placeOp.ID, "missing", "change"), store.ErrNotFound)
 	checkErr(t, s.RecordChange(ctx, placeOp.ID, a.Slug, "change"), nil)
@@ -73,8 +74,7 @@ func TestAccountLifecycle(t *testing.T) {
 	eq(t, cancelled.Status, store.OpCancelled)
 	eq(t, cancelled.Finished, now.UTC().Truncate(time.Second))
 	checkErr(t, s.Advance(ctx, bcOp.ID, store.Update{}), store.ErrConflict)
-	_, _, err = s.RemoveAccount(ctx, bc.Slug, caller)
-	checkErr(t, err, store.ErrAccountRemoving)
+	observe3(s.RemoveAccount(ctx, bc.Slug, caller)).assertZero(t, store.ErrAccountRemoving)
 	checkErr(t, s.Fail(ctx, unplace.ID, "temporary error"), nil)
 	eq(t, value(t, result(s.Account(ctx, bc.Slug))), bc)
 	again, retry := remove(t, s, bc.Slug)

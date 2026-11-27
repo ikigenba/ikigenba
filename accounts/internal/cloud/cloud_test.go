@@ -10,7 +10,7 @@ import (
 )
 
 func TestInterfaceContracts(t *testing.T) {
-	// R-WKRR-39LH R-KZMA-AN7S R-WN7J-UT2V R-WOFG-8KTK
+	// R-YAOW-OJ37 R-KZMA-AN7S R-YBWT-2ATW R-YD4P-G2KL R-WOFG-8KTK
 	type ec2Contract interface {
 		RunInstance(context.Context, Launch) (Instance, error)
 		DescribeInstance(context.Context, string) (Instance, error)
@@ -42,11 +42,19 @@ func TestInterfaceContracts(t *testing.T) {
 	type stsContract interface {
 		Account(context.Context) (string, error)
 		CallerOf(context.Context, string, string) (Caller, error)
+		Identity(context.Context) (Caller, error)
+		AssumeRole(context.Context, RoleRequest) (Credentials, error)
+	}
+	type s3Contract interface {
+		ListKeys(context.Context, string, string, func([]string) bool) error
+		HasKeys(context.Context, string, string) (bool, error)
+		DeleteKeys(context.Context, string, []string) error
 	}
 	type cloudContract interface {
 		ec2Contract
 		dnsContract
 		stsContract
+		s3Contract
 	}
 	type presignContract interface {
 		PresignCallerIdentity(context.Context, string, time.Duration) (string, error)
@@ -59,12 +67,14 @@ func TestInterfaceContracts(t *testing.T) {
 	checkEC2 := func(c ec2Contract) EC2 { return c }
 	checkDNS := func(c dnsContract) Route53 { return c }
 	checkSTS := func(c stsContract) STS { return c }
+	checkS3 := func(c s3Contract) S3 { return c }
 	checkCloud := func(c cloudContract) Cloud { return c }
 	checkPresigner := func(c presignContract) Presigner { return c }
 	checkMetadata := func(c metadataContract) Metadata { return c }
 	_ = func(c EC2) ec2Contract { return c }
 	_ = func(c Route53) dnsContract { return c }
 	_ = func(c STS) stsContract { return c }
+	_ = func(c S3) s3Contract { return c }
 	_ = func(c Cloud) cloudContract { return c }
 	_ = func(c Presigner) presignContract { return c }
 	_ = func(c Metadata) metadataContract { return c }
@@ -75,7 +85,7 @@ func TestInterfaceContracts(t *testing.T) {
 	if err == nil || err.Error() != "example-region" || checkCloud(c) != nil {
 		t.Fatalf("opener returned %v, %v", c, err)
 	}
-	if checkEC2(c) != nil || checkDNS(c) != nil || checkSTS(c) != nil {
+	if checkEC2(c) != nil || checkDNS(c) != nil || checkSTS(c) != nil || checkS3(c) != nil {
 		t.Fatal("the cloud zero value should provide nil operation interfaces")
 	}
 	var p Presigner
@@ -137,6 +147,10 @@ func TestDataShapes(t *testing.T) {
 }
 
 func TestConstants(t *testing.T) {
+	// R-YGSE-LDSO
+	if MaxKeysPerPage != 1000 || RoleSessionDuration != time.Hour || MaxPolicyBytes != 2048 {
+		t.Errorf("backup limits = %d keys, %v, %d policy bytes", MaxKeysPerPage, RoleSessionDuration, MaxPolicyBytes)
+	}
 	type literal string
 	tests := []struct {
 		got, want []literal
@@ -165,6 +179,18 @@ func TestConstants(t *testing.T) {
 	if CallerTimeout != 10*time.Second || MaxCallerBytes != 64<<10 {
 		t.Errorf("caller limits = %v and %v", CallerTimeout, MaxCallerBytes)
 	}
+}
+
+func TestBackupDataShapes(_ *testing.T) {
+	// R-YECL-TUBA
+	_ = struct {
+		RoleARN, SessionName, Policy string
+		Duration                     time.Duration
+	}(RoleRequest{"role", "session", "policy", time.Hour})
+	_ = struct {
+		AccessKeyID, SecretAccessKey, SessionToken string
+		Expires                                    time.Time
+	}(Credentials{"key", "secret", "token", time.Unix(1, 0)})
 }
 
 func TestErrors(t *testing.T) {

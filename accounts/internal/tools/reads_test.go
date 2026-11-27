@@ -35,7 +35,7 @@ func TestPaging(t *testing.T) {
 			wantHosts = append(wantHosts, fmt.Sprintf("host%02d", i))
 		}
 	}
-	_, deleted, err := f.st.DeleteHost(t.Context(), "host02", true, f.caller)
+	_, deleted, err := f.st.DeleteHost(t.Context(), "host02", true, false, f.caller)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func readAccount(t *testing.T, f *fixture, account string) tools.AccountRead {
 	return answer[tools.AccountRead](t, f.call(tools.ToolAccount, tools.AccountArgs{Account: account}))
 }
 
-// R-11PO-YNS1 R-0V8U-N3U2 R-16LA-HQQT R-0KYP-Z22L R-1F4L-64XO
+// R-11PO-YNS1 R-HBL4-URQ7 R-16LA-HQQT R-HCT1-8JGW R-HAD8-GZZI
 func TestReadAnswers(t *testing.T) {
 	f := setup(t)
 	f.serveLoopback()
@@ -192,7 +192,7 @@ func TestReadAnswers(t *testing.T) {
 		running.Reported != f.now.Format(time.RFC3339) || running.Health != store.Health(f.host(h.Name), f.now) {
 		t.Fatalf("running host %+v", running)
 	}
-	fields := []string{"host", "dns_name", "state", "reason", "on_delete", "health", "type", "root_gb", "data_gb", "eip", "accounts", "reported",
+	fields := []string{"host", "dns_name", "state", "reason", "on_delete", "health", "type", "root_gb", "data_gb", "eip", "accounts", "reported", "closed", "replace",
 		"instance_id", "data_volume", "version", "applied", "created", "created_by", "account_names", "allowlist", "report"}
 	wireMembers(t, unpack(t, result).Structured, fields...)
 	wantList := tools.Host{
@@ -241,26 +241,51 @@ func TestReadAnswers(t *testing.T) {
 	refusal(t, f.call(tools.ToolHost, tools.HostArgs{Host: deleted.Name}), tools.NoHost)
 }
 
-// R-Z947-AIY4
+// R-Z947-AIY4 R-2U44-D4IG
 func TestReadOnlyEffects(t *testing.T) {
 	f := setup(t)
 	ctx := context.Background()
 	h, _ := f.seedHost(true)
 	a, place := f.seedAccount("acme", h.Name)
 	f.finish(place.ID, store.Update{})
+	backupReport(f, h.Name, protocol.AccountBackup{Account: a.Slug, Snapshot: f.now,
+		Snapshots: []int64{f.now.Unix()}, DatabaseTotal: 1,
+		Databases: []protocol.Database{{Path: "data/books.db", Oldest: f.now.Add(-time.Hour), Synced: f.now}}})
+	if _, _, err := f.st.RequestRestore(ctx, store.RestoreRequest{Account: a.Slug, Kind: protocol.RestoreDatabase,
+		Path: "data/books.db", AsOf: f.now.Add(-time.Minute)}, f.caller); err != nil {
+		t.Fatal(err)
+	}
 	h = f.host(h.Name)
 	original, err := f.st.Account(ctx, a.Slug)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, read := range []callCase{
+	backup, err := f.st.BackupOf(ctx, a.Slug)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := f.st.Report(ctx, h.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restores, total, err := f.st.RestoresOn(ctx, h.Name, 2)
+	if err != nil || total != 1 {
+		t.Fatalf("restores %+v, total %d: %v", restores, total, err)
+	}
+	at := len(allEvents(t, f))
+	reads := []callCase{
 		{tools.ToolHosts, tools.HostsArgs{}, ""},
 		{tools.ToolHost, tools.HostArgs{Host: h.Name}, ""},
 		{tools.ToolAccounts, tools.AccountsArgs{}, ""},
 		{tools.ToolAccount, tools.AccountArgs{Account: a.Slug}, ""},
 		{tools.ToolUsers, tools.UsersArgs{}, ""},
 		{tools.ToolAccount, tools.AccountArgs{Account: "absent"}, tools.NoAccount},
-	} {
+		{tools.ToolBackupStatus, tools.BackupStatusArgs{Host: &h.Name}, ""},
+		{tools.ToolRestorePoints, tools.AccountArgs{Account: a.Slug}, ""},
+		{tools.ToolBackupStatus, map[string]any{"host": "absent"}, tools.NoHost},
+		{tools.ToolRestorePoints, tools.AccountArgs{Account: "absent"}, tools.NoAccount},
+	}
+	for _, read := range reads {
 		res := f.call(read.name, read.args)
 		if read.want != "" {
 			refusal(t, res, read.want)
@@ -274,20 +299,17 @@ func TestReadOnlyEffects(t *testing.T) {
 	if got, err := f.st.Account(ctx, a.Slug); err != nil || got != original {
 		t.Fatalf("account changed: %+v (%+v before): %v", got, original, err)
 	}
-	if f.wakes != 0 || len(f.cloud.lookups) != 0 {
-		t.Fatalf("read invoked external effects: wakes %d, lookups %v", f.wakes, f.cloud.lookups)
+	if got, err := f.st.BackupOf(ctx, a.Slug); err != nil || !reflect.DeepEqual(got, backup) {
+		t.Fatalf("backup changed: %+v (%+v before): %v", got, backup, err)
 	}
-	if err := f.w.Flush(ctx); err != nil {
-		t.Fatal(err)
+	if got, err := f.st.Report(ctx, h.Name); err != nil || !reflect.DeepEqual(got, report) {
+		t.Fatalf("report changed: %+v (%+v before): %v", got, report, err)
 	}
-	const appkitCall = "tool.called"
-	events := f.capture.Events()
-	if len(events) != 6 {
-		t.Fatalf("unexpected read events %+v", events)
+	if got, count, err := f.st.RestoresOn(ctx, h.Name, 2); err != nil || count != total || !reflect.DeepEqual(got, restores) {
+		t.Fatalf("restores changed: %+v (%+v before): %v", got, restores, err)
 	}
-	for _, event := range events {
-		if event.Name != appkitCall {
-			t.Fatalf("read emitted %+v", event)
-		}
+	if f.wakes != 0 || len(f.cloud.lookups)+len(f.cloud.backupLookups) != 0 {
+		t.Fatalf("read invoked external effects: wakes %d, DNS %v, backups %v", f.wakes, f.cloud.lookups, f.cloud.backupLookups)
 	}
+	assertReadEvents(t, allEvents(t, f)[at:], len(reads))
 }

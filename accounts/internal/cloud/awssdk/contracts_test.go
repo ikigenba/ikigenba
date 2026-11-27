@@ -183,7 +183,7 @@ func TestAllowedLaunchFamilies(t *testing.T) {
 }
 
 func TestRoute53AndSTSOperationMappings(t *testing.T) {
-	// R-X95Q-QOFD
+	// R-YLO0-4GRG
 	tests := []struct {
 		service, op, subject, path, method string
 		call                               func(context.Context, cloud.Cloud) error
@@ -202,6 +202,13 @@ func TestRoute53AndSTSOperationMappings(t *testing.T) {
 			func(ctx context.Context, c cloud.Cloud) error { _, err := c.ChangeInsync(ctx, "changeid"); return err }},
 		{"sts", "GetCallerIdentity", "", "/", "POST",
 			func(ctx context.Context, c cloud.Cloud) error { _, err := c.Account(ctx); return err }},
+		{"sts", "GetCallerIdentity", "", "/", "POST",
+			func(ctx context.Context, c cloud.Cloud) error { _, err := c.Identity(ctx); return err }},
+		{"sts", "AssumeRole", "", "/", "POST",
+			func(ctx context.Context, c cloud.Cloud) error {
+				_, err := c.AssumeRole(ctx, cloud.RoleRequest{RoleARN: "test-role", SessionName: "session-test", Duration: cloud.RoleSessionDuration})
+				return err
+			}},
 		{"sts", "GetCallerIdentity", "", "/", "GET",
 			func(ctx context.Context, c cloud.Cloud) error {
 				_, err := c.CallerOf(ctx, "https://sts.us-east-2.amazonaws.com/?Action=GetCallerIdentity", "test-binding")
@@ -219,8 +226,9 @@ func TestRoute53AndSTSOperationMappings(t *testing.T) {
 				if test.service == "sts" {
 					if test.method == "POST" {
 						form(t, r, test.op)
+					} else if got := r.URL.Query().Get("Action"); got != test.op {
+						t.Errorf("request action = %q, want %q", got, test.op)
 					}
-					return xmlResponse(403, `<ErrorResponse><Error><Code>AccessDenied</Code><Message>private text</Message></Error></ErrorResponse>`), nil
 				}
 				return xmlResponse(403, `<ErrorResponse><Error><Code>AccessDenied</Code><Message>private text</Message></Error></ErrorResponse>`), nil
 			})

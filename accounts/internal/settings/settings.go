@@ -78,6 +78,14 @@ func (s Settings) Drain() time.Duration {
 // Hosts names the AWS resources for the managed hosts.
 type Hosts struct{ Region, Domain, ZoneID, LaunchTemplate, InstanceProfile string }
 
+// BackupBucket returns the name of the hosts' backup bucket.
+func (h Hosts) BackupBucket() string {
+	return strings.ReplaceAll(h.Domain, ".", "-") + "-hosts-backups"
+}
+
+// BackupRole returns the name of the role hosts assume for backups.
+func (h Hosts) BackupRole() string { return h.InstanceProfile + "-backup" }
+
 // Configured reports whether all five settings are present.
 func (h Hosts) Configured() bool {
 	return h.Region != "" && h.Domain != "" && h.ZoneID != "" && h.LaunchTemplate != "" && h.InstanceProfile != ""

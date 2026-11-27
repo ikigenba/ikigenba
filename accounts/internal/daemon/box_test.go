@@ -125,7 +125,7 @@ func newBoxScenario(t *testing.T) *boxScenario {
 		BaseURL: "https://accounts.fake",
 		Digest:  "own-binary",
 		Now:     clock, Sleep: sleep, Stderr: &s.diagnostics,
-		Machine:  machine.NewMemory(machine.MemoryConfig{Now: clock, Sleep: sleep}),
+		Machine:  machineProbe{Machine: machine.NewMemory(machine.MemoryConfig{Now: clock, Sleep: sleep})},
 		Metadata: metadataFunc(func(context.Context) (cloud.InstanceFacts, error) { return cloud.InstanceFacts{}, nil }),
 		Presigner: presignerFunc(func(ctx context.Context, binding string, _ time.Duration) (string, error) {
 			if binding != "accounts.fake" {
@@ -145,12 +145,17 @@ func newBoxScenario(t *testing.T) *boxScenario {
 			return testBoxUID, nil
 		},
 		After: func(d time.Duration) <-chan time.Time {
-			if d != daemon.BoxTimeout {
+			switch d {
+			case daemon.StreamTick, daemon.BackupTick:
+				return nil
+			case daemon.BoxTimeout:
+				timer := make(chan time.Time, 1)
+				s.timers <- timer
+				return timer
+			default:
 				t.Errorf("timer duration = %v, want BoxTimeout", d)
+				return nil
 			}
-			timer := make(chan time.Time, 1)
-			s.timers <- timer
-			return timer
 		},
 	}
 	seenHeaders := make(map[string]bool)
@@ -306,9 +311,9 @@ func expectBoxAnswer(t *testing.T, conn net.Conn, answer boxmcp.Answer) {
 	}
 }
 
-// R-K04P-QMWK
+// R-90IL-XP3U
 func TestBoxIsOptionalAndRequiresItsSeams(t *testing.T) {
-	for _, missing := range []string{"both", "uid", "timer", "listener"} {
+	for _, missing := range []string{"both", "uid", "timer", "listener and timer", "listener"} {
 		t.Run(missing, func(t *testing.T) {
 			s := newBoxScenario(t)
 			ctx, cancel := context.WithCancel(t.Context())
@@ -329,15 +334,13 @@ func TestBoxIsOptionalAndRequiresItsSeams(t *testing.T) {
 				s.cfg.PeerUID = nil
 			case "timer":
 				s.cfg.After = nil
+			case "listener and timer":
+				s.cfg.Box, s.cfg.PeerUID, s.cfg.After = nil, nil, nil
 			case "listener":
 				s.cfg.Box = nil
 				s.cfg.PeerUID = func(net.Conn) (int64, error) {
 					t.Error("nil listener consulted PeerUID")
 					return 0, nil
-				}
-				s.cfg.After = func(time.Duration) <-chan time.Time {
-					t.Error("nil listener consulted After")
-					return nil
 				}
 			}
 			if missing != "listener" {
@@ -345,6 +348,19 @@ func TestBoxIsOptionalAndRequiresItsSeams(t *testing.T) {
 				// if Run started the accept loop before validating.
 				invalid.input = make(chan boxAccept, 1)
 				invalid.input <- boxAccept{err: net.ErrClosed}
+				unexpectedPass := func(ctx context.Context, _ protocol.DesiredState) error {
+					t.Error("incomplete run config consulted Machine")
+					return ctx.Err()
+				}
+				s.cfg.Machine = machineProbe{
+					apply: unexpectedPass, stream: unexpectedPass, backup: unexpectedPass,
+					inspect: func(ctx context.Context, state protocol.DesiredState) (protocol.Report, error) {
+						return protocol.Report{}, unexpectedPass(ctx, state)
+					},
+					install: func(ctx context.Context, _ io.Reader, _ string) error {
+						return unexpectedPass(ctx, protocol.DesiredState{})
+					},
+				}
 			}
 			err := daemon.Run(ctx, s.cfg)
 			if err == nil || (missing == "listener") != errors.Is(err, context.Canceled) ||

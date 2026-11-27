@@ -83,6 +83,7 @@ type DesiredState struct {
 	Allowlist  []string  `json:"allowlist"`
 	Unban      []string  `json:"unban"`
 	Domain     string    `json:"domain"`
+	Backup     *Backup   `json:"backup"`
 }
 
 // Account describes a group and its service account.
@@ -103,35 +104,38 @@ type User struct {
 
 // Report captures the results of applying state and the health of the host.
 type Report struct {
-	Protocol        int        `json:"protocol"`
-	Attempted       int64      `json:"attempted"`
-	Applied         int64      `json:"applied"`
-	Error           string     `json:"error"`
-	InstanceID      string     `json:"instance_id"`
-	Type            string     `json:"type"`
-	AMI             string     `json:"ami"`
-	OS              string     `json:"os"`
-	Kernel          string     `json:"kernel"`
-	Booted          time.Time  `json:"booted"`
-	DaemonVersion   string     `json:"daemon_version"`
-	Load            [3]float64 `json:"load"`
-	CPUPercent      float64    `json:"cpu_percent"`
-	MemoryUsed      int64      `json:"memory_used"`
-	MemoryAvailable int64      `json:"memory_available"`
-	SwapUsed        int64      `json:"swap_used"`
-	SwapTotal       int64      `json:"swap_total"`
-	Root            Disk       `json:"root"`
-	Data            Disk       `json:"data"`
-	Sessions        int        `json:"sessions"`
-	Updates         int        `json:"updates"`
-	Reboot          bool       `json:"reboot"`
-	FailedUnits     []string   `json:"failed_units"`
-	Slices          []Slice    `json:"slices"`
-	SignIns         []SignIn   `json:"sign_ins"`
-	Bans            []Ban      `json:"bans"`
-	BanTotal        int        `json:"ban_total"`
-	Allowlist       []string   `json:"allowlist"`
-	Hostname        string     `json:"hostname"`
+	Protocol        int             `json:"protocol"`
+	Attempted       int64           `json:"attempted"`
+	Applied         int64           `json:"applied"`
+	Error           string          `json:"error"`
+	InstanceID      string          `json:"instance_id"`
+	Type            string          `json:"type"`
+	AMI             string          `json:"ami"`
+	OS              string          `json:"os"`
+	Kernel          string          `json:"kernel"`
+	Booted          time.Time       `json:"booted"`
+	DaemonVersion   string          `json:"daemon_version"`
+	Load            [3]float64      `json:"load"`
+	CPUPercent      float64         `json:"cpu_percent"`
+	MemoryUsed      int64           `json:"memory_used"`
+	MemoryAvailable int64           `json:"memory_available"`
+	SwapUsed        int64           `json:"swap_used"`
+	SwapTotal       int64           `json:"swap_total"`
+	Root            Disk            `json:"root"`
+	Data            Disk            `json:"data"`
+	Sessions        int             `json:"sessions"`
+	Updates         int             `json:"updates"`
+	Reboot          bool            `json:"reboot"`
+	FailedUnits     []string        `json:"failed_units"`
+	Slices          []Slice         `json:"slices"`
+	SignIns         []SignIn        `json:"sign_ins"`
+	Bans            []Ban           `json:"bans"`
+	BanTotal        int             `json:"ban_total"`
+	Allowlist       []string        `json:"allowlist"`
+	Hostname        string          `json:"hostname"`
+	Backups         []AccountBackup `json:"backups"`
+	HostBackup      HostBackup      `json:"host_backup"`
+	Restores        []RestoreResult `json:"restores"`
 }
 
 // Disk reports filesystem usage.
@@ -214,6 +218,14 @@ var jsonUnmarshaler = reflect.TypeFor[json.Unmarshaler]()
 func decodeValue(raw []byte, dst reflect.Value) error {
 	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 		dst.SetZero()
+		return nil
+	}
+	if dst.Kind() == reflect.Pointer {
+		value := reflect.New(dst.Type().Elem())
+		if err := decodeValue(raw, value.Elem()); err != nil {
+			return err
+		}
+		dst.Set(value)
 		return nil
 	}
 	if dst.Kind() == reflect.Struct && !dst.Addr().Type().Implements(jsonUnmarshaler) {
@@ -303,6 +315,8 @@ func (r Report) Bounded() Report {
 		}
 		r.Error = r.Error[:end]
 	}
+	r.OS = jsonStringPrefix(r.OS, 256)
+	r.boundBackups()
 	return r
 }
 
@@ -313,17 +327,21 @@ func smallest[T any](values []T, limit int, compare func(T, T) int) []T {
 	}
 	result := make([]T, 0, min(limit, len(values)))
 	for _, value := range values {
-		// Insert after equal keys to preserve their input order.
-		i := sort.Search(len(result), func(i int) bool { return compare(result[i], value) > 0 })
-		if i == limit {
-			continue
-		}
-		if len(result) == limit {
-			result = result[:limit-1]
-		}
-		result = slices.Insert(result, i, value)
+		result = insertSmallest(result, value, limit, compare)
 	}
 	return result
+}
+
+func insertSmallest[T any](result []T, value T, limit int, compare func(T, T) int) []T {
+	// Insert after equal keys to preserve their input order.
+	i := sort.Search(len(result), func(i int) bool { return compare(result[i], value) > 0 })
+	if i == limit {
+		return result
+	}
+	if len(result) == limit {
+		result = result[:limit-1]
+	}
+	return slices.Insert(result, i, value)
 }
 
 // Digest streams the input into a SHA-256 digest.

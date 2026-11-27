@@ -134,7 +134,7 @@ func TestApplyVolumeAndSSHSetup(t *testing.T) {
 		return linux.Result{}, false
 	}
 	state := protocol.DesiredState{DataVolume: "vol-12345678"}
-	// R-C7F9-SJWL R-C8N6-6BNA R-0RPX-5CWH R-CB2Y-XV4O R-CCAV-BMVD R-CDIR-PEM2 R-CEQO-36CR R-7VK6-UCMU R-CH6G-UPU5 R-CIED-8HKU
+	// R-C7F9-SJWL R-C8N6-6BNA R-0RPX-5CWH R-CB2Y-XV4O R-CCAV-BMVD R-CDIR-PEM2 R-YU0J-J9RB R-7VK6-UCMU R-CH6G-UPU5 R-CIED-8HKU
 	f.apply(state)
 	want := []string{
 		rootProbe, "blockdev --getsize64 " + rootDisk, "growpart " + rootDisk + " 1", "xfs_growfs -d " + f.root,
@@ -309,12 +309,62 @@ func TestApplyWithoutDataVolume(t *testing.T) {
 	}
 }
 
+func TestApplyRestoreWaitsAfterVolumeAndSlices(t *testing.T) {
+	// R-YSSN-5I0M R-YV8F-X1I0 R-YU0J-J9RB
+	const id = "op_0123456789abcdef"
+	for _, blank := range []bool{true, false} {
+		t.Run(map[bool]string{true: "fresh", false: "signed"}[blank], func(t *testing.T) {
+			f := newHardeningFixture(t)
+			probe, format := f.checkDataVolumeCommands(f.path("/dev/nvme1n1"))
+			formatted := false
+			f.answer = func(call string) (linux.Result, bool) {
+				if call == "systemctl is-active srv.mount" {
+					f.expectAbsent(linux.RestoreMarker)
+				}
+				if call == format {
+					formatted = true
+				}
+				if call == probe && blank && !formatted {
+					return linux.Result{ExitCode: 2}, true
+				}
+				return linux.Result{}, false
+			}
+			state := protocol.DesiredState{
+				DataVolume: "vol-12345678",
+				Backup:     &protocol.Backup{Restore: &protocol.HostRestore{ID: id}},
+			}
+			f.apply(state)
+			if formatted != blank {
+				t.Fatalf("formatted = %t for blank = %t", formatted, blank)
+			}
+			if blank {
+				f.expectFile(linux.RestoreMarker, "restore "+id+"\n", 0o600)
+			} else {
+				f.expectAbsent(linux.RestoreMarker)
+			}
+			f.expectFile("/etc/systemd/system/acct.slice", "[Slice]\nCPUWeight=50\n", 0o644)
+			for _, path := range []string{dataPrivateKey, dataPublicKey, sshDropInPath, sshUnitPath, claudeSettingsPath} {
+				f.expectAbsent(path)
+			}
+			f.forbidCalls("sshd ", "useradd ", "dnf ", claudeKeyProbe)
+
+			f.answer = nil
+			f.put(dataPrivateKey, "restored private\n", 0o600)
+			f.put(dataPublicKey, "restored public\n", 0o644)
+			state.Backup = nil
+			f.apply(state)
+			f.expectFile(dataPrivateKey, "restored private\n", 0o600)
+			f.expectFile(dataPublicKey, "restored public\n", 0o644)
+		})
+	}
+}
+
 func TestApplyHostKeyWhenPairIncomplete(t *testing.T) {
 	for _, path := range []string{dataPrivateKey, dataPublicKey} {
 		t.Run(path, func(t *testing.T) {
 			f := newHardeningFixture(t)
 			f.put(path, "stale half\n", 0o600)
-			// R-CEQO-36CR
+			// R-YU0J-J9RB
 			f.apply(protocol.DesiredState{DataVolume: "vol-12345678"})
 			f.expectFile(dataPrivateKey, "instance private\n", 0o600)
 			f.expectFile(dataPublicKey, "instance public\n", 0o644)

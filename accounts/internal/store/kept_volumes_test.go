@@ -37,12 +37,12 @@ func TestKeptVolumesOnEmptyDatabaseAndLimitBounds(t *testing.T) {
 	checkErr(t, s.DeferVolumeDelete(ctx, unknown, baseTime, 1), store.ErrNotFound)
 	checkErr(t, s.FinishVolumeDelete(ctx, unknown), store.ErrNotFound)
 	checkErr(t, s.FailVolumeDelete(ctx, unknown, "refusal"), store.ErrNotFound)
-	observe2(s.DeleteHost(ctx, unknown, true, caller)).assertZero(t, store.ErrNotFound)
-	observe2(s.DeleteHost(ctx, unknown, false, caller)).assertZero(t, store.ErrNotFound)
+	observe2(s.DeleteHost(ctx, unknown, true, true, caller)).assertZero(t, store.ErrNotFound)
+	observe2(s.DeleteHost(ctx, unknown, false, true, caller)).assertZero(t, store.ErrNotFound)
 	eq(t, value(t, result(s.NextTry(ctx))), zero)
 }
 
-// R-7DSM-DV0O R-7HGB-J68R R-72TI-XXCF R-7NJT-G0Y8
+// R-7DSM-DV0O R-72TI-XXCF R-7NJT-G0Y8
 func TestHostFinishRecordsOnlyItsDataVolume(t *testing.T) {
 	_, s, now := fixture(t)
 	a, aCreate := create(t, s)
@@ -64,7 +64,7 @@ func TestHostFinishRecordsOnlyItsDataVolume(t *testing.T) {
 	checkErr(t, s.Finish(ctx, keep.ID, store.Update{DataVolume: data, DataGB: 60}), nil)
 	checkErr(t, s.Finish(ctx, discard.ID, store.Update{}), nil)
 	checkErr(t, s.Finish(ctx, noData.ID, store.Update{}), nil)
-	want := store.KeptVolume{Volume: data, Host: a.Name, SizeGB: 60, Deleted: time.Date(2026, 11, 25, 14, 3, 7, 0, time.UTC), State: store.VolumeKept}
+	want := store.KeptVolume{Volume: data, Host: a.Name, SizeGB: 60, Deleted: time.Date(2026, 11, 25, 14, 3, 7, 0, time.UTC), State: store.VolumeKept, Cause: store.CauseDeleted}
 	eq(t, value(t, result(s.KeptVolume(ctx, data))), want)
 	eq(t, value(t, result(s.ListKeptVolumes(ctx, time.Time{}, "", 2))), []store.KeptVolume{want})
 	for _, volume := range []string{"root", "delete-data", "old-data", "unknown"} {
@@ -173,7 +173,7 @@ func TestDeleteKeptVolumeDefersFailsRetriesAndFinishes(t *testing.T) {
 	eq(t, value(t, result(s.ListKeptVolumes(ctx, time.Time{}, "", 1))), []store.KeptVolume{})
 }
 
-// R-7MBX-297J R-71LM-K5LQ
+// R-7MBX-297J
 func TestDueVolumeDeletesPageAndSurviveRestart(t *testing.T) {
 	now := baseTime
 	cfg := store.Config{Now: func() time.Time { return now }, Rand: new(counterRandom)}

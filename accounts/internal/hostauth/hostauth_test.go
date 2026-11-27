@@ -53,6 +53,14 @@ func (s stsFake) Account(ctx context.Context) (string, error) {
 	return s.account(ctx)
 }
 
+func (stsFake) Identity(context.Context) (cloud.Caller, error) {
+	panic("unexpected backup identity call")
+}
+
+func (stsFake) AssumeRole(context.Context, cloud.RoleRequest) (cloud.Credentials, error) {
+	panic("unexpected backup assume-role call")
+}
+
 type presignFunc func(context.Context, string, time.Duration) (string, error)
 
 func (f presignFunc) PresignCallerIdentity(ctx context.Context, bound string, expires time.Duration) (string, error) {

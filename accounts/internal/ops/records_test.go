@@ -204,7 +204,7 @@ func accountEvent(t *testing.T, events []telemetry.Event, a store.Account, from,
 	}, who)
 }
 
-// R-MNTG-22XB R-MP1C-FUO0 R-NLYM-RNOR R-12K8-XQA8 R-NOEF-J765 R-NPMB-WYWU R-9CBT-N22X R-L0E6-07I2
+// R-MNTG-22XB R-MP1C-FUO0 R-NLYM-RNOR R-12K8-XQA8 R-NOEF-J765 R-NPMB-WYWU R-9CBT-N22X
 func TestPlaceWaitsForAddressDNSAndAppliedVersion(t *testing.T) {
 	f := setup(t)
 	h, provision := f.create()

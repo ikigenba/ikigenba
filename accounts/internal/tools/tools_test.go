@@ -195,8 +195,10 @@ type dnsLookup struct {
 
 type dnsCloud struct {
 	cloud.Cloud
-	lookups []dnsLookup
-	find    func(context.Context, string, string) ([]cloud.Record, error)
+	lookups       []dnsLookup
+	find          func(context.Context, string, string) ([]cloud.Record, error)
+	backupLookups []backupLookup
+	hasKeys       func(context.Context, string, string) (bool, error)
 }
 
 func (c *dnsCloud) FindRecords(ctx context.Context, zone, name string) ([]cloud.Record, error) {
@@ -208,6 +210,20 @@ func (c *dnsCloud) FindRecords(ctx context.Context, zone, name string) ([]cloud.
 	return nil, nil
 }
 
+type backupLookup struct {
+	bucket, prefix string
+	deadline       time.Time
+}
+
+func (c *dnsCloud) HasKeys(ctx context.Context, bucket, prefix string) (bool, error) {
+	deadline, _ := ctx.Deadline()
+	c.backupLookups = append(c.backupLookups, backupLookup{bucket: bucket, prefix: prefix, deadline: deadline})
+	if c.hasKeys != nil {
+		return c.hasKeys(ctx, bucket, prefix)
+	}
+	return false, nil
+}
+
 func (f *fixture) seedHost(running bool) (store.Host, store.Operation) {
 	f.t.Helper()
 	ctx := context.Background()
@@ -217,7 +233,7 @@ func (f *fixture) seedHost(running bool) (store.Host, store.Operation) {
 		f.t.Fatal(err)
 	}
 	if running {
-		f.finish(op.ID, store.Update{InstanceID: "instance-" + h.Name, RootVolume: "root-" + h.Name, DataVolume: "data-" + h.Name, EIP: "192.0.2.10"})
+		f.finish(op.ID, store.Update{InstanceID: "instance-" + h.Name, RootVolume: "root-" + h.Name, DataVolume: "data-" + h.Name, AllocationID: "allocation-" + h.Name, EIP: "192.0.2.10"})
 	}
 	return h, op
 }

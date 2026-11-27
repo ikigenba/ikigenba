@@ -22,16 +22,17 @@ const ApplyDelay = 3 * time.Second
 
 // Config supplies the sandbox cloud, handler, and the simulator's clock and timers.
 type Config struct {
-	Cloud    *memory.Cloud
-	Handler  http.Handler
-	Binding  string
-	Digest   func() string
-	Now      func() time.Time
-	Sleep    func(context.Context, time.Duration)
-	After    func(time.Duration) <-chan time.Time
-	BanFile  string
-	BoxDir   string
-	SeedFile string
+	Cloud      *memory.Cloud
+	Handler    http.Handler
+	Binding    string
+	Digest     func() string
+	Now        func() time.Time
+	Sleep      func(context.Context, time.Duration)
+	After      func(time.Duration) <-chan time.Time
+	BanFile    string
+	BoxDir     string
+	SeedFile   string
+	BackupFile string
 }
 
 // Sim supervises the sandbox's simulated hosts.
@@ -50,6 +51,7 @@ type loop struct {
 // Run watches instances and joins all their loops when ctx ends.
 func (s *Sim) Run(ctx context.Context) error {
 	loops := make(map[string]loop)
+	disks := machine.NewDisks()
 	var boxDir string
 	if s.cfg.BoxDir != "" {
 		boxDir, _ = filepath.Abs(s.cfg.BoxDir)
@@ -64,7 +66,7 @@ func (s *Sim) Run(ctx context.Context) error {
 		removeBoxListing(boxDir)
 	}()
 	for ctx.Err() == nil {
-		if err := s.look(ctx, loops, boxDir); err != nil && ctx.Err() == nil {
+		if err := s.look(ctx, loops, boxDir, disks); err != nil && ctx.Err() == nil {
 			return err
 		}
 		if ctx.Err() != nil {
@@ -79,7 +81,7 @@ func (s *Sim) Run(ctx context.Context) error {
 	return nil
 }
 
-func (s *Sim) look(ctx context.Context, loops map[string]loop, boxDir string) error {
+func (s *Sim) look(ctx context.Context, loops map[string]loop, boxDir string, disks *machine.Disks) error {
 	running := make(map[string]string)
 	tags := cloud.Tags{cloud.TagKind: cloud.KindHost}
 	err := s.cfg.Cloud.FindInstances(ctx, tags, func(page []cloud.Instance) bool {
@@ -109,10 +111,10 @@ func (s *Sim) look(ctx context.Context, loops map[string]loop, boxDir string) er
 			break
 		}
 		if _, exists := loops[id]; !exists {
-			loops[id] = s.start(ctx, id, boxDir)
+			loops[id] = s.start(ctx, id, boxDir, disks)
 		}
 	}
-	s.consumeBans(running, loops)
+	s.consumeDrops(running, loops)
 	if boxDir != "" {
 		updateBoxSockets(boxDir, running, loops)
 	}
@@ -129,11 +131,13 @@ func (l loop) stop() {
 	}
 }
 
-func (s *Sim) start(ctx context.Context, id, boxDir string) loop {
+func (s *Sim) start(ctx context.Context, id, boxDir string, disks *machine.Disks) loop {
 	cfg := s.cfg
 	loopCtx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
-	m := machine.NewMemory(machine.MemoryConfig{ApplyDelay: ApplyDelay, Sleep: cfg.Sleep, Now: cfg.Now})
+	m := machine.NewMemory(machine.MemoryConfig{
+		ApplyDelay: ApplyDelay, Sleep: cfg.Sleep, Now: cfg.Now, Disks: disks, Put: cfg.Cloud.Put,
+	})
 	d := daemon.Config{
 		BaseURL:   "http://" + cfg.Binding,
 		HTTP:      &http.Client{Transport: transport{handler: cfg.Handler, binding: cfg.Binding}},

@@ -1081,6 +1081,11 @@ func changeCalls(key string) []catalogCall {
 		{"remove_account", account}, {"stop_host", host}, {"start_host", host}, {"resize_host", map[string]any{"host": "host01", "data_gb": 60}},
 		{"retry_host", host}, {"delete_host", host},
 		{tools.ToolDeleteKeptVolume, map[string]any{"volume": "vol-missing"}},
+		{tools.ToolCloseHost, host}, {tools.ToolOpenHost, host},
+		{tools.ToolReplaceHost, map[string]any{"host": "host01", "from": store.ReplaceVolume}},
+		{tools.ToolRestoreDatabase, map[string]any{"account": "acme", "path": "data/app.db", "as_of": fixedTime.Format(time.RFC3339)}},
+		{tools.ToolRestoreFiles, map[string]any{"account": "acme", "snapshot": fixedTime.Format(time.RFC3339)}},
+		{tools.ToolDeleteAccountBackups, map[string]any{"account": "absent"}},
 	}
 }
 func readCalls() []catalogCall {
@@ -1088,6 +1093,13 @@ func readCalls() []catalogCall {
 		{"hosts", map[string]any{}}, {"host", map[string]any{"host": "host01"}}, {"accounts", map[string]any{}},
 		{"account", map[string]any{"account": "acme"}}, {"users", map[string]any{}},
 		{tools.ToolKeptVolumes, map[string]any{}},
+	}
+}
+
+func backupReadCalls() []catalogCall {
+	return []catalogCall{
+		{tools.ToolBackupStatus, map[string]any{}},
+		{tools.ToolRestorePoints, map[string]any{"account": "acme"}},
 	}
 }
 
@@ -1111,7 +1123,8 @@ func TestRunTrail(t *testing.T) {
 	requests := map[string]requestRecord{}
 	caller := identity.Caller{UserID: "actor", Email: "actor@fixture.test"}
 	changing := append(changeCalls(validKey()), addressCalls()...)
-	for i, c := range append(changing, readCalls()...) {
+	reads := append(readCalls(), backupReadCalls()...)
+	for i, c := range append(changing, reads...) {
 		caller.RequestID = fmt.Sprintf("tool-%d", i)
 		if _, err := r.callAs(c.name, c.args, caller); err != nil {
 			t.Fatal(c.name, err)
@@ -1271,6 +1284,7 @@ func TestRunNoSiblingConnections(t *testing.T) {
 	r.call(tools.ToolRevokeInvite, tools.InviteArgs{Invite: invite.Invite}, nil)
 	calls := append(changeCalls(validKey()), readCalls()...)
 	calls = append(calls, addressCalls()...)
+	calls = append(calls, backupReadCalls()...)
 	requests := make(map[string]string, len(calls))
 	for i, call := range calls {
 		id := fmt.Sprintf("sibling-check-%d", i)
@@ -1580,7 +1594,12 @@ func TestRunInjectedBanner(t *testing.T) {
 	b := banner(page.User{Email: "mgreenly+fake01@gmail.com", ProfileURL: pages.Auth(req, "") + "/", LogoutURL: pages.Auth(req, "") + "/logout"})
 	b.Trail = []page.Level{pages.AboutLevel}
 	want := httptest.NewRecorder()
-	set.Write(want, req, 200, "about", pages.AboutData{Banner: b, Description: pages.Description, DefaultType: valid.DefaultType, DefaultRootGB: valid.DefaultRootGB, DefaultDataGB: valid.DefaultDataGB})
+	defaults := store.DefaultBackupSettings()
+	set.Write(want, req, 200, "about", pages.AboutData{
+		Banner: b, Description: pages.Description, DefaultType: valid.DefaultType, DefaultRootGB: valid.DefaultRootGB, DefaultDataGB: valid.DefaultDataGB,
+		BackupEveryMinutes: defaults.EveryMinutes, BackupHourly: defaults.Hourly, BackupDaily: defaults.Daily, BackupMonthly: defaults.Monthly,
+		BackupWindowDays: defaults.WindowDays, BackupFilesStaleMinutes: defaults.FilesStaleMinutes, BackupDatabaseStaleMinutes: defaults.DatabaseStaleMinutes,
+	})
 	if code != 200 || body != want.Body.String() {
 		t.Fatal("injected banner did not reach rendered page")
 	}

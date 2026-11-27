@@ -118,12 +118,17 @@ func (h *Host) data(ctx context.Context, state protocol.DesiredState) (bool, err
 		return false, nil
 	}
 	device := h.path("/dev/" + name)
-	uuid, kind, err := h.filesystem(ctx, device)
+	uuid, kind, formatted, err := h.filesystem(ctx, device)
 	if err != nil {
 		return false, err
 	}
 	if err := h.dataMounts(ctx, uuid, kind); err != nil {
 		return false, err
+	}
+	if formatted && state.Backup != nil && state.Backup.Restore != nil {
+		if _, err := h.writeAtomic(RestoreMarker, []byte("restore "+state.Backup.Restore.ID+"\n"), 0o600); err != nil {
+			return false, err
+		}
 	}
 	size, err := h.blockSize(ctx, device)
 	if err != nil {
@@ -157,19 +162,20 @@ func (h *Host) dataDevice(ctx context.Context, volume string) (string, error) {
 	return name, nil
 }
 
-func (h *Host) filesystem(ctx context.Context, device string) (uuid, kind string, err error) {
+func (h *Host) filesystem(ctx context.Context, device string) (uuid, kind string, formatted bool, err error) {
 	probe := Command{Name: "blkid", Args: []string{"-p", "--output", "export", device}}
 	result, err := h.query(ctx, probe, 0, 2)
 	if err != nil {
-		return "", "", err
+		return "", "", false, err
 	}
 	if result.ExitCode == 2 {
 		if _, err := h.run(ctx, "mkfs.xfs", "-L", "ikigenbadata", device); err != nil {
-			return "", "", err
+			return "", "", false, err
 		}
+		formatted = true
 		result, err = h.query(ctx, probe, 0)
 		if err != nil {
-			return "", "", err
+			return "", "", false, err
 		}
 	}
 	for line := range strings.SplitSeq(string(result.Stdout), "\n") {
@@ -182,9 +188,9 @@ func (h *Host) filesystem(ctx context.Context, device string) (uuid, kind string
 		}
 	}
 	if !deviceName(uuid) || !diskValue.MatchString(kind) {
-		return "", "", fmt.Errorf("blkid: missing or invalid filesystem UUID or type for %s", device)
+		return "", "", false, fmt.Errorf("blkid: missing or invalid filesystem UUID or type for %s", device)
 	}
-	return uuid, kind, nil
+	return uuid, kind, formatted, nil
 }
 
 const dataMountContents = "[Mount]\nWhat=/dev/disk/by-uuid/%s\nWhere=/data\nType=%s\n\n[Install]\nWantedBy=local-fs.target\n"

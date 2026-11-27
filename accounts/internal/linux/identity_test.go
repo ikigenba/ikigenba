@@ -12,6 +12,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/ikigenba/ikigenba/accounts/internal/linux"
 	"github.com/ikigenba/ikigenba/accounts/internal/machine"
@@ -60,6 +61,63 @@ func TestApplyInvalidStateDoesNothing(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestApplyValidatesBackupIDs(t *testing.T) {
+	// R-YRKQ-RQ9X
+	for _, id := range []string{"op_123\n", "OP_123", strings.Repeat("a", 65), "../b"} {
+		for _, b := range []protocol.Backup{{Close: id}, {Restore: &protocol.HostRestore{ID: id}}} {
+			f := newHardeningFixture(t)
+			before := snapshotHost(t, f.root)
+			if err := f.host.Apply(t.Context(), protocol.DesiredState{Backup: &b}); !errors.Is(err, machine.ErrInvalidState) {
+				t.Fatalf("invalid Apply = %v", err)
+			}
+			f.expectCalls()
+			if after := snapshotHost(t, f.root); !reflect.DeepEqual(after, before) {
+				t.Fatal("invalid Apply changed a host path")
+			}
+		}
+	}
+}
+
+func TestApplyRecordsCloseAfterLocks(t *testing.T) {
+	// R-YWGC-AT8P R-YRKQ-RQ9X
+	f := newHardeningFixture(t)
+	const stamp = linux.BackupDir + "/status/locked"
+	f.put("/etc/group", "shell:x:990:alice\n", 0o644)
+	f.put("/etc/passwd", "alice:x:20001:20001::/home/alice:/bin/bash\n", 0o644)
+	f.put("/etc/shadow", "alice:!:1::::::\n", 0o600)
+	now := time.Date(2026, 11, 19, 6, 0, 0, 123, time.FixedZone("fixture", -6*60*60))
+	f.env.Now = func() time.Time { return now }
+	f.host = linux.New(f.env)
+	const id = "op_0123456789abcdef"
+	const lock = "systemctl stop user-20001.slice"
+	s := protocol.DesiredState{Backup: &protocol.Backup{Close: id}, Version: 7}
+	f.answer = func(call string) (linux.Result, bool) {
+		if call == lock {
+			f.expectAbsent(stamp)
+			return linux.Result{ExitCode: 7}, true
+		}
+		return linux.Result{}, false
+	}
+	f.applyFails(s, lock, "systemctl stop")
+	f.expectAbsent(stamp)
+	f.commands = nil
+
+	const lateFailure = "rpm -q nftables"
+	f.answer = func(call string) (linux.Result, bool) {
+		return linux.Result{ExitCode: 7}, call == lateFailure
+	}
+	f.applyFails(s, lateFailure, "rpm")
+	f.expectFile(stamp, id+" 7 2026-11-19T12:00:00Z\n", 0o600)
+	now = now.Add(time.Minute)
+	f.commands = nil
+	f.applyFails(s, lateFailure, "rpm")
+	f.expectFile(stamp, id+" 7 2026-11-19T12:00:00Z\n", 0o600)
+	s.Version++
+	f.commands = nil
+	f.applyFails(s, lateFailure, "rpm")
+	f.expectFile(stamp, id+" 8 2026-11-19T12:01:00Z\n", 0o600)
 }
 
 func fixtureKey(comment string) string {
@@ -133,7 +191,7 @@ func TestApplyAbortsWhenStoppingUserSliceFails(t *testing.T) {
 }
 
 func TestApplyAccountsAndUsers(t *testing.T) {
-	// R-CM22-DSSX R-0FNF-5G1G R-CQXN-WVRP R-KZ69-MFRD R-CTDG-OF93 R-82VL-4Z30 R-CX15-TQH6 R-0JB4-AR9J R-SM70-07MK R-B0TM-V8Q5
+	// R-CM22-DSSX R-0FNF-5G1G R-CQXN-WVRP R-KZ69-MFRD R-CTDG-OF93 R-82VL-4Z30 R-CX15-TQH6 R-0JB4-AR9J R-SM70-07MK R-CH20-784X
 	f := newHardeningFixture(t)
 	const groups = "willow:x:21000:\nperry:x:21001:maia\nmaia:x:21003:\nwheel:x:10:maia\n"
 	f.put("/etc/group", groups, 0o644)

@@ -15,6 +15,7 @@ type Cloud interface {
 	EC2
 	Route53
 	STS
+	S3
 }
 
 // EC2 manages hosts, Elastic IP addresses, and EBS volumes.
@@ -53,6 +54,15 @@ type Route53 interface {
 type STS interface {
 	Account(ctx context.Context) (string, error)
 	CallerOf(ctx context.Context, presignedURL, binding string) (Caller, error)
+	Identity(ctx context.Context) (Caller, error)
+	AssumeRole(ctx context.Context, r RoleRequest) (Credentials, error)
+}
+
+// S3 lists and deletes objects in the host backups bucket.
+type S3 interface {
+	ListKeys(ctx context.Context, bucket, prefix string, each func([]string) bool) error
+	HasKeys(ctx context.Context, bucket, prefix string) (bool, error)
+	DeleteKeys(ctx context.Context, bucket string, keys []string) error
 }
 
 // Presigner signs a host's identity request for accounts to execute.
@@ -162,6 +172,18 @@ type Caller struct {
 	Account, Arn, UserID string
 }
 
+// RoleRequest describes a scoped STS session.
+type RoleRequest struct {
+	RoleARN, SessionName, Policy string
+	Duration                     time.Duration
+}
+
+// Credentials are the temporary keys and expiration for an STS session.
+type Credentials struct {
+	AccessKeyID, SecretAccessKey, SessionToken string
+	Expires                                    time.Time
+}
+
 // InstanceFacts are the fields accountsd reads from IMDS.
 type InstanceFacts struct {
 	InstanceID, Type, AMI, Region string
@@ -181,12 +203,15 @@ const (
 	KindHostData   = "host-data"
 	OrphanedTrue   = "true"
 
-	CodeNoResponse  = "NoResponse"
-	CodeTagContract = "TagContract"
-	CodeBadResponse = "BadResponse"
-	BindingHeader   = "X-Ikigenba-Accounts"
-	CallerTimeout   = 10 * time.Second
-	MaxCallerBytes  = 64 << 10
+	CodeNoResponse      = "NoResponse"
+	CodeTagContract     = "TagContract"
+	CodeBadResponse     = "BadResponse"
+	BindingHeader       = "X-Ikigenba-Accounts"
+	CallerTimeout       = 10 * time.Second
+	MaxCallerBytes      = 64 << 10
+	MaxKeysPerPage      = 1000
+	RoleSessionDuration = time.Hour
+	MaxPolicyBytes      = 2048
 )
 
 // Class tells the engine how to handle a failed cloud operation.

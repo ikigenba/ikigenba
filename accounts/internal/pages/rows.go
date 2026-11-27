@@ -21,8 +21,9 @@ func optionalStamps(t time.Time, layout string) (string, string) {
 	return stamps(t, layout)
 }
 
-func hostRow(h store.Host, domain string, now time.Time) HostRow {
+func hostRow(h store.Host, domain string, now time.Time, flagged int) HostRow {
 	reported, reportedText := optionalStamps(h.Reported, MinuteLayout)
+	closed, closedText := optionalStamps(h.Closed, MinuteLayout)
 	dnsName := ""
 	if domain != "" {
 		dnsName = h.Name + "." + domain
@@ -31,20 +32,22 @@ func hostRow(h store.Host, domain string, now time.Time) HostRow {
 		Name: h.Name, DNSName: dnsName, State: h.State, Reason: cmp.Or(h.Reason, h.RecordReason), OnDelete: h.OnDelete,
 		Health: store.Health(h, now), Type: h.Type,
 		RootGB: h.RootGB, DataGB: h.DataGB, EIP: h.EIP, AccountCount: h.Accounts,
-		Reported: reported, ReportedText: reportedText,
+		Reported: reported, ReportedText: reportedText, Closed: closed, ClosedText: closedText, BackupFlagged: flagged,
 	}
 }
 
 func keptVolumeRow(v store.KeptVolume) KeptVolumeRow {
 	deleted, deletedText := stamps(v.Deleted, MinuteLayout)
-	return KeptVolumeRow{Volume: v.Volume, Host: v.Host, SizeGB: v.SizeGB, Deleted: deleted, DeletedText: deletedText}
+	return KeptVolumeRow{Volume: v.Volume, Host: v.Host, Cause: v.Cause, SizeGB: v.SizeGB, Deleted: deleted, DeletedText: deletedText}
 }
 
-func accountRow(a store.Account, domain string) AccountRow {
+func accountRow(a store.Account, domain string, facts store.AccountBackup, settings store.BackupSettings, now time.Time) AccountRow {
 	created, createdText := stamps(a.Created, MinuteLayout)
+	snapshot, snapshotText := optionalStamps(facts.Snapshot, MinuteLayout)
 	return AccountRow{
 		Slug: a.Slug, Host: a.Host, DNSName: a.Slug + "." + domain, State: a.State, Reason: a.Reason,
 		UserCount: a.Users, InviteCount: a.Invites, Created: created, CreatedText: createdText,
+		Backup: store.BackupHealth(facts, settings, now), Snapshot: snapshot, SnapshotText: snapshotText,
 	}
 }
 
@@ -56,13 +59,14 @@ func userRow(u store.User) UserRow {
 	}
 }
 
-func hostView(h store.Host, domain string, now time.Time) HostView {
-	row := hostRow(h, domain, now)
+func hostView(h store.Host, domain string, now time.Time, flagged int) HostView {
+	row := hostRow(h, domain, now, flagged)
 	created, createdText := stamps(h.Created, SecondLayout)
 	return HostView{
 		Name: row.Name, DNSName: row.DNSName, State: row.State, Reason: row.Reason, OnDelete: row.OnDelete, Health: row.Health, Type: row.Type,
 		RootGB: row.RootGB, DataGB: row.DataGB, EIP: row.EIP, AccountCount: row.AccountCount,
-		Reported: row.Reported, ReportedText: row.ReportedText, InstanceID: h.InstanceID, DataVolume: h.DataVolume,
+		Reported: row.Reported, ReportedText: row.ReportedText, Closed: row.Closed, ClosedText: row.ClosedText, BackupFlagged: row.BackupFlagged,
+		Replace: h.Replace, InstanceID: h.InstanceID, DataVolume: h.DataVolume,
 		Created: created, CreatedText: createdText, Allowlist: append([]string{}, h.Allowlist...),
 	}
 }

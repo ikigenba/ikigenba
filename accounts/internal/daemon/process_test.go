@@ -205,7 +205,7 @@ func (w cancelWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// R-9A7O-IWEP R-18NQ-UKZP
+// R-9A7O-IWEP R-91QI-BGUJ
 func TestMainDigestsThenFetchesThroughItsHTTPSClient(t *testing.T) {
 	const original = "\x7fELForiginal"
 	const update = "\x7fELFupdate"
@@ -276,13 +276,6 @@ func TestMainDigestsThenFetchesThroughItsHTTPSClient(t *testing.T) {
 				RootCAs:    root,
 			}
 			m := machine.NewMemory(machine.MemoryConfig{Now: func() time.Time { return time.Time{} }, Sleep: func(context.Context, time.Duration) {}})
-			host := machineProbe{Machine: m, install: func(ctx context.Context, body io.Reader, digest string) error {
-				if err := m.InstallDaemon(ctx, body, digest); err != nil {
-					return err
-				}
-				cancel()
-				return ctx.Err()
-			}}
 			if code := daemon.Main(ctx, p, func(got context.Context) (cloud.Presigner, cloud.Metadata, error) {
 				if got != ctx {
 					t.Error("open received a different context")
@@ -291,7 +284,7 @@ func TestMainDigestsThenFetchesThroughItsHTTPSClient(t *testing.T) {
 					return "https://identity.example", nil
 				})
 				return p, nil, nil
-			}, host); code != tc.code {
+			}, machineProbe{Machine: m}); code != tc.code {
 				t.Errorf("Main = %d, want %d, stderr %q", code, tc.code, &stderr)
 			}
 			mu.Lock()

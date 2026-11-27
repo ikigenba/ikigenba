@@ -1,0 +1,801 @@
+package linux_test
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"reflect"
+	"runtime"
+	"slices"
+	"strings"
+	"syscall"
+	"testing"
+	"time"
+
+	"github.com/ikigenba/ikigenba/accounts/internal/linux"
+	"github.com/ikigenba/ikigenba/accounts/internal/machine"
+	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
+)
+
+const (
+	walSQLite   = "SQLite format 3\x00\x00\x00\x02\x02"
+	plainSQLite = "SQLite format 3\x00\x00\x00\x01\x01"
+)
+
+type backupPassFixture struct {
+	*hardeningFixture
+	state          protocol.DesiredState
+	at             time.Time
+	backupCommands []linux.Command
+	execute        func(linux.Command) (linux.Result, error)
+}
+
+func newBackupPassFixture(t *testing.T) *backupPassFixture {
+	t.Helper()
+	f := &backupPassFixture{hardeningFixture: newHardeningFixture(t), state: installTestState(),
+		at: time.Date(2026, 11, 26, 12, 0, 0, 123456789, time.FixedZone("fixture", -5*3600))}
+	f.putBackupProgramStamps()
+	b := f.state.Backup
+	b.Host.Expires = f.at.Add(time.Hour)
+	b.Accounts = []protocol.AccountCredentials{{Account: "acme", Credentials: b.Host}}
+	b.Settings.Hourly, b.Settings.Daily, b.Settings.Monthly, b.Settings.WindowDays = 24, 35, 12, 35
+	base := f.env.Execute
+	f.env.Now = func() time.Time { return f.at }
+	f.env.Fetch = func(context.Context, string) (io.ReadCloser, error) {
+		t.Fatal("unexpected backup install fetch")
+		return nil, nil
+	}
+	f.env.Execute = func(ctx context.Context, c linux.Command) (linux.Result, error) {
+		if c.Name == f.path(linux.ResticPath) || c.Name == f.path(linux.LitestreamPath) || c.Name == "systemctl" && (c.Args[0] == "daemon-reload" || strings.Contains(strings.Join(c.Args, " "), "accountsd-litestream@")) {
+			f.backupCommands = append(f.backupCommands, c)
+			if f.execute != nil {
+				return f.execute(c)
+			}
+			if c.Name == f.path(linux.ResticPath) && c.Args[3] == "backup" {
+				f.summary(c)
+			}
+			return linux.Result{}, nil
+		}
+		return base(ctx, c)
+	}
+	f.host = linux.New(f.env)
+	return f
+}
+
+func (f *backupPassFixture) stream() {
+	f.t.Helper()
+	if err := f.host.Stream(f.t.Context(), f.state); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+func (f *backupPassFixture) backup() {
+	f.t.Helper()
+	if err := f.host.Backup(f.t.Context(), f.state); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+func (f *backupPassFixture) report() protocol.Report {
+	f.t.Helper()
+	r, err := f.host.Inspect(f.t.Context(), f.state)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	return r
+}
+
+func (f *backupPassFixture) output(c linux.Command, s string) {
+	f.t.Helper()
+	if c.Stdout == nil {
+		f.t.Fatalf("missing streaming output for %v", c.Args)
+	}
+	if _, err := io.WriteString(c.Stdout, s); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+func (f *backupPassFixture) summary(c linux.Command) {
+	f.t.Helper()
+	f.output(c, fmt.Sprintf(`{"message_type":"summary","snapshot_id":"fixture","backup_end":%q}`+"\n", f.at.Format(time.RFC3339Nano)))
+}
+
+func (f *backupPassFixture) commandsFor(program string) []linux.Command {
+	var out []linux.Command
+	for _, c := range f.backupCommands {
+		if c.Name == program {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func TestBackupMemberGateCleansOnlyStreamUnits(t *testing.T) {
+	// R-Y6RR-TK2S
+	for _, tc := range []struct {
+		name       string
+		invalidate func(*protocol.DesiredState)
+	}{
+		{"missing", func(s *protocol.DesiredState) { s.Backup = nil }},
+		{"short bucket", func(s *protocol.DesiredState) { s.Backup.Bucket = "ab" }},
+		{"long bucket", func(s *protocol.DesiredState) { s.Backup.Bucket = strings.Repeat("a", 64) }},
+		{"uppercase bucket", func(s *protocol.DesiredState) { s.Backup.Bucket = "Abc" }},
+		{"invalid bucket prefix", func(s *protocol.DesiredState) { s.Backup.Bucket = ".abc" }},
+		{"invalid bucket suffix", func(s *protocol.DesiredState) { s.Backup.Bucket = "abc-" }},
+		{"empty region", func(s *protocol.DesiredState) { s.Backup.Region = "" }},
+		{"invalid region", func(s *protocol.DesiredState) { s.Backup.Region = "us_test" }},
+		{"nonpositive interval", func(s *protocol.DesiredState) { s.Backup.Settings.EveryMinutes = 0 }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newBackupPassFixture(t)
+			f.put(linux.BackupDir+"/acme.yml", "configuration", 0o600)
+			f.put(linux.BackupDir+"/acme.env", "credentials", 0o600)
+			f.put(linux.BackupDir+"/meta/acme/deep/data", "metadata", 0o600)
+			f.put("/untouched/outside", "leave intact", 0o644)
+			if err := os.Symlink(f.path("/untouched"), f.path(linux.BackupDir+"/meta/acme/link")); err != nil {
+				t.Fatal(err)
+			}
+			tc.invalidate(&f.state)
+			f.backup()
+			f.stream()
+			var got [][]string
+			for _, c := range f.backupCommands {
+				got = append(got, c.Args)
+			}
+			want := [][]string{{"is-active", "accountsd-litestream@acme.service"}, {"stop", "accountsd-litestream@acme.service"}}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("operations = %v, want %v", got, want)
+			}
+			for _, p := range []string{"/acme.yml", "/acme.env", "/meta/acme"} {
+				f.expectAbsent(linux.BackupDir + p)
+			}
+			f.expectFile("/untouched/outside", "leave intact", 0o644)
+		})
+	}
+}
+
+func TestBackupsPreserveUncredentialedAccounts(t *testing.T) {
+	// R-Y7ZO-7BTH
+	f := newBackupPassFixture(t)
+	f.state.Backup.Host.AccessKeyID = "invalid!key"
+	f.state.Accounts = append(f.state.Accounts, protocol.Account{Slug: "bravo", State: protocol.AccountActive})
+	bad := f.state.Backup.Accounts[0].Credentials
+	bad.SessionToken = ""
+	f.state.Backup.Accounts = append(f.state.Backup.Accounts, protocol.AccountCredentials{Account: "bravo", Credentials: bad})
+	f.put(dataPrivateKey, "key", 0o600)
+	f.put(dataPublicKey, "public", 0o644)
+	f.put("/srv/acme/data/a.db", walSQLite, 0o600)
+	f.put("/srv/bravo/data/b.db", walSQLite, 0o600)
+	f.put(linux.BackupDir+"/bravo.yml", "configuration", 0o600)
+	f.put(linux.BackupDir+"/bravo.env", "credentials", 0o600)
+	f.stream()
+	f.backup()
+	for _, c := range f.backupCommands {
+		if strings.Contains(strings.Join(c.Args, " "), "bravo") || strings.Contains(strings.Join(c.Args, " "), f.state.Backup.HostPrefix) {
+			t.Fatalf("operation for unusable credentials: %v", c.Args)
+		}
+	}
+	f.expectFile(linux.BackupDir+"/bravo.yml", "configuration", 0o600)
+	f.expectFile(linux.BackupDir+"/bravo.env", "credentials", 0o600)
+	report := f.report()
+	if got := report.Backups[1]; got.Error != machine.NoCredentials || len(got.Databases) != 1 || report.HostBackup.Error != machine.NoCredentials {
+		t.Fatalf("account report = %+v, host = %+v", got, report.HostBackup)
+	}
+}
+
+func TestAccountResticWaitsForItsWalk(t *testing.T) {
+	// R-VBDX-U2KB
+	f := newBackupPassFixture(t)
+	f.backup()
+	configured := f.state.Backup
+	f.state.Backup = nil
+	f.stream()
+	f.state.Backup = configured
+	f.backup()
+	if got := f.commandsFor(f.path(linux.ResticPath)); len(got) != 0 {
+		t.Fatalf("restic before walk: %v", got)
+	}
+	f.stream()
+	f.state.Accounts = append(f.state.Accounts, protocol.Account{Slug: "bravo", State: protocol.AccountActive})
+	f.state.Backup.Accounts = append(f.state.Backup.Accounts, protocol.AccountCredentials{Account: "bravo", Credentials: configured.Host})
+	f.backup()
+	got := f.commandsFor(f.path(linux.ResticPath))
+	if len(got) == 0 || !slices.Equal(got[0].Args[3:], []string{"cat", "config"}) {
+		t.Fatalf("restic after walk: %v", got)
+	}
+	for _, c := range got {
+		if strings.Contains(c.Args[1], "bravo") {
+			t.Fatalf("restic ran for newly added account: %v", c.Args)
+		}
+	}
+	active := f.state.Accounts
+	f.state.Accounts = nil
+	f.stream()
+	f.state.Accounts = active
+	f.at = f.at.Add(time.Hour)
+	f.backupCommands = nil
+	f.backup()
+	if got := f.commandsFor(f.path(linux.ResticPath)); len(got) != 0 {
+		t.Fatalf("restic reused a walk for an account absent from the last stream pass: %v", got)
+	}
+}
+
+func TestDatabaseDiscoveryUsesValidRegularSQLiteFiles(t *testing.T) {
+	// R-U9L1-Z6KS
+	f := newBackupPassFixture(t)
+	f.put("/srv/acme/data/z.db", plainSQLite, 0o660)
+	f.put("/srv/acme/data/a.db", walSQLite, 0o640)
+	f.put("/srv/acme/data/b.db", "not a database", 0o600)
+	f.put("/srv/acme/data/invalid\x01name", walSQLite, 0o600)
+	f.put("/srv/acme/data/invalid\xffname", walSQLite, 0o600)
+	if err := os.Symlink(f.path("/srv/acme/data/a.db"), f.path("/srv/acme/data/linked.db")); err != nil {
+		t.Fatal(err)
+	}
+	before := f.stat("/srv/acme/data/a.db")
+	f.stream()
+	got := f.report().Backups[0]
+	if len(got.Databases) != 2 || got.Databases[0].Path != "data/a.db" || got.Databases[0].Error != "" ||
+		got.Databases[1].Path != "data/z.db" || got.Databases[1].Error != machine.NotWAL || got.DatabaseTotal != 2 || got.DatabaseErrors != 1 {
+		t.Fatalf("walk report = %+v", got)
+	}
+	config, err := os.ReadFile(f.path(linux.BackupDir + "/acme.yml"))
+	if err != nil || !strings.Contains(string(config), "/srv/acme/data/a.db") || strings.Contains(string(config), "/srv/acme/data/z.db") {
+		t.Fatalf("config = %s, %v", config, err)
+	}
+	assertUnchanged(t, f.path("/srv/acme/data/a.db"), before)
+	f.expectFile("/srv/acme/data/a.db", walSQLite, 0o640)
+	f.expectFile("/srv/acme/data/z.db", plainSQLite, 0o660)
+}
+
+func TestDatabaseWalkBoundsKeepPriorCompletedFacts(t *testing.T) {
+	// R-UC0U-QQ26
+	f := newBackupPassFixture(t)
+	for i := range linux.MaxDatabasesPerAccount + 1 {
+		f.put(fmt.Sprintf("/srv/acme/data/db%03d", i), walSQLite, 0o600)
+	}
+	f.stream()
+	before := f.report().Backups[0]
+	if before.DatabaseTotal != linux.MaxDatabasesPerAccount+1 || len(before.Databases) != linux.MaxDatabasesPerAccount ||
+		before.DatabaseErrors != 1 || before.Error != machine.TooManyDatabases {
+		t.Fatalf("overflow report = %+v", before)
+	}
+	if err := os.MkdirAll(f.path("/srv/acme/data/"+strings.Repeat("deep/", linux.MaxDepth+1)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	f.stream()
+	after := f.report().Backups[0]
+	before.Error = machine.DataTooLarge
+	if !reflect.DeepEqual(before, after) {
+		t.Fatalf("depth overflow report changed the retained facts: %+v", after)
+	}
+}
+
+func TestLitestreamWritesExactProtectedConfigAndRestartsOnSchedule(t *testing.T) {
+	// R-YHQV-9HR1 R-YIYR-N9HQ R-UD8R-4HSV R-YLEK-ESZ4 R-UEGN-I9JK
+	f := newBackupPassFixture(t)
+	f.put("/srv/acme/data/z.db", walSQLite, 0o600)
+	f.put("/srv/acme/data/a\".db", walSQLite, 0o600)
+	f.setMode(linux.BackupDir, 0o755)
+	f.stream()
+	f.backup()
+	f.expectFile(linux.BackupDir+"/acme.yml", `snapshot:
+  interval: 24h
+  retention: 840h
+shutdown-sync-timeout: 30s
+dbs:
+  - path: "/srv/acme/data/a\".db"
+    meta-path: "/var/lib/accountsd/backup/meta/acme/data/a\".db"
+    replica:
+      type: s3
+      bucket: "fixture-bucket"
+      path: "accounts/acme/data/a\".db"
+      region: "us-test-2"
+  - path: "/srv/acme/data/z.db"
+    meta-path: "/var/lib/accountsd/backup/meta/acme/data/z.db"
+    replica:
+      type: s3
+      bucket: "fixture-bucket"
+      path: "accounts/acme/data/z.db"
+      region: "us-test-2"
+`, 0o600)
+	f.expectFile("/etc/systemd/system/"+linux.LitestreamUnit, `[Unit]
+RequiresMountsFor=/srv
+
+[Service]
+EnvironmentFile=/var/lib/accountsd/backup/%i.env
+ExecStart=/usr/local/bin/litestream replicate -config /var/lib/accountsd/backup/%i.yml -no-expand-env
+Restart=always
+RestartSec=5
+TimeoutStopSec=60
+`, 0o644)
+	b := f.state.Backup
+	checkEnv := func(c protocol.Credentials) {
+		t.Helper()
+		want := fmt.Sprintf("# expires %s\n# litestream %s\nAWS_ACCESS_KEY_ID=%s\nAWS_SECRET_ACCESS_KEY=%s\nAWS_SESSION_TOKEN=%s\nAWS_REGION=%s\n",
+			c.Expires.UTC().Format(time.RFC3339), linux.LitestreamDigest, c.AccessKeyID, c.SecretAccessKey, c.SessionToken, b.Region)
+		f.expectFile(linux.BackupDir+"/acme.env", want, 0o600)
+	}
+	checkEnv(b.Host)
+	for _, path := range []string{linux.BackupDir, linux.BackupDir + "/meta", linux.BackupDir + "/meta/acme", linux.BackupDir + "/status", linux.BackupDir + "/manifest", linux.ResticCache, linux.ResticCache + "/acme"} {
+		f.expectMode(path, 0o700)
+	}
+	unit := f.commandsFor("systemctl")
+	if len(unit) != 3 || !slices.Equal(unit[0].Args, []string{"daemon-reload"}) || unit[1].Args[0] != "is-active" || unit[2].Args[0] != "restart" {
+		t.Fatalf("initial systemctl calls = %v", unit)
+	}
+	expiry := b.Host.Expires
+	b.Accounts[0].Credentials.AccessKeyID = "newKey"
+	b.Accounts[0].Credentials.Expires = expiry.Add(time.Hour)
+	f.backupCommands = nil
+	f.at = expiry.Add(-linux.RestartBefore - time.Second)
+	f.stream()
+	if got := f.commandsFor("systemctl"); len(got) != 1 || got[0].Args[0] != "is-active" {
+		t.Fatalf("early rotation commands = %v", got)
+	}
+	checkEnv(b.Host)
+	f.at = expiry.Add(-linux.RestartBefore + time.Second)
+	f.backupCommands = nil
+	f.stream()
+	if got := f.commandsFor("systemctl"); len(got) != 2 || got[1].Args[0] != "restart" {
+		t.Fatalf("rotation commands = %v", got)
+	}
+	checkEnv(b.Accounts[0].Credentials)
+	f.state.Accounts = nil
+	f.backupCommands = nil
+	f.stream()
+	if got := f.commandsFor("systemctl"); len(got) != 2 || got[0].Args[0] != "is-active" || got[1].Args[0] != "stop" {
+		t.Fatalf("stale unit commands = %v", got)
+	}
+	f.expectAbsent(linux.BackupDir + "/acme.yml")
+	f.expectAbsent(linux.BackupDir + "/acme.env")
+	f.expectAbsent(linux.BackupDir + "/meta/acme")
+}
+
+func TestLitestreamRecordsReplicaHealthOnlyAfterThreeAnswers(t *testing.T) {
+	// R-UFOJ-W1A9 R-UT3G-3IFW
+	f := newBackupPassFixture(t)
+	f.put("/srv/acme/data/one.db", walSQLite, 0o600)
+	f.put("/srv/acme/data/two.db", walSQLite, 0o600)
+	f.put("/srv/acme/data/legacy.db", plainSQLite, 0o600)
+	phase := 0
+	f.execute = func(c linux.Command) (linux.Result, error) {
+		if c.Name != f.path(linux.LitestreamPath) {
+			return linux.Result{}, nil
+		}
+		if c.Args[1] != "-config" || c.Args[2] != f.path(linux.BackupDir+"/acme.yml") || c.Args[3] != "-no-expand-env" {
+			t.Fatalf("litestream command = %v", c.Args)
+		}
+		creds := f.state.Backup.Accounts[0].Credentials
+		want := []string{"AWS_ACCESS_KEY_ID=" + creds.AccessKeyID, "AWS_SECRET_ACCESS_KEY=" + creds.SecretAccessKey,
+			"AWS_SESSION_TOKEN=" + creds.SessionToken, "AWS_REGION=" + f.state.Backup.Region}
+		if !slices.Equal(c.Env, want) {
+			t.Fatalf("litestream env = %v, want %v", c.Env, want)
+		}
+		db := filepath.Base(c.Args[len(c.Args)-1])
+		if c.Args[len(c.Args)-1] != f.path("/srv/acme/data/"+db) || db == "legacy.db" {
+			t.Fatalf("litestream database = %s", c.Args[len(c.Args)-1])
+		}
+		switch {
+		case c.Args[0] == "status":
+			f.output(c, fmt.Sprintf(`[{"database":"/srv/acme/data/%s","status":"ok","local_txid":"0000000000000010"}]`, db))
+		case c.Args[4] == "-level" && c.Args[5] == "0":
+			tx := "0f"
+			if db == "one.db" || phase == 1 {
+				tx = "10"
+			}
+			f.output(c, fmt.Sprintf(`[{"timestamp":"2026-11-26T05:00:00Z","max_txid":%q},{"timestamp":"2026-11-26T06:00:00Z","max_txid":"01"}]`, tx))
+		case c.Args[4] == "-level" && c.Args[5] == "9":
+			if phase == 2 {
+				return linux.Result{ExitCode: 1}, nil
+			}
+			f.output(c, `[{"timestamp":"2026-11-15T05:00:00Z"},{"timestamp":"2026-11-14T05:00:00Z"}]`)
+		default:
+			t.Fatalf("unexpected litestream arguments %v", c.Args)
+		}
+		return linux.Result{}, nil
+	}
+	f.stream()
+	first := f.at.UTC().Truncate(time.Second)
+	firstReport := f.report().Backups[0]
+	if !firstReport.Databases[1].Synced.Equal(first) || !firstReport.Databases[2].Synced.IsZero() {
+		t.Fatalf("sync progress before the remote replica caught up = %+v", firstReport)
+	}
+	if got := f.commandsFor(f.path(linux.LitestreamPath)); len(got) != 6 ||
+		got[0].Args[0] != "status" || got[1].Args[5] != "0" || got[2].Args[5] != "9" ||
+		got[3].Args[0] != "status" || got[4].Args[5] != "0" || got[5].Args[5] != "9" {
+		t.Fatalf("health command order = %v", got)
+	}
+	phase++
+	f.at = f.at.Add(time.Minute)
+	f.stream()
+	second := f.at.UTC().Truncate(time.Second)
+	before := f.report().Backups[0]
+	oldest := time.Date(2026, 11, 14, 5, 0, 0, 0, time.UTC)
+	written := time.Date(2026, 11, 26, 6, 0, 0, 0, time.UTC)
+	if len(before.Databases) != 3 || before.DatabaseTotal != 3 || before.DatabaseErrors != 1 || before.Databases[0].Error != machine.NotWAL ||
+		before.Databases[1].Oldest != oldest || before.Databases[1].Written != written || before.Databases[1].Synced != second ||
+		before.Databases[2].Synced != second || before.Synced != second || before.Written != written {
+		t.Fatalf("replica health = %+v", before)
+	}
+	phase++
+	f.at = f.at.Add(time.Minute)
+	if err := f.host.Stream(t.Context(), f.state); err == nil {
+		t.Fatal("failed ltx returned nil")
+	}
+	if after := f.report().Backups[0]; !reflect.DeepEqual(before, after) {
+		t.Fatalf("failed health commands changed facts: %+v", after)
+	}
+}
+
+func TestResticAccountCommandsAndReports(t *testing.T) {
+	// R-UGWG-9T0Y R-UI4C-NKRN R-UJC9-1CIC R-YTXV-375Z R-UKK5-F491 R-UT3G-3IFW R-Z3P2-5D3J
+	f := newBackupPassFixture(t)
+	f.state.Host = "host01"
+	f.state.Backup.Settings.CheckDays = 2
+	f.state.Users = []protocol.User{
+		{Name: "zulu", Account: "acme", State: protocol.UserActive},
+		{Name: "alpha", Account: "acme", State: protocol.UserLocked},
+		{Name: "linked", Account: "acme", State: protocol.UserActive},
+	}
+	f.put("/home/zulu/file", "z", 0o600)
+	f.put("/home/alpha/file", "a", 0o600)
+	if err := os.Symlink(f.path("/home/zulu"), f.path("/home/linked")); err != nil {
+		t.Fatal(err)
+	}
+	name := "data/app[1]?.db"
+	f.put("/srv/acme/"+name, walSQLite, 0o660)
+	f.put("/srv/acme/data/legacy.db", plainSQLite, 0o600)
+	f.stream()
+	f.backupCommands = nil
+	f.execute = func(c linux.Command) (linux.Result, error) {
+		switch c.Args[3] {
+		case "cat":
+			return linux.Result{ExitCode: 10}, nil
+		case "backup":
+			f.summary(c)
+		case "snapshots":
+			f.output(c, "[")
+			for i := range 40 {
+				if i != 0 {
+					f.output(c, ",")
+				}
+				f.output(c, fmt.Sprintf(`{"time":%q}`, f.at.Add(time.Duration(i)*time.Second).Format(time.RFC3339Nano)))
+			}
+			f.output(c, "]")
+		}
+		return linux.Result{}, nil
+	}
+	f.backup()
+	var wantArgs = [][]string{{"cat", "config"}, {"init"}}
+	snapshot := []string{"backup", "--json", "--host", "acme"}
+	for _, suffix := range []string{"", "-wal", "-shm", "-journal"} {
+		snapshot = append(snapshot, "--exclude", f.path("/srv/acme/"+`data/app\[1]\?.db`)+suffix)
+	}
+	for _, home := range []string{"/home/alpha", "/home/zulu"} {
+		for _, suffix := range []string{"/.cache", "/.npm", "/.local/share/claude", "/.local/state/claude"} {
+			snapshot = append(snapshot, "--exclude", f.path(home+suffix))
+		}
+	}
+	snapshot = append(snapshot, f.path("/srv/acme"), f.path("/home/alpha"), f.path("/home/zulu"), f.path(linux.BackupDir+"/manifest/acme"))
+	wantArgs = append(wantArgs, snapshot,
+		[]string{"forget", "--host", "acme", "--group-by", "host", "--keep-hourly", "24", "--keep-daily", "35", "--keep-monthly", "12", "--prune"},
+		[]string{"snapshots", "--host", "acme", "--json"}, []string{"check", "--read-data-subset=" + linux.CheckSubset})
+	got := f.commandsFor(f.path(linux.ResticPath))
+	if len(got) != len(wantArgs) {
+		t.Fatalf("restic commands = %v", got)
+	}
+	creds := f.state.Backup.Accounts[0].Credentials
+	env := []string{"AWS_ACCESS_KEY_ID=" + creds.AccessKeyID, "AWS_SECRET_ACCESS_KEY=" + creds.SecretAccessKey, "AWS_SESSION_TOKEN=" + creds.SessionToken,
+		"AWS_DEFAULT_REGION=us-test-2", "RESTIC_CACHE_DIR=" + f.path(linux.ResticCache+"/acme")}
+	for i, c := range got {
+		want := append([]string{"-r", "s3:s3.us-test-2.amazonaws.com/fixture-bucket/accounts/acme/files", "--insecure-no-password"}, wantArgs[i]...)
+		if !slices.Equal(c.Args, want) || !slices.Equal(c.Env, env) {
+			t.Fatalf("restic command %d = %v, env = %v, want %v, %v", i, c.Args, c.Env, want, env)
+		}
+	}
+	stat, ok := f.stat("/srv/acme/" + name).Sys().(*syscall.Stat_t)
+	if !ok {
+		t.Fatal("missing ownership metadata")
+	}
+	f.expectFile(linux.BackupDir+"/manifest/acme", fmt.Sprintf("%d %d 0660 %s\n", stat.Uid, stat.Gid, name), 0o600)
+	before := f.report().Backups[0]
+	at := f.at.UTC().Truncate(time.Second)
+	var snapshots []int64
+	for i := 39; i >= 8; i-- {
+		snapshots = append(snapshots, f.at.Unix()+int64(i))
+	}
+	if before.Snapshot != at || before.Checked != at || !slices.Equal(before.Snapshots, snapshots) || before.Error != "" {
+		t.Fatalf("backup facts = %+v", before)
+	}
+	f.host = linux.New(f.env)
+	if after := f.report().Backups[0]; !reflect.DeepEqual(before, after) {
+		t.Fatalf("after restart: %+v", after)
+	}
+	f.execute = nil
+	f.stream()
+	f.backupCommands = nil
+	f.at = f.at.Add(time.Minute)
+	f.backup()
+	if len(f.backupCommands) != 0 {
+		t.Fatalf("restic ran before schedule after restart: %v", f.backupCommands)
+	}
+}
+
+func TestResticErrorContinuesOtherAccountsAndUnlocksOnce(t *testing.T) {
+	// R-ULS1-SVZQ R-UO7U-KFH4 R-UJC9-1CIC
+	f := newBackupPassFixture(t)
+	for _, slug := range []string{"bravo", "charlie", "delta"} {
+		f.state.Accounts = append(f.state.Accounts, protocol.Account{Slug: slug, State: protocol.AccountActive})
+		f.state.Backup.Accounts = append(f.state.Backup.Accounts, protocol.AccountCredentials{Account: slug, Credentials: f.state.Backup.Host})
+	}
+	f.stream()
+	f.execute = func(c linux.Command) (linux.Result, error) {
+		verb := c.Args[3]
+		if verb == "backup" {
+			f.summary(c)
+		}
+		switch {
+		case strings.Contains(c.Args[1], "/acme/") && verb == "forget":
+			return linux.Result{ExitCode: 11, Stderr: []byte("first\nlast\rline\n \t\r\n")}, nil
+		case strings.Contains(c.Args[1], "/bravo/") && verb == "backup":
+			return linux.Result{ExitCode: 3}, nil
+		case strings.Contains(c.Args[1], "/charlie/") && verb == "forget":
+			return linux.Result{ExitCode: 5}, nil
+		default:
+			return linux.Result{}, nil
+		}
+	}
+	if err := f.host.Backup(t.Context(), f.state); err == nil {
+		t.Fatal("backup failure returned nil")
+	}
+	commands := make(map[string][]string)
+	for _, c := range f.commandsFor(f.path(linux.ResticPath)) {
+		repo := c.Args[1]
+		slug := filepath.Base(filepath.Dir(repo))
+		commands[slug] = append(commands[slug], c.Args[3])
+		if c.Args[3] == "unlock" && len(c.Args) != 4 {
+			t.Fatalf("unlock command = %v", c.Args)
+		}
+	}
+	for slug, want := range map[string][]string{
+		"acme": {"cat", "backup", "forget", "unlock"}, "bravo": {"cat", "backup", "forget", "snapshots"},
+		"charlie": {"cat", "backup", "forget"}, "delta": {"cat", "backup", "forget", "snapshots"},
+	} {
+		if !slices.Equal(commands[slug], want) {
+			t.Fatalf("commands for %s = %v, want %v", slug, commands[slug], want)
+		}
+	}
+	got := f.report().Backups
+	want := []string{"restic forget: exit status 11: last line", "restic backup: exit status 3", "restic forget: exit status 5", ""}
+	for i, row := range got {
+		if row.Error != want[i] || row.Snapshot.IsZero() {
+			t.Fatalf("backup %s facts = %+v, want error %q and recorded snapshot", row.Account, row, want[i])
+		}
+	}
+}
+
+func TestHostBackupDetectsChangedKeysAndReportsFacts(t *testing.T) {
+	// R-UQNN-BYYI R-UWR5-8TNZ R-Z3P2-5D3J
+	f := newBackupPassFixture(t)
+	f.put(dataPrivateKey, "key one", 0o600)
+	f.backup()
+	if len(f.backupCommands) != 0 {
+		t.Fatalf("backup without both keys = %v", f.backupCommands)
+	}
+	f.put(dataPublicKey, "public one", 0o644)
+	f.backup()
+	got := f.commandsFor(f.path(linux.ResticPath))
+	if len(got) != 3 || !slices.Equal(got[0].Args, []string{"-r", "s3:s3.us-test-2.amazonaws.com/fixture-bucket/hosts/host01/7", "--insecure-no-password", "cat", "config"}) ||
+		!slices.Equal(got[1].Args[3:], []string{"backup", "--json", "--host", "host01", f.path(linux.HostKeyDir)}) ||
+		got[1].Env[4] != "RESTIC_CACHE_DIR="+f.path(linux.ResticCache+"/.host") ||
+		!slices.Equal(got[2].Args[3:], []string{"forget", "--host", "host01", "--group-by", "host", "--keep-hourly", "24", "--keep-daily", "35", "--keep-monthly", "12", "--prune"}) {
+		t.Fatalf("host commands = %v", got)
+	}
+	before := f.report().HostBackup
+	if before.Snapshot != f.at.UTC().Truncate(time.Second) || before.Error != "" {
+		t.Fatalf("host backup = %+v", before)
+	}
+	f.host = linux.New(f.env)
+	if after := f.report().HostBackup; after != before {
+		t.Fatalf("host after restart = %+v, want %+v", after, before)
+	}
+	f.backupCommands = nil
+	f.at = f.at.Add(time.Minute)
+	f.backup()
+	if len(f.backupCommands) != 0 {
+		t.Fatalf("backup ran for unchanged keys: %v", f.backupCommands)
+	}
+	f.put(dataPublicKey, "public two", 0o644)
+	f.backup()
+	if after := f.report().HostBackup; after.Snapshot != f.at.UTC().Truncate(time.Second) || after.Error != "" {
+		t.Fatalf("changed key backup = %+v", after)
+	}
+	f.state.Backup.HostPrefix = ""
+	if after := f.report().HostBackup; after.Error != machine.NoCredentials || after.Snapshot != f.at.UTC().Truncate(time.Second) {
+		t.Fatalf("uncredentialed host backup = %+v", after)
+	}
+}
+
+func TestBackupOutputSkipsLargeValuesAndLines(t *testing.T) {
+	// R-7U8Y-HYUT
+	f := newBackupPassFixture(t)
+	f.stream()
+	f.execute = func(c linux.Command) (linux.Result, error) {
+		if c.Stdout == nil {
+			t.Fatalf("nil Stdout for %v", c.Args)
+		}
+		large := strings.Repeat("x", 1<<20)
+		switch c.Args[3] {
+		case "backup":
+			// Hold the command open after 128 MiB without retaining its output.
+			buffer := make([]byte, 64<<10)
+			for i := range buffer {
+				buffer[i] = 'x'
+			}
+			var before, during runtime.MemStats
+			runtime.GC()
+			runtime.ReadMemStats(&before)
+			for i := range 4096 {
+				if _, err := c.Stdout.Write(buffer); err != nil {
+					t.Fatal(err)
+				}
+				if i == 2047 {
+					runtime.GC()
+					runtime.ReadMemStats(&during)
+				}
+			}
+			if during.HeapAlloc > before.HeapAlloc+(16<<20) {
+				t.Fatalf("backup retained at least %d bytes of output", during.HeapAlloc-before.HeapAlloc)
+			}
+			f.output(c, "\n")
+			f.summary(c)
+		case "snapshots":
+			at := f.at.Format(time.RFC3339Nano)
+			f.output(c, `[{"time":"`+large+`"},{"excludes":["`+large+`"],"time":"`+at+`"}]`)
+		}
+		return linux.Result{}, nil
+	}
+	f.backup()
+	row := f.report().Backups[0]
+	if row.Snapshot != f.at.UTC().Truncate(time.Second) || !slices.Equal(row.Snapshots, []int64{f.at.Unix()}) {
+		t.Fatalf("backup facts after large output = %+v", row)
+	}
+}
+
+func TestBackupPassesLeaveUnrelatedFilesAndOnlyRunBackupCommands(t *testing.T) {
+	// R-UXZ1-MLEO
+	f := newBackupPassFixture(t)
+	f.put("/srv/acme/data/app.db", walSQLite, 0o660)
+	f.put("/home/user/.bashrc", "fixture", 0o644)
+	f.put("/etc/other.conf", "fixture", 0o644)
+	before := make(map[string]os.FileInfo)
+	check := func(collect bool) {
+		t.Helper()
+		err := filepath.Walk(f.root, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			relative := strings.TrimPrefix(path, f.root)
+			skip := strings.HasPrefix(relative, linux.BackupDir) || strings.HasPrefix(relative, linux.ResticCache) ||
+				relative == "/var/cache/accountsd" || relative == "/var/cache" || relative == "/etc/systemd" || relative == "/etc/systemd/system" ||
+				relative == "/etc/systemd/system/"+linux.LitestreamUnit
+			if skip {
+				return nil
+			}
+			if collect {
+				before[relative] = info
+				return nil
+			}
+			original := before[relative]
+			if original == nil {
+				t.Fatalf("unexpected entry %s", relative)
+			}
+			if !info.IsDir() {
+				assertUnchanged(t, path, original)
+			}
+			delete(before, relative)
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	check(true)
+	f.stream()
+	f.backup()
+	check(false)
+	if len(before) != 0 {
+		t.Fatalf("backup methods removed unrelated entries: %v", before)
+	}
+	if len(f.commands) != 0 {
+		t.Fatalf("unexpected commands: %v", f.commands)
+	}
+}
+
+func TestBackupRunsDueCheckIndependentlyOfSnapshot(t *testing.T) {
+	// R-UKK5-F491 R-UGWG-9T0Y
+	f := newBackupPassFixture(t)
+	f.state.Backup.Settings.EveryMinutes = 7 * 24 * 60
+	f.state.Backup.Settings.CheckDays = 1
+	f.stream()
+	f.backup()
+	previous := f.report().Backups[0]
+	f.backupCommands = nil
+	f.at = f.at.Add(24*time.Hour - time.Second)
+	f.backup()
+	if len(f.backupCommands) != 0 {
+		t.Fatalf("early check commands = %v", f.backupCommands)
+	}
+	f.at = f.at.Add(time.Second)
+	f.backup()
+	got := f.commandsFor(f.path(linux.ResticPath))
+	if len(got) != 2 || !slices.Equal(got[0].Args[3:], []string{"cat", "config"}) ||
+		!slices.Equal(got[1].Args[3:], []string{"check", "--read-data-subset=" + linux.CheckSubset}) {
+		t.Fatalf("check-only commands = %v", got)
+	}
+	row := f.report().Backups[0]
+	if row.Snapshot != previous.Snapshot || row.Checked != f.at.UTC().Truncate(time.Second) {
+		t.Fatalf("check-only report = %+v, snapshot was %s", row, previous.Snapshot)
+	}
+}
+
+func TestBackupReportPreservesBoundedInstallErrorsAcrossRestart(t *testing.T) {
+	// R-UT3G-3IFW R-Z3P2-5D3J
+	f := newBackupPassFixture(t)
+	f.put("/srv/acme/data/app.db", walSQLite, 0o600)
+	for _, path := range []string{linux.ResticPath, linux.LitestreamPath} {
+		if err := os.Remove(f.path(path)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	message := "installer unavailable " + strings.Repeat("long details ", 10000)
+	f.env.Fetch = func(context.Context, string) (io.ReadCloser, error) {
+		return nil, errors.New(message)
+	}
+	f.host = linux.New(f.env)
+	if err := f.host.Stream(t.Context(), f.state); err == nil {
+		t.Fatal("failed Litestream installation returned nil")
+	}
+	if err := f.host.Backup(t.Context(), f.state); err == nil {
+		t.Fatal("failed restic installation returned nil")
+	}
+	before := f.report().Backups
+	want := (protocol.Report{HostBackup: protocol.HostBackup{Error: message}}).Bounded().HostBackup.Error
+	if len(before) != 1 || len(before[0].Databases) != 1 || before[0].Error != want || before[0].Databases[0].Error != want {
+		t.Fatalf("install errors in live report = %+v", before)
+	}
+	f.host = linux.New(f.env)
+	if after := f.report().Backups; !reflect.DeepEqual(before, after) {
+		t.Fatalf("install errors after restart = %+v, want %+v", after, before)
+	}
+}
+
+func TestResticRejectsInvalidEndOfLastSummary(t *testing.T) {
+	// R-UJC9-1CIC R-UO7U-KFH4
+	for _, end := range []string{`17`, `null`, `"not a timestamp"`} {
+		t.Run(end, func(t *testing.T) {
+			f := newBackupPassFixture(t)
+			f.stream()
+			f.execute = func(c linux.Command) (linux.Result, error) {
+				if c.Args[3] == "backup" {
+					f.summary(c)
+					f.output(c, `{"message_type":"summary","snapshot_id":"last","backup_end":`+end+"}\n")
+				}
+				return linux.Result{}, nil
+			}
+			if err := f.host.Backup(t.Context(), f.state); err == nil {
+				t.Fatal("backup accepted an invalid summary end")
+			}
+			got := f.commandsFor(f.path(linux.ResticPath))
+			if len(got) != 2 || got[1].Args[3] != "backup" {
+				t.Fatalf("backup ran more commands after the invalid summary: %v", got)
+			}
+			if row := f.report().Backups[0]; !row.Snapshot.IsZero() || row.Error == "" {
+				t.Fatalf("invalid final summary recorded backup facts: %+v", row)
+			}
+		})
+	}
+}

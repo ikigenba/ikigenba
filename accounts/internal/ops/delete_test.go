@@ -62,6 +62,11 @@ func (c *deletionCloud) FindRecords(ctx context.Context, zone, name string) ([]c
 	return c.recordCloud.FindRecords(ctx, zone, name)
 }
 
+func (c *deletionCloud) ListKeys(_ context.Context, _, _ string, _ func([]string) bool) error {
+	equal(c.f.t, c.f.operation(c.deleteID).Step, ops.StepDeleteBackups)
+	return nil
+}
+
 func (c *deletionCloud) ChangeRecord(ctx context.Context, zone string, change cloud.RecordChange) (string, error) {
 	c.checkChoice()
 	return c.recordCloud.ChangeRecord(ctx, zone, change)
@@ -201,7 +206,7 @@ func checkIDs(t *testing.T, got, want []string) {
 	}
 }
 
-// R-MNTG-22XB R-MP1C-FUO0 R-S48T-I8UJ R-NFV4-USZA R-IZ7Z-00CB R-J0FV-DS30 R-NIAX-MCGO R-97G8-3Z45 R-9NAX-2ZR6 R-9CBT-N22X
+// R-MNTG-22XB R-MP1C-FUO0 R-NFV4-USZA R-IZ7Z-00CB R-J0FV-DS30 R-NIAX-MCGO R-97G8-3Z45 R-9NAX-2ZR6 R-9CBT-N22X
 func TestDeleteSettlesDNSBeforeReleasingAndWalksCreateResources(t *testing.T) {
 	f := setup(t)
 	// Give the create the highest ID so its resources only appear after
@@ -250,7 +255,7 @@ func TestDeleteSettlesDNSBeforeReleasingAndWalksCreateResources(t *testing.T) {
 		recordCloud: records, f: f, createID: create.ID, deleteID: del.ID,
 		orphanedTag: func() {
 			var err error
-			_, retried, err = f.st.RemoveAccount(f.ctx, a.Slug, retryCaller)
+			_, retried, _, err = f.st.RemoveAccount(f.ctx, a.Slug, retryCaller)
 			ok(t, err)
 			ok(t, f.st.Defer(f.ctx, retried.ID, f.now.Add(time.Hour), 0))
 		},
@@ -329,7 +334,7 @@ func TestDeleteSettlesDNSBeforeReleasingAndWalksCreateResources(t *testing.T) {
 	}
 }
 
-// R-97G8-3Z45 R-98O4-HQUU R-99W0-VILJ R-9NAX-2ZR6 R-9CBT-N22X
+// R-97G8-3Z45 R-98O4-HQUU R-DKOF-XVLC R-9NAX-2ZR6 R-9CBT-N22X
 func TestDeleteDataResumesAndWaitsForEveryCreateVolume(t *testing.T) {
 	f := setup(t)
 	h, create := f.create()
@@ -377,6 +382,7 @@ func TestDeleteDataResumesAndWaitsForEveryCreateVolume(t *testing.T) {
 	cl.otherData = []cloud.Volume{{ID: "v-tagged", State: cloud.VolumeDeleting}}
 	equal(t, f.step(e, op.ID).Status, store.OpRunning)
 	cl.otherData[0].State = cloud.VolumeDeleted
+	equal(t, f.step(e, op.ID).Step, ops.StepDeleteBackups)
 	equal(t, f.step(e, op.ID).Status, store.OpDone)
 	equal(t, len(cl.orphaned), 0)
 	events := f.events()
@@ -385,7 +391,7 @@ func TestDeleteDataResumesAndWaitsForEveryCreateVolume(t *testing.T) {
 		telemetry.Attrs{"host": h.Name, "from": store.HostDeleting, "to": store.HostDeleted, "operation": op.ID}, caller)
 }
 
-// R-QO30-IQDJ R-L0E6-07I2
+// R-P2DG-ME5W
 func TestDeleteReconcilesPersistedStepWithChoiceAfterCheckingTimeout(t *testing.T) {
 	for _, tc := range []struct {
 		persisted, want string
@@ -394,6 +400,7 @@ func TestDeleteReconcilesPersistedStepWithChoiceAfterCheckingTimeout(t *testing.
 		{ops.StepOrphan, ops.StepDeleteData, false},
 		{ops.StepDeleteData, ops.StepOrphan, true},
 		{ops.StepWaitDataDeleted, ops.StepOrphan, true},
+		{ops.StepDeleteBackups, ops.StepOrphan, true},
 	} {
 		for _, age := range []time.Duration{0, ops.StepTimeout, ops.StepTimeout + time.Second} {
 			t.Run(tc.persisted+"/"+age.String(), func(t *testing.T) {
@@ -430,7 +437,7 @@ func TestDeleteReconcilesPersistedStepWithChoiceAfterCheckingTimeout(t *testing.
 	}
 }
 
-// R-98O4-HQUU R-99W0-VILJ
+// R-98O4-HQUU R-DKOF-XVLC
 func TestDeleteWithoutDataVolumesMovesThroughBothDataSteps(t *testing.T) {
 	f := setup(t)
 	h, create := f.create()
@@ -442,6 +449,7 @@ func TestDeleteWithoutDataVolumesMovesThroughBothDataSteps(t *testing.T) {
 	f.cfg.Cloud = cl
 	e := ops.New(f.cfg)
 	equal(t, f.step(e, op.ID).Step, ops.StepWaitDataDeleted)
+	equal(t, f.step(e, op.ID).Step, ops.StepDeleteBackups)
 	equal(t, f.step(e, op.ID).Status, store.OpDone)
 	equal(t, len(cl.deleteData), 0)
 }

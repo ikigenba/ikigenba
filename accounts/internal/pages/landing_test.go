@@ -30,7 +30,7 @@ const created = "2026-11-17T14:03:07Z"
 const createdMinute = "2026-11-17 14:03"
 const createdSecond = "2026-11-17 14:03:07 UTC"
 
-// R-CYA3-AG15 R-CZHZ-O7RU R-35EH-EJUU
+// R-CYA3-AG15 R-CZHZ-O7RU R-MK3X-G2XW
 func TestLandingRows(t *testing.T) {
 	f := setup(t)
 	data := pages.LandingData{Configured: true, Domain: f.cfg.Domain, Hosts: []pages.HostRow{}, KeptVolumes: []pages.KeptVolumeRow{}, Accounts: []pages.AccountRow{}, Users: []pages.UserRow{}}
@@ -69,8 +69,8 @@ func TestLandingRows(t *testing.T) {
 	f.cfg.Now = func() time.Time { return received.Add(store.SilentAfter + time.Second) }
 	data.Hosts = []pages.HostRow{{Name: h.Name, DNSName: h.Name + "." + f.cfg.Domain, State: store.HostRunning, Reason: ops.ReasonRecordConflict, Health: store.HealthSilent, Type: hostSpec.Type, RootGB: hostSpec.RootGB, DataGB: hostSpec.DataGB, AccountCount: 2, EIP: "192.0.2.7", Reported: "2026-11-17T14:05:09Z", ReportedText: "2026-11-17 14:05"}}
 	data.Accounts = []pages.AccountRow{
-		{Slug: a.Slug, Host: h.Name, DNSName: a.Slug + "." + f.cfg.Domain, State: store.AccountActive, UserCount: 2, Created: created, CreatedText: createdMinute},
-		{Slug: abandoned.Slug, Host: h.Name, DNSName: abandoned.Slug + "." + f.cfg.Domain, State: store.AccountFailed, Reason: ops.ReasonRecordConflict, Created: created, CreatedText: createdMinute},
+		{Slug: a.Slug, Host: h.Name, DNSName: a.Slug + "." + f.cfg.Domain, State: store.AccountActive, UserCount: 2, Backup: store.BackupNone, Created: created, CreatedText: createdMinute},
+		{Slug: abandoned.Slug, Host: h.Name, DNSName: abandoned.Slug + "." + f.cfg.Domain, State: store.AccountFailed, Reason: ops.ReasonRecordConflict, Backup: store.BackupNone, Created: created, CreatedText: createdMinute},
 	}
 	data.Users = []pages.UserRow{
 		{Login: u.Name, Account: a.Slug, State: store.UserActive, KeyCount: 1, LastSignIn: "2026-11-17T14:05:08Z", LastSignInText: "2026-11-17 14:05"},
@@ -123,7 +123,7 @@ func TestLandingInviteCountsAndAdmins(t *testing.T) {
 		Configured: true,
 		Domain:     f.cfg.Domain,
 		Hosts:      []pages.HostRow{{Name: h.Name, DNSName: h.Name + "." + f.cfg.Domain, State: store.HostProvisioning, Health: store.HealthNone, Type: hostSpec.Type, RootGB: hostSpec.RootGB, DataGB: hostSpec.DataGB, AccountCount: 1}},
-		Accounts:   []pages.AccountRow{{Slug: a.Slug, Host: h.Name, DNSName: a.Slug + "." + f.cfg.Domain, State: store.AccountPending, UserCount: 1, Created: created, CreatedText: createdMinute}},
+		Accounts:   []pages.AccountRow{{Slug: a.Slug, Host: h.Name, DNSName: a.Slug + "." + f.cfg.Domain, State: store.AccountPending, UserCount: 1, Backup: store.BackupNone, Created: created, CreatedText: createdMinute}},
 		Users:      []pages.UserRow{{Login: u.Name, Account: a.Slug, State: store.UserActive, KeyCount: 1, Pending: true}},
 	}
 	checkLanding(t, f, "/", data)
@@ -196,7 +196,7 @@ func createListRows(t *testing.T, f *fixture, n int) pages.LandingData {
 		}
 		name := fmt.Sprintf("host%02d", i+1)
 		out.Hosts = append(out.Hosts, pages.HostRow{Name: name, DNSName: name + "." + f.cfg.Domain, State: store.HostProvisioning, Health: store.HealthNone, Type: hostSpec.Type, RootGB: hostSpec.RootGB, DataGB: hostSpec.DataGB, AccountCount: 1})
-		out.Accounts = append(out.Accounts, pages.AccountRow{Slug: a.Slug, Host: h.Name, DNSName: a.Slug + "." + f.cfg.Domain, State: store.AccountPending, UserCount: len(logins), Created: created, CreatedText: createdMinute})
+		out.Accounts = append(out.Accounts, pages.AccountRow{Slug: a.Slug, Host: h.Name, DNSName: a.Slug + "." + f.cfg.Domain, State: store.AccountPending, UserCount: len(logins), Backup: store.BackupNone, Created: created, CreatedText: createdMinute})
 	}
 	slices.SortFunc(out.Accounts, func(a, b pages.AccountRow) int { return cmp.Compare(a.Slug, b.Slug) })
 	slices.SortFunc(out.Users, func(a, b pages.UserRow) int {
@@ -231,7 +231,7 @@ func createRunningHost(t *testing.T, f *fixture, volume string) store.Host {
 
 func completeKeptHost(t *testing.T, f *fixture, h store.Host, volume string) pages.KeptVolumeRow {
 	t.Helper()
-	_, op, err := f.cfg.Store.DeleteHost(t.Context(), h.Name, true, caller)
+	_, op, err := f.cfg.Store.DeleteHost(t.Context(), h.Name, true, false, caller)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +240,7 @@ func completeKeptHost(t *testing.T, f *fixture, h store.Host, volume string) pag
 		t.Fatal(err)
 	}
 	return pages.KeptVolumeRow{
-		Volume: volume, Host: h.Name, SizeGB: h.DataGB,
+		Volume: volume, Host: h.Name, Cause: store.CauseDeleted, SizeGB: h.DataGB,
 		Deleted: deleted.Format(time.RFC3339), DeletedText: deleted.Format(pages.MinuteLayout),
 	}
 }
@@ -250,7 +250,7 @@ func createKeptVolume(t *testing.T, f *fixture, volume string) pages.KeptVolumeR
 	return completeKeptHost(t, f, createRunningHost(t, f, volume), volume)
 }
 
-// R-2WV6-Q5NZ R-31QS-98MR R-32YO-N0DG R-3F5O-GPSE R-3GDK-UHJ3 R-35EH-EJUU
+// R-MBKM-ROR1 R-31QS-98MR R-MHO4-OJGI R-CS3J-6201 R-CVR8-BD84 R-MK3X-G2XW
 func TestLandingChoicesAndKeptVolumeRows(t *testing.T) {
 	f := setup(t)
 	st := f.cfg.Store
@@ -284,7 +284,7 @@ func TestLandingChoicesAndKeptVolumeRows(t *testing.T) {
 		t.Fatalf("fixture has only one historical host name: %q", latest.Name)
 	}
 	completeKeptHost(t, f, latest, "vol-last")
-	wantLatest := pages.KeptVolumeRow{Volume: "vol-last", Host: latest.Name, SizeGB: hostSpec.DataGB, Deleted: "2026-11-17T14:06:10Z", DeletedText: "2026-11-17 14:06"}
+	wantLatest := pages.KeptVolumeRow{Volume: "vol-last", Host: latest.Name, Cause: store.CauseDeleted, SizeGB: hostSpec.DataGB, Deleted: "2026-11-17T14:06:10Z", DeletedText: "2026-11-17 14:06"}
 	data := pages.LandingData{
 		Configured: true, Domain: f.cfg.Domain, KeptVolumes: []pages.KeptVolumeRow{wantLatest, earliest},
 		Hosts: []pages.HostRow{
@@ -294,7 +294,7 @@ func TestLandingChoicesAndKeptVolumeRows(t *testing.T) {
 	}
 	for _, keepData := range []bool{true, false} {
 		h := createRunningHost(t, f, "")
-		if _, _, err := st.DeleteHost(t.Context(), h.Name, keepData, caller); err != nil {
+		if _, _, err := st.DeleteHost(t.Context(), h.Name, keepData, !keepData, caller); err != nil {
 			t.Fatal(err)
 		}
 		choice := store.OnDeleteDelete
@@ -380,7 +380,7 @@ func firstWindows(t *testing.T, rows pages.LandingData, size int) [4]bounds {
 	return b
 }
 
-// R-2WV6-Q5NZ R-2Y33-3XEO R-2ZAZ-HP5D R-30IV-VGW2 R-346L-0S45 R-3BHZ-BEKB R-3CPV-P6B0 R-3DXS-2Y1P
+// R-MBKM-ROR1 R-ME0F-J88F R-MGG8-ARPT R-MF8B-WZZ4 R-MIW1-2B77 R-MOZI-Z5WO R-MQ7F-CXND R-MRFB-QPE2
 func TestIndependentPaging(t *testing.T) {
 	f := setup(t)
 	const l = paging.DefaultLimit
@@ -455,7 +455,7 @@ func TestIndependentPaging(t *testing.T) {
 	}
 }
 
-// R-2ZAZ-HP5D R-30IV-VGW2
+// R-MGG8-ARPT R-MF8B-WZZ4
 func TestLandingVolumePagingWithMissingPosition(t *testing.T) {
 	f := setup(t)
 	const limit = paging.DefaultLimit
@@ -480,7 +480,7 @@ func TestLandingVolumePagingWithMissingPosition(t *testing.T) {
 	checkLanding(t, f, pageURL(b), renderListWindows(data, b))
 }
 
-// R-37UA-63C8 holds a list's position fixed across changes in the other lists.
+// R-MMJQ-7MFA holds a list's position fixed across changes in the other lists.
 func TestUsersWindowIgnoresOtherPositions(t *testing.T) {
 	f := setup(t)
 	const l = paging.DefaultLimit
@@ -536,7 +536,7 @@ func pageToolContent[T any](t *testing.T, client *mcp.Client, name string, args 
 	return envelope.Content
 }
 
-// R-35EH-EJUU R-36MD-SBLJ
+// R-MK3X-G2XW R-MLBT-TUOL
 func TestToolAndPageWindowsAgree(t *testing.T) {
 	f := setup(t)
 	const size = paging.DefaultLimit + 1
@@ -582,10 +582,10 @@ func TestToolAndPageWindowsAgree(t *testing.T) {
 				}
 			case 3:
 				for _, row := range content.KeptVolumes {
-					got = append(got, fmt.Sprintf("%s %s %d %s", row.Volume, row.Host, row.SizeGB, row.Deleted))
+					got = append(got, fmt.Sprintf("%s %s %s %d %s", row.Volume, row.Host, row.Cause, row.SizeGB, row.Deleted))
 				}
 				for _, row := range data.KeptVolumes[b[i].start:b[i].end] {
-					want = append(want, fmt.Sprintf("%s %s %d %s", row.Volume, row.Host, row.SizeGB, row.Deleted))
+					want = append(want, fmt.Sprintf("%s %s %s %d %s", row.Volume, row.Host, row.Cause, row.SizeGB, row.Deleted))
 				}
 			}
 			if !slices.Equal(got, want) || content.Next != b[i].next {
@@ -597,7 +597,7 @@ func TestToolAndPageWindowsAgree(t *testing.T) {
 	}
 }
 
-// R-9QOG-KJ8S
+// R-RNHX-7Y3H
 func TestKeptVolumeDeletionRangeThroughPagesAndTool(t *testing.T) {
 	f := setup(t)
 	times := []time.Time{
@@ -632,7 +632,7 @@ func TestKeptVolumeDeletionRangeThroughPagesAndTool(t *testing.T) {
 	client := pageToolClient(t, f)
 	var entries []tools.KeptVolume
 	for i, row := range data.KeptVolumes {
-		entries = append(entries, tools.KeptVolume{Volume: row.Volume, Host: row.Host, SizeGB: row.SizeGB, State: store.VolumeKept, Deleted: times[i].Format(time.RFC3339)})
+		entries = append(entries, tools.KeptVolume{Volume: row.Volume, Host: row.Host, Cause: row.Cause, SizeGB: row.SizeGB, State: store.VolumeKept, Deleted: times[i].Format(time.RFC3339)})
 	}
 	if got := pageToolContent[tools.KeptVolumeList](t, client, tools.ToolKeptVolumes, tools.KeptVolumesArgs{}); !slices.Equal(got.KeptVolumes, entries) || got.Next != nil {
 		t.Fatalf("kept volumes = %+v, want %v with no next page", got, entries)
@@ -654,7 +654,7 @@ func TestKeptVolumeDeletionRangeThroughPagesAndTool(t *testing.T) {
 	}
 }
 
-// R-3F5O-GPSE R-3GDK-UHJ3 R-SWJU-KDAB R-K8CH-7HG3
+// R-CS3J-6201 R-CVR8-BD84 R-SWJU-KDAB R-K8CH-7HG3
 func TestHostDetailsAndLatestReport(t *testing.T) {
 	f := setup(t)
 	st := f.cfg.Store
@@ -716,6 +716,10 @@ func TestHostDetailsAndLatestReport(t *testing.T) {
 	view.InstanceID, view.DataVolume, view.EIP = instance, volume, eip
 	view.Allowlist = []string{"192.0.2.7", "198.51.100.0/24"}
 	view.Reported, view.ReportedText = "2026-11-17T14:05:09Z", "2026-11-17 14:05"
+	backups := []pages.BackupRow{
+		{Account: "alpha", Health: store.BackupNone, Databases: []pages.DatabaseRow{}},
+		{Account: "zulu", Health: store.BackupNone, Databases: []pages.DatabaseRow{}},
+	}
 	reportView := &pages.ReportView{
 		Received: "2026-11-17T14:05:09Z", ReceivedText: "2026-11-17 14:05:09 UTC", Hostname: reportedHostname, InstanceID: "reported-instance", Type: "reported-type",
 		AMI: "reported-ami", OS: "reported-os", Kernel: "reported-kernel", DaemonVersion: "reported-daemon", Booted: created, BootedText: createdSecond,
@@ -730,7 +734,7 @@ func TestHostDetailsAndLatestReport(t *testing.T) {
 		BanTotal: 300, Allowlist: []string{"192.0.2.7"},
 	}
 	for _, method := range []string{"GET", "HEAD"} {
-		same(t, answer(f, method, target, "viewer"), expected(f, method, target, "host", 200, pages.HostData{Banner: b, Host: view, Report: reportView}))
+		same(t, answer(f, method, target, "viewer"), expected(f, method, target, "host", 200, pages.HostData{Banner: b, Host: view, Report: reportView, Backups: backups}))
 	}
 	empty, create, err := st.CreateHost(t.Context(), hostSpec, caller)
 	if err != nil {
@@ -745,7 +749,7 @@ func TestHostDetailsAndLatestReport(t *testing.T) {
 	if _, err := st.RecordReport(t.Context(), empty.Name, protocol.Report{Protocol: protocol.Version, Hostname: "earlier-host.work.test"}, received); err != nil {
 		t.Fatal(err)
 	}
-	_, deleteOp, err := st.DeleteHost(t.Context(), empty.Name, true, caller)
+	_, deleteOp, err := st.DeleteHost(t.Context(), empty.Name, true, false, caller)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -787,7 +791,7 @@ func TestHostDetailsAndLatestReport(t *testing.T) {
 			}
 			want := *emptyView
 			want.BanTotal = total
-			same(t, answer(f, "GET", target, "viewer"), expected(f, "GET", target, "host", 200, pages.HostData{Banner: b, Host: view, Report: &want}))
+			same(t, answer(f, "GET", target, "viewer"), expected(f, "GET", target, "host", 200, pages.HostData{Banner: b, Host: view, Report: &want, Backups: backups}))
 		})
 	}
 }

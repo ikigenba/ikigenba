@@ -22,7 +22,7 @@ func TestFirstLine(t *testing.T) {
 	}
 }
 
-// R-Y3NM-ABQI R-YH2I-HSW5 R-ZB0K-I008 R-ZC8G-VRQX R-CSDA-A2TO R-CPXH-IJCA R-0VXT-EZQU R-YFUM-415G R-0UPX-1805
+// R-Y3NM-ABQI R-YH2I-HSW5 R-ZB0K-I008 R-ZC8G-VRQX R-CSDA-A2TO R-CPXH-IJCA R-0VXT-EZQU R-YFUM-415G R-0UPX-1805 R-HIWJ-5E6D R-HLCB-WXNR R-HHOM-RMFO
 func TestCopyAndTimeout(t *testing.T) {
 	const (
 		_ = tools.NotConfigured
@@ -65,6 +65,21 @@ func TestCopyAndTimeout(t *testing.T) {
 		_ = tools.TooManyInvites
 		_ = tools.NoKeptVolume
 		_ = tools.VolumeDeleting
+		_ = tools.HostNotClosed
+		_ = tools.NoDataVolume
+		_ = tools.KeepsVolumeSize
+		_ = tools.BadReplace
+		_ = tools.InvalidPath
+		_ = tools.BadTime
+		_ = tools.AccountNotActive
+		_ = tools.NoDatabase
+		_ = tools.NotRestorable
+		_ = tools.NoSnapshot
+		_ = tools.TooManyRestores
+		_ = tools.AccountExists
+		_ = tools.NameHasBackups
+		_ = tools.BackupsDeleting
+		_ = tools.NoAddress
 		_ = tools.ArgAdmin
 		_ = tools.ArgInvite
 		_ = tools.ArgIP
@@ -87,6 +102,9 @@ func TestCopyAndTimeout(t *testing.T) {
 		tools.HostGone, tools.AccountHasUsers, tools.AccountRemoving, tools.AccountFull,
 		tools.TooManyKeys, tools.GrowLimit, tools.UserNotLocked, tools.UserRemoving,
 		tools.NameHasRecord, tools.CloudFailed, tools.InvalidAddress, tools.PrefixTooWide, tools.TooManyUnbans, tools.AllowlistFull, tools.NoLink, tools.NoInvite, tools.TooManyInvites, tools.NoKeptVolume, tools.VolumeDeleting,
+		tools.HostNotClosed, tools.NoDataVolume, tools.KeepsVolumeSize, tools.BadReplace, tools.InvalidPath,
+		tools.BadTime, tools.AccountNotActive, tools.NoDatabase, tools.NotRestorable, tools.NoSnapshot,
+		tools.TooManyRestores, tools.AccountExists, tools.NameHasBackups, tools.BackupsDeleting, tools.NoAddress,
 	}
 	seen := map[string]bool{store.Unreachable: true}
 	for _, copy := range refusals {
@@ -99,12 +117,17 @@ func TestCopyAndTimeout(t *testing.T) {
 		tools.ArgHost, tools.ArgAccount, tools.ArgUser, tools.ArgKey,
 		tools.ArgType, tools.ArgRootGB, tools.ArgDataGB, tools.ArgIP,
 		tools.ArgAdmin, tools.ArgInvite, tools.ArgKeepData, tools.ArgVolume,
+		tools.ArgFrom, tools.ArgLost, tools.ArgPath, tools.ArgAsOf, tools.ArgSnapshot,
 	} {
 		if copy == "" || strings.Contains(copy, "\n") {
 			t.Fatalf("invalid argument description %q", copy)
 		}
 	}
 	const timeout = tools.DNSCheckTimeout
+	const backupTimeout = tools.BackupCheckTimeout
+	if backupTimeout != 5*time.Second {
+		t.Fatal(backupTimeout)
+	}
 	if timeout != 5*time.Second {
 		t.Fatal(timeout)
 	}

@@ -8,6 +8,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/ikigenba/ikigenba/accounts/internal/valid"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 )
 
@@ -23,7 +24,10 @@ const hostSelect = `SELECT ` + hostFields +
 		SELECT CASE WHEN delete_choices.keep_data = 0 THEN 'delete' ELSE 'keep' END
 		FROM operations LEFT JOIN delete_choices ON delete_choices.operation_id = operations.id
 		WHERE operations.id = hosts.operation AND operations.kind = 'delete'
-	), '') ELSE '' END
+	), '') ELSE '' END,
+	coalesce((SELECT closed FROM host_closes WHERE host_seq = hosts.seq), -62135596800),
+	coalesce((SELECT r.mode FROM replacements r JOIN backup_operations b ON b.id = r.operation_id
+		WHERE b.id = hosts.operation AND b.host_seq = hosts.seq AND b.status IN ('running', 'failed')), '')
 	FROM hosts`
 
 func scanHost(q query, r scanner) (h Host, err error) {
@@ -31,7 +35,7 @@ func scanHost(q query, r scanner) (h Host, err error) {
 		&h.InstanceID, &h.RootVolume, &h.DataVolume, &h.AllocationID, &h.AssociationID, &h.EIP, &h.AZ,
 		&h.Version, &h.Applied, &h.Attempted, &h.ReportError, &h.Alarm, storedTime{&h.RunningSince},
 		storedTime{&h.Reported}, &h.Operation, storedTime{&h.Created}, &h.CreatedBy, &h.Accounts, &h.Change, &h.RecordReason,
-		&h.OnDelete); err != nil {
+		&h.OnDelete, storedTime{&h.Closed}, &h.Replace); err != nil {
 		return Host{}, err
 	}
 	h.Allowlist, err = allowlist(q, h.Name)
@@ -128,6 +132,11 @@ func vacateHost(q query, name string, seq int64) error {
 	if err := q.exec("UPDATE host_records SET host_name = ? WHERE host_name = ?", key, name); err != nil {
 		return err
 	}
+	for _, table := range []string{"backup_operations", "host_closes", "restores", "removed_backups"} {
+		if err := q.exec("UPDATE "+table+" SET host = ? WHERE host_seq = ?", key, seq); err != nil {
+			return err
+		}
+	}
 	return settleDeleted(q, key)
 }
 
@@ -168,10 +177,17 @@ func (s *recordReader) LastHosts(ctx context.Context, limit int) ([]Host, error)
 	return s.hostPage(ctx, limit, true, " WHERE state <> ? ORDER BY seq DESC LIMIT ?", HostDeleted)
 }
 
-func hostGuard(q query, h Host, kind string) error {
+func hostBusy(q query, h Host, allowClose bool) (bool, error) {
 	var busy bool
-	err := q.row(`SELECT EXISTS (SELECT 1 FROM operations WHERE host = ? AND status = ?
-		AND kind IN (?, ?, ?, ?, ?))`, h.Name, OpRunning, OpCreate, OpStop, OpStart, OpResize, OpDelete).Scan(&busy)
+	err := q.row(`SELECT EXISTS (SELECT 1 FROM operations WHERE host = ? AND status = 'running'
+		AND kind IN ('create', 'stop', 'start', 'resize', 'delete')
+		UNION ALL SELECT 1 FROM backup_operations WHERE host_seq = ? AND status = 'running'
+		AND (kind IN ('open', 'replace') OR (NOT ? AND kind = 'close')))`, h.Name, h.Seq, allowClose).Scan(&busy)
+	return busy, err
+}
+
+func hostGuard(q query, h Host, kind string) error {
+	busy, err := hostBusy(q, h, false)
 	if err != nil {
 		return err
 	}
@@ -232,20 +248,20 @@ func resizeTarget(q query, h Host, target Target, cutoff int64) (Target, error) 
 }
 
 var transitional = map[string]string{OpCreate: HostProvisioning, OpStop: HostStopping, OpStart: HostStarting,
-	OpResize: HostResizing, OpDelete: HostDeleting}
+	OpResize: HostResizing, OpDelete: HostDeleting, OpClose: HostClosing, OpOpen: HostOpening, OpReplace: HostReplacing}
 
 // StartHostOp checks the host's guards and records a new host operation.
 func (s *Store) StartHostOp(ctx context.Context, name, kind string, target Target, c identity.Caller) (Host, Operation, error) {
 	valid := kind == OpStop || kind == OpStart || kind == OpResize && target.RootGB >= 0 && target.DataGB >= 0
-	return s.startHostOp(ctx, name, kind, target, c, valid, true)
+	return s.startHostOp(ctx, name, kind, target, c, valid, true, false)
 }
 
 // DeleteHost records a host deletion and its choice about the data volume.
-func (s *Store) DeleteHost(ctx context.Context, name string, keepData bool, c identity.Caller) (Host, Operation, error) {
-	return s.startHostOp(ctx, name, OpDelete, Target{}, c, true, keepData)
+func (s *Store) DeleteHost(ctx context.Context, name string, keepData, lost bool, c identity.Caller) (Host, Operation, error) {
+	return s.startHostOp(ctx, name, OpDelete, Target{}, c, true, keepData, lost)
 }
 
-func (s *Store) startHostOp(ctx context.Context, name, kind string, target Target, c identity.Caller, valid, keepData bool) (Host, Operation, error) {
+func (s *Store) startHostOp(ctx context.Context, name, kind string, target Target, c identity.Caller, valid, keepData, lost bool) (Host, Operation, error) {
 	valid = valid && name != "" && validCaller(c)
 	out, err := write(ctx, s, valid, func(w *writing) (hostOp, error) {
 		h, err := getHost(w.query, name)
@@ -257,6 +273,14 @@ func (s *Store) startHostOp(ctx context.Context, name, kind string, target Targe
 		}
 		if err := hostGuard(w.query, h, kind); err != nil {
 			return hostOp{}, err
+		}
+		if kind == OpDelete {
+			if !keepData && !lost && h.Closed.IsZero() {
+				return hostOp{}, ErrNotClosed
+			}
+			if err := guardFailedBackupReplacement(w.query, h); err != nil {
+				return hostOp{}, err
+			}
 		}
 		stamp := s.stamp()
 		computed := Target{}
@@ -270,7 +294,7 @@ func (s *Store) startHostOp(ctx context.Context, name, kind string, target Targe
 		if err != nil {
 			return hostOp{}, err
 		}
-		h.State, h.Reason, h.Operation = transitional[kind], "", op.ID
+		h.State, h.Reason, h.Operation, h.Replace = transitional[kind], "", op.ID, ""
 		if kind == OpDelete {
 			if err := w.exec("INSERT INTO delete_choices (operation_id, keep_data) VALUES (?, ?)", op.ID, keepData); err != nil {
 				return hostOp{}, err
@@ -287,7 +311,7 @@ func (s *Store) startHostOp(ctx context.Context, name, kind string, target Targe
 
 // RetryHost resumes the failed operation of a live host.
 func (s *Store) RetryHost(ctx context.Context, name string, c identity.Caller) (Host, Operation, error) {
-	out, err := write(ctx, s, name != "" && validCaller(c), func(w *writing) (hostOp, error) {
+	out, err := write(ctx, s, len(c.UserID) <= valid.MaxUserIDBytes, func(w *writing) (hostOp, error) {
 		h, err := getHost(w.query, name)
 		if err != nil {
 			return hostOp{}, err
@@ -309,6 +333,15 @@ func (s *Store) RetryHost(ctx context.Context, name string, c identity.Caller) (
 		op.StepStarted, op.NextTry, op.Caller = stamp, stamp, c
 		if err := saveOperation(w.query, op); err != nil {
 			return hostOp{}, err
+		}
+		if op.Kind == OpClose {
+			if err := resetFailedSteps(w.query, op.ID, stamp); err != nil {
+				return hostOp{}, err
+			}
+			h.Version, err = w.bump(h.Name)
+			if err != nil {
+				return hostOp{}, err
+			}
 		}
 		h.State, h.Reason = transitional[op.Kind], ""
 		return hostOp{h, op}, saveHostState(w.query, h)

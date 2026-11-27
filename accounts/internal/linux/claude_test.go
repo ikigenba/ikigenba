@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -131,7 +132,7 @@ func TestClaudeSeams(t *testing.T) {
 }
 
 func TestGet(t *testing.T) {
-	// R-SLAL-ZFIE R-SNQE-QYZS
+	// R-SLAL-ZFIE R-XX0K-RE58
 	get := linux.Get
 	const payload = "download\n\x00"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -141,22 +142,32 @@ func TestGet(t *testing.T) {
 		switch r.URL.Path {
 		case "/key":
 			_, _ = io.WriteString(w, payload)
-		case "/redirect":
-			http.Redirect(w, r, "/unexpected", http.StatusFound)
-		case "/unexpected":
-			t.Error("Get followed redirect")
+		case "/chain":
+			left, err := strconv.Atoi(r.URL.Query().Get("left"))
+			if err != nil {
+				t.Errorf("parse redirect count: %v", err)
+			}
+			if left == 1 {
+				http.Redirect(w, r, "/key", http.StatusSeeOther)
+				return
+			}
+			http.Redirect(w, r, fmt.Sprintf("/chain?left=%d", left-1), http.StatusTemporaryRedirect)
+		case "/ftp":
+			http.Redirect(w, r, "ftp://localhost/blocked", http.StatusFound)
 		default:
 			http.NotFound(w, r)
 		}
 	}))
 	t.Cleanup(server.Close)
-	body, err := get(t.Context(), server.URL+"/key")
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, readErr := io.ReadAll(body)
-	if closeErr := body.Close(); string(got) != payload || readErr != nil || closeErr != nil {
-		t.Fatalf("body = %q, read error = %v, close error = %v", got, readErr, closeErr)
+	for _, path := range []string{"/key", fmt.Sprintf("/chain?left=%d", linux.MaxRedirects)} {
+		body, err := get(t.Context(), server.URL+path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, readErr := io.ReadAll(body)
+		if closeErr := body.Close(); string(got) != payload || readErr != nil || closeErr != nil {
+			t.Fatalf("body = %q, read error = %v, close error = %v", got, readErr, closeErr)
+		}
 	}
 	expectFailure := func(ctx context.Context, url string) {
 		t.Helper()
@@ -166,7 +177,8 @@ func TestGet(t *testing.T) {
 		}
 	}
 	expectFailure(t.Context(), server.URL+"/missing")
-	expectFailure(t.Context(), server.URL+"/redirect")
+	expectFailure(t.Context(), server.URL+fmt.Sprintf("/chain?left=%d", linux.MaxRedirects+1))
+	expectFailure(t.Context(), server.URL+"/ftp")
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	expectFailure(ctx, server.URL+"/key")
@@ -175,7 +187,7 @@ func TestGet(t *testing.T) {
 }
 
 func TestGetReturnsUnreadStream(t *testing.T) {
-	// R-SNQE-QYZS
+	// R-XX0K-RE58
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 	release := make(chan struct{})
@@ -205,7 +217,7 @@ func TestGetReturnsUnreadStream(t *testing.T) {
 }
 
 func TestGetClosesRejectedStream(t *testing.T) {
-	// R-SNQE-QYZS
+	// R-XX0K-RE58
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
 	disconnected := make(chan struct{})
@@ -233,6 +245,44 @@ func TestGetClosesRejectedStream(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatal("response stream stayed open after Get returned")
+	}
+}
+
+func TestGetKeepsHTTPSOnRedirect(t *testing.T) {
+	// R-XX0K-RE58
+	httpTarget := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("Get followed a redirect from HTTPS to HTTP")
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(httpTarget.Close)
+	tls := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/redirect":
+			http.Redirect(w, r, "/download", http.StatusMovedPermanently)
+		case "/downgrade":
+			http.Redirect(w, r, httpTarget.URL, http.StatusPermanentRedirect)
+		default:
+			_, _ = io.WriteString(w, "payload")
+		}
+	}))
+	t.Cleanup(tls.Close)
+	transport := http.DefaultTransport
+	http.DefaultTransport = tls.Client().Transport
+	t.Cleanup(func() { http.DefaultTransport = transport })
+	body, err := linux.Get(t.Context(), tls.URL+"/redirect")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := io.ReadAll(body)
+	if err := errors.Join(err, body.Close()); err != nil || string(got) != "payload" {
+		t.Fatalf("body = %q, error = %v", got, err)
+	}
+	body, err = linux.Get(t.Context(), tls.URL+"/downgrade")
+	if err == nil || body != nil {
+		if body != nil {
+			_ = body.Close()
+		}
+		t.Fatalf("downgrade Get returned body %v, error %v", body, err)
 	}
 }
 
@@ -389,7 +439,7 @@ type failingKeyReader struct{ err error }
 func (r failingKeyReader) Read([]byte) (int, error) { return 0, r.err }
 
 func TestApplyClaudeDownloadsKey(t *testing.T) {
-	// R-FKNN-X12D R-B5P8-EBOX R-B0TM-V8Q5 R-SSM0-A1YK R-R5AD-X4CD
+	// R-FKNN-X12D R-CI9W-KZVM R-CH20-784X R-SSM0-A1YK R-R5AD-X4CD
 	const pinnedListing = "pub:fixture\nfpr:::::::::" + linux.ClaudeKeyFingerprint + ":\nsub:fixture\nfpr:::::::::SUBKEY:\n"
 	for _, tc := range []struct {
 		name, listing string
@@ -597,7 +647,7 @@ func TestApplyClaudeFailureIsNonfatalAndPaced(t *testing.T) {
 }
 
 func TestApplyClaudeReportsOtherFailures(t *testing.T) {
-	// R-R7Q6-ONTR R-B5P8-EBOX
+	// R-R7Q6-ONTR R-CI9W-KZVM
 	f := newClaudeFixture(t)
 	cmdErr := errors.New("cannot execute\r\ncommand")
 	execute := f.env.Execute

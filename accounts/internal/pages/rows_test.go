@@ -1,7 +1,9 @@
 package pages
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"html/template"
 	"net/http"
 	"net/http/httptest"
@@ -21,8 +23,33 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
 
-// R-346L-0S45 distinguishes non-nil empty slices from nil at the template input.
-func TestEmptyLandingData(t *testing.T) {
+// CapturePageData calls the real handler with a test template that captures its typed input.
+func CapturePageData[T any](t *testing.T, cfg Config, r *http.Request, name string) T {
+	t.Helper()
+	set, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got T
+	called := false
+	capture := func(data T) string {
+		got, called = data, true
+		return ""
+	}
+	if _, err := set.templates.Funcs(template.FuncMap{"capture": capture}).Parse(fmt.Sprintf(`{{define %q}}{{capture .}}{{end}}`, name)); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Pages = set
+	w := httptest.NewRecorder()
+	identity.Optional(Handler(cfg)).ServeHTTP(w, r)
+	if w.Code != http.StatusOK || !called {
+		t.Fatalf("%s returned %d with template execution %v, want 200 and execution of %s", r.URL, w.Code, called, name)
+	}
+	return got
+}
+
+// R-MIW1-2B77 R-CS3J-6201 R-CVR8-BD84 distinguish empty slices from nil at the template input.
+func TestEmptyPageLists(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	now := func() time.Time { return time.Date(2026, 11, 18, 14, 5, 9, 0, time.UTC) }
 	d, err := db.Open(t.Context(), db.Config{Path: filepath.Join(t.TempDir(), "accounts.db"), Migrations: accounts.Migrations(), Now: now})
@@ -31,15 +58,22 @@ func TestEmptyLandingData(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = d.Close() })
 	var got LandingData
-	capture := func(data LandingData) string {
+	captureLanding := func(data LandingData) string {
 		got = data
+		return ""
+	}
+	var gotHost HostData
+	captureHost := func(data HostData) string {
+		gotHost = data
 		return ""
 	}
 	set, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := set.templates.Funcs(template.FuncMap{"capture": capture}).Parse(`{{define "landing"}}{{capture .}}{{end}}`); err != nil {
+	if _, err := set.templates.Funcs(template.FuncMap{"captureLanding": captureLanding, "captureHost": captureHost}).Parse(
+		`{{define "landing"}}{{captureLanding .}}{{end}}{{define "host"}}{{captureHost .}}{{end}}`,
+	); err != nil {
 		t.Fatal(err)
 	}
 	writer := telemetry.New(telemetry.Config{Service: ServiceName, Sink: &telemetry.Capture{}, Now: now})
@@ -48,7 +82,8 @@ func TestEmptyLandingData(t *testing.T) {
 		Banner: func(u page.User) page.Banner {
 			return page.Banner{Email: u.Email, ProfileURL: u.ProfileURL, LogoutURL: u.LogoutURL, Trail: []page.Level{{Name: "sample-level"}}}
 		},
-		Pages: set, Store: store.New(d, store.Config{Now: now}), MCP: mcp.NewServer(mcp.ServerConfig{Name: ServiceName, Telemetry: writer}), Configured: true,
+		Pages: set, Store: store.New(d, store.Config{Now: now, Rand: bytes.NewReader([]byte("first-idsecondid"))}),
+		MCP: mcp.NewServer(mcp.ServerConfig{Name: ServiceName, Telemetry: writer}), Configured: true,
 		Domain: "fixture.test", Now: now,
 	}
 	handler := identity.Optional(Handler(cfg))
@@ -69,26 +104,43 @@ func TestEmptyLandingData(t *testing.T) {
 			t.Fatalf("%s returned %d and landing data %#v, want %d and %#v", method, w.Code, got, http.StatusOK, want)
 		}
 	}
-}
-
-// R-3F5O-GPSE
-func TestEmptyHostAndReportLists(t *testing.T) {
-	at := time.Date(2026, 11, 18, 14, 5, 9, 0, time.UTC)
-	host := hostView(store.Host{Name: "host01", State: store.HostRunning}, "", at)
-	if host.Allowlist == nil || len(host.Allowlist) != 0 {
-		t.Fatalf("host allowlist = %#v, want non-nil empty slice", host.Allowlist)
+	h, _, err := cfg.Store.CreateHost(t.Context(), store.HostSpec{Type: "chosen-type", RootGB: 20, DataGB: 50}, identity.Caller{UserID: "caller"})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := reportView(nil, 7); got != nil {
-		t.Fatalf("missing report = %#v, want nil", got)
-	}
-	for _, total := range []int{0, 3} {
-		got := reportView(&store.Report{Received: at, Body: protocol.Report{BanTotal: total}}, 7)
-		if got == nil || got.BanTotal != total ||
-			got.FailedUnits == nil || len(got.FailedUnits) != 0 ||
-			got.Slices == nil || len(got.Slices) != 0 ||
-			got.Bans == nil || len(got.Bans) != 0 ||
-			got.Allowlist == nil || len(got.Allowlist) != 0 {
-			t.Fatalf("report = %#v, want non-nil empty lists and ban total %d", got, total)
+	checkHost := func(report *ReportView, backups []BackupRow) {
+		t.Helper()
+		r := httptest.NewRequest(http.MethodGet, "/hosts/"+h.Name, nil)
+		r.Header.Set("X-User-Id", "test-user")
+		w := httptest.NewRecorder()
+		gotHost = HostData{}
+		handler.ServeHTTP(w, r)
+		if w.Code != http.StatusOK || !reflect.DeepEqual(gotHost.Host.Allowlist, []string{}) ||
+			!reflect.DeepEqual(gotHost.Backups, backups) || gotHost.DatabaseCount != 0 ||
+			!reflect.DeepEqual(gotHost.Restores, []RestoreRow{}) || gotHost.RestoreTotal != 0 ||
+			!reflect.DeepEqual(gotHost.Report, report) {
+			t.Fatalf("host response = %d with data %#v and report %#v, want empty lists and report %#v", w.Code, gotHost, gotHost.Report, report)
 		}
 	}
+	checkHost(nil, []BackupRow{})
+	for _, total := range []int{0, 3} {
+		if _, err := cfg.Store.RecordReport(t.Context(), h.Name, protocol.Report{BanTotal: total}, now()); err != nil {
+			t.Fatal(err)
+		}
+		checkHost(&ReportView{
+			Received: now().Format(time.RFC3339), ReceivedText: now().Format(SecondLayout), Wanted: h.Version,
+			FailedUnits: []string{}, Slices: []SliceRow{}, Bans: []BanRow{}, Allowlist: []string{}, BanTotal: total,
+		}, []BackupRow{})
+	}
+	if _, _, err := cfg.Store.PlaceAccount(t.Context(), "chosen-account", h.Name, identity.Caller{UserID: "caller"}); err != nil {
+		t.Fatal(err)
+	}
+	record, err := cfg.Store.Host(t.Context(), h.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkHost(&ReportView{
+		Received: now().Format(time.RFC3339), ReceivedText: now().Format(SecondLayout), Wanted: record.Version,
+		FailedUnits: []string{}, Slices: []SliceRow{}, Bans: []BanRow{}, Allowlist: []string{}, BanTotal: 3,
+	}, []BackupRow{{Account: "chosen-account", Health: store.BackupNone, Databases: []DatabaseRow{}}})
 }

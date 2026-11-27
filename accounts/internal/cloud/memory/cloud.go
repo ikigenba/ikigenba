@@ -43,9 +43,10 @@ type Config struct {
 
 // Cloud is a persistent sandbox cloud safe for concurrent use.
 type Cloud struct {
-	cfg   Config
-	mu    sync.Mutex
-	state state
+	cfg         Config
+	mu          sync.Mutex
+	state       state
+	backupScope [16]byte
 }
 
 var _ cloud.Cloud = (*Cloud)(nil)
@@ -97,6 +98,7 @@ type state struct {
 	LaunchTokens map[string]launchToken
 	VolumeTokens map[string]volumeToken
 	Associations map[string]bool
+	Keys         []objectKey
 }
 
 func emptyState() state {
@@ -279,7 +281,7 @@ var stsIdentity = operation{"sts", "GetCallerIdentity", ""}
 func (op operation) failure(code string, err error) *cloud.Error {
 	class := cloud.ClassRefused
 	switch code {
-	case "InvalidInstanceID.NotFound", "InvalidVolume.NotFound", "InvalidAllocationID.NotFound", "NoSuchChange":
+	case "InvalidInstanceID.NotFound", "InvalidVolume.NotFound", "InvalidAllocationID.NotFound", "NoSuchChange", "NoSuchBucket":
 		class = cloud.ClassNotFound
 	case "IdempotentParameterMismatch":
 		class = cloud.ClassMismatch

@@ -28,7 +28,7 @@ func replaceFixtureHost(t *testing.T, st *store.Store, old store.Host) store.Hos
 	return replacement
 }
 
-// R-E5K2-FZH7
+// R-OKLA-OIOR.
 func TestVerifiedStateDoesNotFollowReusedHostName(t *testing.T) {
 	for _, tt := range []struct {
 		name                string
@@ -160,7 +160,7 @@ func removeFixtureBoxUser(t *testing.T, st *store.Store, u store.User, host stor
 	if _, err := st.RecordReport(ctx, host.Name, protocol.Report{Applied: removed.Version}, fixtureNow); err != nil {
 		t.Fatal(err)
 	}
-	_, op, err := st.RemoveAccount(ctx, u.Account, identity.Caller{UserID: "owner"})
+	_, op, _, err := st.RemoveAccount(ctx, u.Account, identity.Caller{UserID: "owner"})
 	if err != nil {
 		t.Fatal(err)
 	}

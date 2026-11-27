@@ -337,6 +337,7 @@ func (h *Host) Inspect(ctx context.Context, s protocol.DesiredState) (protocol.R
 	out.Bans, out.BanTotal = h.banFacts(ctx, now.Location())
 	out.Allowlist = h.appliedAllowlist()
 	out.Hostname = h.staticHostname()
+	h.backupReport(s, &out)
 	h.previousInspect, h.inspected = now, true
 	return out, ctx.Err()
 }

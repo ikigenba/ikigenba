@@ -21,6 +21,12 @@ const MinuteLayout = "2006-01-02 15:04"
 // SecondLayout formats report and host creation times in UTC.
 const SecondLayout = "2006-01-02 15:04:05 UTC"
 
+// MaxRestoreRows is the maximum number of restores on a host page.
+const MaxRestoreRows = 25
+
+// MaxDatabaseRows is the maximum number of databases shown per account.
+const MaxDatabaseRows = 50
+
 // ToolsLevel locates the tools page.
 var ToolsLevel = page.Level{Name: "tools", URL: "/tools"}
 
@@ -63,12 +69,13 @@ type HostRow struct {
 	RootGB, DataGB                                       int
 	EIP                                                  string
 	AccountCount                                         int
-	Reported, ReportedText                               string
+	Reported, ReportedText, Closed, ClosedText           string
+	BackupFlagged                                        int
 }
 
-// KeptVolumeRow describes a data volume retained when its host was deleted.
+// KeptVolumeRow describes a data volume retained after a deletion or replacement.
 type KeptVolumeRow struct {
-	Volume, Host         string
+	Volume, Host, Cause  string
 	SizeGB               int
 	Deleted, DeletedText string
 }
@@ -77,6 +84,7 @@ type KeptVolumeRow struct {
 type AccountRow struct {
 	Slug, Host, DNSName, State, Reason string
 	UserCount, InviteCount             int
+	Backup, Snapshot, SnapshotText     string
 	Created, CreatedText               string
 }
 
@@ -92,19 +100,44 @@ type UserRow struct {
 
 // HostData describes the host detail page.
 type HostData struct {
-	Banner page.Banner
-	Host   HostView
-	Report *ReportView
+	Banner        page.Banner
+	Host          HostView
+	Report        *ReportView
+	Backups       []BackupRow
+	DatabaseCount int
+	Restores      []RestoreRow
+	RestoreTotal  int
 }
 
 // HostView describes the host and its resources.
 type HostView struct {
-	Name, DNSName, State, Reason, OnDelete, Health, Type                 string
-	RootGB, DataGB                                                       int
-	EIP                                                                  string
-	AccountCount                                                         int
-	Reported, ReportedText, InstanceID, DataVolume, Created, CreatedText string
-	Allowlist                                                            []string
+	Name, DNSName, State, Reason, OnDelete, Health, Type  string
+	RootGB, DataGB                                        int
+	EIP                                                   string
+	AccountCount                                          int
+	Reported, ReportedText, Closed, ClosedText            string
+	BackupFlagged                                         int
+	Replace, InstanceID, DataVolume, Created, CreatedText string
+	Allowlist                                             []string
+}
+
+// BackupRow describes the backup status of an account placed on the host.
+type BackupRow struct {
+	Account, Health                                                                           string
+	FilesStale                                                                                bool
+	Snapshot, SnapshotText, Checked, CheckedText, Error, Final, FinalAt, FinalAtText, Restore string
+	Databases                                                                                 []DatabaseRow
+	DatabaseTotal                                                                             int
+}
+
+// DatabaseRow describes a database from the host's latest report.
+type DatabaseRow struct {
+	Path, Health, Written, WrittenText, Error string
+}
+
+// RestoreRow describes a restore requested on the host.
+type RestoreRow struct {
+	Account, Kind, Path, AsOf, AsOfText, Copy, State, Reason, Asked, AskedText string
 }
 
 // ReportView describes the latest daemon report.
@@ -148,9 +181,13 @@ type ToolRow struct{ Name, Description string }
 
 // AboutData describes the service and host defaults.
 type AboutData struct {
-	Banner                       page.Banner
-	Description, DefaultType     string
-	DefaultRootGB, DefaultDataGB int
+	Banner                                              page.Banner
+	Description, DefaultType                            string
+	DefaultRootGB, DefaultDataGB                        int
+	BackupEveryMinutes                                  int
+	BackupHourly, BackupDaily, BackupMonthly            int
+	BackupWindowDays                                    int
+	BackupFilesStaleMinutes, BackupDatabaseStaleMinutes int
 }
 
 // NotFoundData supplies the unknown-page footer.

@@ -24,9 +24,11 @@ import (
 	"time"
 
 	"github.com/ikigenba/ikigenba/accounts"
+	"github.com/ikigenba/ikigenba/accounts/internal/access"
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
 	"github.com/ikigenba/ikigenba/accounts/internal/hostauth"
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
+	"github.com/ikigenba/ikigenba/accounts/internal/settings"
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 	"github.com/ikigenba/ikigenba/accounts/internal/trail"
 	"github.com/ikigenba/ikigenba/appkit/db"
@@ -57,6 +59,14 @@ func (s fixtureSTS) CallerOf(context.Context, string, string) (cloud.Caller, err
 }
 
 func (fixtureSTS) Account(context.Context) (string, error) { return fixtureAccount, nil }
+
+func (fixtureSTS) Identity(context.Context) (cloud.Caller, error) {
+	panic("unexpected backup identity call")
+}
+
+func (fixtureSTS) AssumeRole(context.Context, cloud.RoleRequest) (cloud.Credentials, error) {
+	panic("unexpected backup assume-role call")
+}
 
 type requests struct{ elapsed atomic.Int64 }
 
@@ -110,7 +120,7 @@ func fixtureStore(t *testing.T) (*db.DB, *store.Store, store.Host) {
 	})
 	s := store.New(d, store.Config{
 		Now:  func() time.Time { return fixtureNow },
-		Rand: strings.NewReader("12345678abcdefghIJKLMNOPqrstuvwxABCDEFGHijklmnop"),
+		Rand: rand.NewChaCha8([32]byte{1}),
 	})
 	return d, s, provisionFixtureHost(t, s, fixtureInstance)
 }
@@ -121,7 +131,7 @@ func provisionFixtureHost(t *testing.T, s *store.Store, instance string) store.H
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Finish(t.Context(), op.ID, store.Update{InstanceID: instance}); err != nil {
+	if err := s.Finish(t.Context(), op.ID, store.Update{InstanceID: instance, AllocationID: "eipalloc-fixture"}); err != nil {
 		t.Fatal(err)
 	}
 	h, err = s.Host(t.Context(), h.Name)
@@ -164,7 +174,7 @@ func writeBinary(t *testing.T, file string, content []byte) {
 	}
 }
 
-// R-E0OG-WWIF, R-R5X9-LMQP, R-R755-ZEHE, R-YICM-8FJ0, R-YJKI-M79P.
+// R-KU9L-II31, R-CZ3C-671Y, R-R5X9-LMQP, R-R755-ZEHE, R-YICM-8FJ0, R-YJKI-M79P.
 func TestSurfaceAndBinaryStartup(t *testing.T) {
 	_ = struct {
 		new    func(context.Context, Config) (*Server, error)
@@ -183,10 +193,14 @@ func TestSurfaceAndBinaryStartup(t *testing.T) {
 		BoxUser    http.Handler
 		BoxAdmin   http.Handler
 		Domain     string
+		Access     *access.Access
+		Hosts      settings.Hosts
 	}(Config{})
 	const _ int8 = MaxBoxServing
 	const _ uint16 = MaxBoxServing
-	if MaxWaiters != 1000 || CopyBuffer != 32<<10 || MaxBoxServing != 32 {
+	const _ int16 = MaxCredentialBytes
+	const _ uint16 = MaxCredentialBytes
+	if MaxWaiters != 1000 || CopyBuffer != 32<<10 || MaxBoxServing != 32 || MaxCredentialBytes != 2048 {
 		t.Fatal("unexpected HTTP limits")
 	}
 	seen := map[string]bool{store.Unreachable: true}
@@ -390,12 +404,14 @@ func expectState(t *testing.T, w *httptest.ResponseRecorder, want protocol.Desir
 	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != protocol.ContentJSON || w.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("state response = %d %v", w.Code, w.Header())
 	}
-	raw, err := json.Marshal(want)
-	if err != nil {
+	var raw bytes.Buffer
+	enc := json.NewEncoder(&raw)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(want); err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(bytes.TrimSpace(w.Body.Bytes()), raw) {
-		t.Fatalf("state = %s, want %s", w.Body.Bytes(), raw)
+	if !bytes.Equal(w.Body.Bytes(), raw.Bytes()) {
+		t.Fatalf("state = %s, want %s", w.Body.Bytes(), raw.Bytes())
 	}
 }
 
@@ -410,6 +426,12 @@ func desired(t *testing.T, st *store.Store, name, digest string) protocol.Desire
 		t.Fatal(err)
 	}
 	state.Daemon = digest
+	if state.Backup == nil {
+		state.Backup = &protocol.Backup{}
+	}
+	state.Backup.Bucket = (settings.Hosts{}).BackupBucket()
+	state.Backup.Settings = protocol.Settings(store.DefaultBackupSettings())
+	state.Backup.Accounts = []protocol.AccountCredentials{}
 	return state
 }
 
@@ -424,9 +446,16 @@ func (s desiredWithDomain) Desired(ctx context.Context, name string) (protocol.D
 	return state, err
 }
 
-// R-E1WD-AO94, R-RGWD-1KEY.
+// R-OI5H-WZ7D, R-OGXL-J7GO, R-RGWD-1KEY.
 func TestImmediateState(t *testing.T) {
 	_, st, host := fixtureStore(t)
+	addBoxAccount(t, st, host.Name, "acme")
+	addBoxUser(t, st, "acme", "daffy")
+	var err error
+	host, err = st.Host(t.Context(), host.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
 	stamps := new(requests)
 	file := filepath.Join(t.TempDir(), "accountsd")
 	writeBinary(t, file, []byte("fixture"))
@@ -488,7 +517,7 @@ func waitForPoll(t *testing.T, waits <-chan time.Duration, done <-chan *httptest
 	}
 }
 
-// R-E349-OFZT, R-E7ZV-7IYL.
+// R-OJDE-AQY2, R-ON13-G265.
 func TestPollEndsOnWriteTimeoutCancelOrStop(t *testing.T) {
 	_, st, host := fixtureStore(t)
 	stamps := new(requests)
@@ -564,7 +593,7 @@ func (w *blockedPollWriter) Write(p []byte) (int, error) {
 	return w.ResponseRecorder.Write(p)
 }
 
-// R-E349-OFZT, R-E7ZV-7IYL.
+// R-OJDE-AQY2, R-ON13-G265.
 func TestMatchingDigestPollStopsWithoutWaitingForWriter(t *testing.T) {
 	_, st, host := fixtureStore(t)
 	stamps := new(requests)
@@ -633,7 +662,7 @@ func (s afterHostLookup) HostByInstance(ctx context.Context, instance string) (s
 	return host, err
 }
 
-// R-E349-OFZT.
+// R-OJDE-AQY2.
 func TestPollSeesWriteBetweenLookupAndWatch(t *testing.T) {
 	_, st, host := fixtureStore(t)
 	stamps := new(requests)
@@ -657,7 +686,7 @@ func TestPollSeesWriteBetweenLookupAndWatch(t *testing.T) {
 	expectState(t, w, want)
 }
 
-// R-E349-OFZT, R-X8LV-14EK.
+// R-OJDE-AQY2, R-OO8Z-TTWU.
 func TestDefaultLongPollTimer(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		_, st, host := fixtureStore(t)
@@ -677,7 +706,7 @@ func TestDefaultLongPollTimer(t *testing.T) {
 	})
 }
 
-// R-E5K2-FZH7.
+// R-OKLA-OIOR.
 func TestStateReadFailures(t *testing.T) {
 	for _, tt := range []struct {
 		name    string
@@ -693,21 +722,28 @@ func TestStateReadFailures(t *testing.T) {
 			stamps := new(requests)
 			wait := make(chan time.Duration, 1)
 			timer := make(chan time.Time, 1)
+			fake := new(backupSTS)
 			s := server(t, Config{
 				Store: st, Configured: true, Verifier: stamps.verifier(fixtureSTS{instance: fixtureInstance}),
-				After: func(d time.Duration) <-chan time.Time { wait <- d; return timer },
+				After:  func(d time.Duration) <-chan time.Time { wait <- d; return timer },
+				Access: access.New(access.Config{STS: fake}),
 			})
 			result := startPoll(t, s, stamps.signed(t.Context(), http.MethodGet, pollingRequest(host, ""), nil), wait)
 			tt.failure(t, d, st, host)
 			timer <- fixtureNow
 			expectError(t, <-result, tt.code, tt.copy)
+			if fake.calls.Load() != 0 {
+				t.Fatal("failed desired read reached backup STS")
+			}
 		})
 		for _, sameVersion := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s after lookup (same version: %t)", tt.name, sameVersion), func(t *testing.T) {
 				d, st, host := fixtureStore(t)
 				stamps := new(requests)
+				fake := new(backupSTS)
 				s := server(t, Config{
 					Store: st, Configured: true, Verifier: stamps.verifier(fixtureSTS{instance: fixtureInstance}),
+					Access: access.New(access.Config{STS: fake}),
 					After: func(time.Duration) <-chan time.Time {
 						t.Fatal("poll waited after a store failure")
 						return nil
@@ -719,6 +755,9 @@ func TestStateReadFailures(t *testing.T) {
 					path = pollingRequest(host, "")
 				}
 				expectError(t, invoke(s, stamps.signed(t.Context(), http.MethodGet, path, nil)), tt.code, tt.copy)
+				if fake.calls.Load() != 0 {
+					t.Fatal("failed state read reached backup STS")
+				}
 			})
 		}
 	}
@@ -726,7 +765,7 @@ func TestStateReadFailures(t *testing.T) {
 
 func removeFixtureHost(t *testing.T, _ *db.DB, st *store.Store, host store.Host) {
 	t.Helper()
-	_, op, err := st.DeleteHost(t.Context(), host.Name, true, identity.Caller{UserID: "test-user"})
+	_, op, err := st.DeleteHost(t.Context(), host.Name, true, false, identity.Caller{UserID: "test-user"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -742,7 +781,7 @@ func closeFixtureDatabase(t *testing.T, d *db.DB, _ *store.Store, _ store.Host) 
 	}
 }
 
-// R-E6RY-TR7W, R-X8LV-14EK.
+// R-OLT7-2AFG, R-OO8Z-TTWU.
 func TestWaiterLimitDoesNotThrottleImmediateReads(t *testing.T) {
 	_, st, host := fixtureStore(t)
 	stamps := new(requests)
@@ -766,7 +805,7 @@ func TestWaiterLimitDoesNotThrottleImmediateReads(t *testing.T) {
 	}
 }
 
-// R-RRVG-HI37, R-X8LV-14EK.
+// R-RRVG-HI37, R-OO8Z-TTWU.
 func TestReportValidationAndRecording(t *testing.T) {
 	_, st, host := fixtureStore(t)
 	stamps := new(requests)

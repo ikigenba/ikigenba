@@ -12,7 +12,7 @@ import (
 // These assignments use the public values as unnamed structs, so field order
 // and field types have to agree for the tests to compile.
 
-// R-6UA8-9J5K
+// R-4JN4-V4H6
 var _ struct {
 	Name                                                                     string
 	Seq                                                                      int64
@@ -30,9 +30,11 @@ var _ struct {
 	Allowlist                                                                []string
 	Change, RecordReason                                                     string
 	OnDelete                                                                 string
+	Closed                                                                   time.Time
+	Replace                                                                  string
 } = store.Host{}
 
-// R-6XXX-EUDN
+// R-4KV1-8W7V
 var _ struct {
 	Volume, Host  string
 	SizeGB        int
@@ -41,11 +43,12 @@ var _ struct {
 	Attempts      int
 	NextTry       time.Time
 	Caller        identity.Caller
+	Cause         string
 } = store.KeptVolume{}
 
-// R-70DQ-6DV1
+// R-4PQM-RZ6N
 var _ interface {
-	DeleteHost(context.Context, string, bool, identity.Caller) (store.Host, store.Operation, error)
+	DeleteHost(context.Context, string, bool, bool, identity.Caller) (store.Host, store.Operation, error)
 	KeptVolume(context.Context, string) (store.KeptVolume, error)
 	ListKeptVolumes(context.Context, time.Time, string, int) ([]store.KeptVolume, error)
 	ListKeptVolumesBefore(context.Context, time.Time, string, int) ([]store.KeptVolume, error)
@@ -101,12 +104,13 @@ var _ struct {
 	Caller                                  identity.Caller
 } = store.Operation{}
 
-// R-GRT3-SIFT
+// R-4OIQ-E7FY
 var _ struct {
 	Step                                                                           string
 	Generation                                                                     int
 	InstanceID, RootVolume, DataVolume, AllocationID, AssociationID, EIP, AZ, Type string
 	RootGB, DataGB                                                                 int
+	HostState                                                                      string
 } = store.Update{}
 
 // R-BSCO-Q7FI
@@ -151,7 +155,7 @@ var (
 type namedString string
 
 const (
-	// R-GWOP-BLEL
+	// R-4NAU-0FP9
 	_ namedString = store.HostProvisioning
 	_ namedString = store.HostRunning
 	_ namedString = store.HostStopping
@@ -161,6 +165,10 @@ const (
 	_ namedString = store.HostDeleting
 	_ namedString = store.HostFailed
 	_ namedString = store.HostDeleted
+	_ namedString = store.HostClosing
+	_ namedString = store.HostOpening
+	_ namedString = store.HostReplacing
+	_ namedString = store.HostRestoring
 
 	// R-0K9R-765T
 	_ namedString = store.AccountPending
@@ -181,7 +189,7 @@ const (
 	_ namedString = store.AlarmSilent
 	_ namedString = store.AlarmError
 
-	// R-H0CE-GWMO
+	// R-4M2X-MNYK
 	_ namedString = store.OpRunning
 	_ namedString = store.OpFailed
 	_ namedString = store.OpDone
@@ -193,6 +201,10 @@ const (
 	_ namedString = store.OpDelete
 	_ namedString = store.OpPlace
 	_ namedString = store.OpUnplace
+	_ namedString = store.OpClose
+	_ namedString = store.OpOpen
+	_ namedString = store.OpReplace
+	_ namedString = store.OpRestore
 
 	// R-6VI4-NAW9
 	_ namedString = store.OnDeleteKeep
@@ -251,4 +263,120 @@ var _ interface {
 	CreateInviteAs(context.Context, string, identity.Caller) (store.Invite, string, error)
 	InvitesAs(context.Context, string) ([]store.Invite, error)
 	RevokeInviteAs(context.Context, string, string) (store.Invite, error)
+} = (*store.Store)(nil)
+
+// R-5814-IJB2 R-5990-WB1R
+const (
+	_ namedString = store.ReplaceVolume
+	_ namedString = store.ReplaceBackup
+	_ namedString = store.CauseDeleted
+	_ namedString = store.CauseReplaced
+	_ namedString = store.BackupHealthy
+	_ namedString = store.BackupStale
+	_ namedString = store.BackupError
+	_ namedString = store.BackupNone
+	_ namedString = store.BackupsRemoved
+	_ namedString = store.DeleteBackupsDeleting
+	_ namedString = store.DeleteBackupsFailed
+)
+
+// R-5AGX-A2SG
+var _ struct {
+	EveryMinutes, Hourly, Daily, Monthly, WindowDays, FilesStaleMinutes, DatabaseStaleMinutes, CheckDays int
+} = store.BackupSettings{}
+
+var _ func() store.BackupSettings = store.DefaultBackupSettings
+
+// R-GV56-GB7L
+var _ struct {
+	Account, Host, State      string
+	Snapshot, Checked         time.Time
+	Error                     string
+	Databases, DatabaseErrors int
+	Synced, Written           time.Time
+	Final                     string
+	FinalAt                   time.Time
+	Restore                   string
+	Reported                  time.Time
+	Delete, DeleteReason      string
+} = store.AccountBackup{}
+
+// R-5FCI-T5R8
+var (
+	_ struct {
+		ID, Host, Account, Kind, Path, User string
+		AsOf                                time.Time
+		Copy, State, Reason                 string
+		Asked                               time.Time
+		CreatedBy                           string
+	} = store.Restore{}
+	_ struct {
+		Account, Kind, Path, User string
+		AsOf                      time.Time
+	} = store.RestoreRequest{}
+)
+
+// R-5GKF-6XHX
+var (
+	_ struct {
+		Account, State, Reason string
+		Attempts               int
+		NextTry                time.Time
+		Caller                 identity.Caller
+	} = store.BackupsDelete{}
+	_ struct {
+		Account, State string
+		At             time.Time
+		Code, Reason   string
+	} = store.BackupStep{}
+	_ struct {
+		Operation, Mode, OldInstance, OldVolume string
+		Retired, Admitted                       bool
+	} = store.Replacement{}
+)
+
+// R-5K84-C8Q0
+var (
+	_ func(store.AccountBackup, store.BackupSettings, time.Time) string = store.BackupHealth
+	_ func(store.AccountBackup, store.BackupSettings, time.Time) bool   = store.FilesStale
+	_ func(protocol.Database, store.BackupSettings, time.Time) string   = store.DatabaseHealth
+)
+
+// R-XB00-JMCY
+var _ interface {
+	CloseHost(context.Context, string, identity.Caller) (store.Host, store.Operation, error)
+	OpenHost(context.Context, string, identity.Caller) (store.Host, store.Operation, error)
+	ReplaceHost(context.Context, string, string, store.Target, identity.Caller) (store.Host, store.Operation, []string, error)
+	Replacement(context.Context, string) (store.Replacement, error)
+	Retire(context.Context, string) error
+	Admit(context.Context, string) error
+	BackupSteps(context.Context, string) ([]store.BackupStep, error)
+} = (*store.Store)(nil)
+
+// R-GPL0-Q7DY
+var _ interface {
+	RequestRestore(context.Context, store.RestoreRequest, identity.Caller) (store.Restore, store.Operation, error)
+	Restore(context.Context, string) (store.Restore, error)
+	RestoresOn(context.Context, string, int) ([]store.Restore, int, error)
+	BackupSettings(context.Context) (store.BackupSettings, error)
+	BackupOf(context.Context, string) (store.AccountBackup, error)
+	BackupsOn(context.Context, string) ([]store.AccountBackup, error)
+	ListBackups(context.Context, string, string, int) ([]store.AccountBackup, error)
+	DeleteAccountBackups(context.Context, string, identity.Caller) (store.BackupsDelete, error)
+	BackupsDeleteOf(context.Context, string) (store.BackupsDelete, error)
+	DueBackupDeletes(context.Context, time.Time, string, int) ([]store.BackupsDelete, error)
+	DeferBackupDelete(context.Context, string, time.Time, int) error
+	FinishBackupDelete(context.Context, string) error
+	FailBackupDelete(context.Context, string, string) error
+} = (*store.Store)(nil)
+
+// R-PKKG-LOF5
+var _ interface {
+	PlaceAccount(context.Context, string, string, identity.Caller) (store.Account, store.Operation, error)
+	RemoveAccount(context.Context, string, identity.Caller) (store.Account, store.Operation, []string, error)
+	Account(context.Context, string) (store.Account, error)
+	ListAccounts(context.Context, string, int) ([]store.Account, error)
+	ListAccountsBefore(context.Context, string, int) ([]store.Account, error)
+	LastAccounts(context.Context, int) ([]store.Account, error)
+	AccountsOn(context.Context, string) ([]store.Account, error)
 } = (*store.Store)(nil)

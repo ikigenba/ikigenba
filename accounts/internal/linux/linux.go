@@ -8,8 +8,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ikigenba/ikigenba/accounts/internal/machine"
@@ -48,6 +51,7 @@ type Command struct {
 	Args   []string
 	Stdin  io.Reader
 	Stdout io.Writer
+	Env    []string
 }
 
 // Result holds the completed process's output and exit status.
@@ -97,6 +101,12 @@ func resolveCommand(name, path string) (string, error) {
 
 // Exec runs a command without a shell, bounding any output retained in memory.
 func Exec(ctx context.Context, c Command) (Result, error) {
+	for _, entry := range c.Env {
+		name, _, ok := strings.Cut(entry, "=")
+		if !ok || name == "" || name == "PATH" || strings.ContainsRune(entry, 0) {
+			return Result{}, errors.New("invalid command environment entry")
+		}
+	}
 	program, err := resolveCommand(c.Name, commandPath)
 	if err != nil {
 		return Result{}, err
@@ -111,7 +121,7 @@ func Exec(ctx context.Context, c Command) (Result, error) {
 	}
 	cmd := &exec.Cmd{
 		Path: program, Args: append([]string{c.Name}, c.Args...),
-		Env:   append(os.Environ(), "PATH="+commandPath),
+		Env:   append(append(os.Environ(), "PATH="+commandPath), c.Env...),
 		Stdin: c.Stdin, Stdout: out, Stderr: &stderr, WaitDelay: time.Second,
 	}
 	if err := cmd.Start(); err != nil {
@@ -148,14 +158,20 @@ func escapeSlice(name string) string { return strings.ReplaceAll(name, "-", `\x2
 
 // Host reconciles and observes one Linux installation.
 type Host struct {
-	env          Env
-	rootSize     string
-	dataVolumeID string
-	dataSize     string
-	written      map[string]struct{}
-	backups      []string
-	claudeFailed bool
-	claudeFailAt time.Time
+	env               Env
+	rootSize          string
+	dataVolumeID      string
+	dataSize          string
+	written           map[string]struct{}
+	backups           []string
+	claudeFailed      bool
+	claudeFailAt      time.Time
+	appliedRestore    atomic.Pointer[string]
+	resticInstall     installAttempt
+	litestreamInstall installAttempt
+	backupFactsMu     sync.Mutex
+	backupWalked      sync.Map
+	lockedBackupRepos map[string]error
 
 	previousCPU     cpuTimes
 	previousSlices  map[string]int64
@@ -217,6 +233,14 @@ func (h *Host) Apply(ctx context.Context, s protocol.DesiredState) error {
 		}
 		return h.slices(ctx, s)
 	}
+	if s.Backup != nil && s.Backup.Restore != nil {
+		if err := h.slices(ctx, s); err != nil {
+			return err
+		}
+		id := s.Backup.Restore.ID
+		h.appliedRestore.Store(&id)
+		return nil
+	}
 	if err := h.hostKey(ctx); err != nil {
 		return err
 	}
@@ -234,12 +258,18 @@ func (h *Host) Apply(ctx context.Context, s protocol.DesiredState) error {
 	return nil
 }
 
+func (h *Host) restoreReady(id string) bool {
+	applied := h.appliedRestore.Load()
+	return applied != nil && *applied == id
+}
+
 func (h *Host) run(ctx context.Context, program string, args ...string) (Result, error) {
 	return h.query(ctx, Command{Name: program, Args: args}, 0)
 }
 
 func (h *Host) query(ctx context.Context, c Command, allowed ...int) (Result, error) {
 	res, err := h.env.Execute(ctx, c)
+	res, err = redactProcessCredentials(c.Env, res, err)
 	if err == nil {
 		if len(allowed) == 0 {
 			return res, nil
@@ -255,4 +285,35 @@ func (h *Host) query(ctx context.Context, c Command, allowed ...int) (Result, er
 		label += " " + c.Args[0]
 	}
 	return res, &CommandError{Label: label, Result: res, Err: err}
+}
+
+func redactProcessCredentials(env []string, result Result, err error) (Result, error) {
+	var secrets []string
+	for _, variable := range env {
+		name, value, _ := strings.Cut(variable, "=")
+		switch name {
+		case "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN":
+			if value != "" {
+				secrets = append(secrets, value)
+			}
+		}
+	}
+	if len(secrets) == 0 {
+		return result, err
+	}
+	slices.SortFunc(secrets, func(a, b string) int { return len(b) - len(a) })
+	pairs := make([]string, 0, 2*len(secrets))
+	for _, value := range secrets {
+		pairs = append(pairs, value, "***")
+	}
+	redact := strings.NewReplacer(pairs...)
+	result.Stdout = []byte(redact.Replace(string(result.Stdout)))
+	result.Stderr = []byte(redact.Replace(string(result.Stderr)))
+	if err != nil {
+		message := err.Error()
+		if cleaned := redact.Replace(message); cleaned != message {
+			err = errors.New(cleaned)
+		}
+	}
+	return result, err
 }

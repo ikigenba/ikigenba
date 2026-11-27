@@ -129,7 +129,7 @@ func TestDeclarationsAndEmptyLoad(t *testing.T) {
 }
 
 func TestPersistenceAndFailedWrite(t *testing.T) {
-	// R-GV9R-543N R-G7BA-PU21
+	// R-GV9R-543N
 	f := setup(t)
 	ctx := t.Context()
 	l, spec := f.launch(), f.spec()
@@ -955,10 +955,17 @@ func TestIdentity(t *testing.T) {
 }
 
 func TestIDsUseInjectedRandomSourceAndRetryCollisions(t *testing.T) {
-	// R-UI02-S4OP
+	// R-CQ5P-NF79
 	f := setup(t)
 	stream := bytes.Repeat([]byte{1}, 32)
-	for _, draw := range []byte{0xaa, 0xbb, 0xaa, 0xcc, 0xdd, 0xee, 0x12, 0x34, 0xfa} {
+	for _, draw := range []byte{
+		0xaa, 0xbb, // First instance and root volume.
+		0xaa, 0xcc, 0xbb, 0xdd, // Instance and volume collisions.
+		0xdd, 0xee, // Data volume collides with the second root volume.
+		0x12, 0x12, 0x13, // Address allocation collision.
+		0x34, 0x34, 0x35, // Address association collision.
+		0xfa, 0xfa, 0xfb, // Record change collision.
+	} {
 		stream = append(stream, bytes.Repeat([]byte{draw}, 9)...)
 	}
 	f.cfg.Rand = bytes.NewReader(stream)
@@ -980,15 +987,26 @@ func TestIDsUseInjectedRandomSourceAndRetryCollisions(t *testing.T) {
 	a, err := f.c.AllocateAddress(ctx, f.launch().Tags)
 	ok(t, err)
 	equal(t, a.AllocationID, "eipalloc-2"+strings.Repeat("12", 8))
+	b, err := f.c.AllocateAddress(ctx, f.launch().Tags)
+	ok(t, err)
+	equal(t, b.AllocationID, "eipalloc-3"+strings.Repeat("13", 8))
 	f.now = f.now.Add(memory.BootDelay)
 	assoc, err := f.c.AssociateAddress(ctx, a.AllocationID, first.ID)
 	ok(t, err)
 	equal(t, assoc, "eipassoc-4"+strings.Repeat("34", 8))
+	assoc, err = f.c.AssociateAddress(ctx, b.AllocationID, second.ID)
+	ok(t, err)
+	equal(t, assoc, "eipassoc-5"+strings.Repeat("35", 8))
 	change, err := f.c.ChangeRecord(ctx, f.cfg.Hosts.ZoneID, cloud.RecordChange{
 		Action: cloud.RecordCreate, Name: "team." + f.cfg.Hosts.Domain, IP: a.IP, TTL: 90,
 	})
 	ok(t, err)
 	equal(t, change, "CA"+strings.Repeat("FA", 8))
+	change, err = f.c.ChangeRecord(ctx, f.cfg.Hosts.ZoneID, cloud.RecordChange{
+		Action: cloud.RecordCreate, Name: "other." + f.cfg.Hosts.Domain, IP: b.IP, TTL: 90,
+	})
+	ok(t, err)
+	equal(t, change, "CB"+strings.Repeat("FB", 8))
 }
 
 func TestCapacityKeepsPreviousState(t *testing.T) {

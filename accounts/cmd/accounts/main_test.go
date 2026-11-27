@@ -22,6 +22,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/accounts/internal/cli"
 	"github.com/ikigenba/ikigenba/accounts/internal/pages"
+	"github.com/ikigenba/ikigenba/accounts/internal/store"
 	"github.com/ikigenba/ikigenba/accounts/internal/tools"
 	"github.com/ikigenba/ikigenba/accounts/internal/valid"
 	"github.com/ikigenba/ikigenba/appkit/identity"
@@ -32,7 +33,7 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/version"
 )
 
-// R-DD0R-79BA R-DE8N-L11Z R-DGOG-CKJD R-Z3U7-50S4 R-Z523-ISIT R-PHW4-C3M0 R-ETO0-MM7J R-DLK1-VNI5 R-SGIE-LJRV R-V8IV-TOG4 R-SIY7-D399 R-RDKJ-WH74 R-H48K-DF7N
+// R-DD0R-79BA R-DE8N-L11Z R-DGOG-CKJD R-Z3U7-50S4 R-Z523-ISIT R-221Y-4RA6 R-ETO0-MM7J R-DLK1-VNI5 R-SGIE-LJRV R-V8IV-TOG4 R-SIY7-D399 R-RDKJ-WH74 R-H48K-DF7N
 func TestBinary(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	const commit = "abcdeff01234567890-dirty"
@@ -159,6 +160,9 @@ func TestBinary(t *testing.T) {
 		}
 		cmd.Env = append(cmd.Env, "PATH="+stubDir, "IKIGENBA_SANDBOX=")
 		cmd.Dir = dir
+		if i == 3 {
+			cmd.Dir = t.TempDir()
+		}
 		cmd.ExtraFiles = []*os.File{file}
 		var out, errout bytes.Buffer
 		cmd.Stdout = &out
@@ -185,7 +189,7 @@ func TestBinary(t *testing.T) {
 			childErr := <-exited
 			t.Fatalf("ready %q %v child %v stderr %s", b[:n], err, childErr, errout.String())
 		}
-		info, err := os.Stat(filepath.Join(dir, "state", "accounts.db"))
+		info, err := os.Stat(filepath.Join(cmd.Dir, "state", "accounts.db"))
 		if err != nil || !info.Mode().IsRegular() {
 			t.Fatal(info, err)
 		}
@@ -279,7 +283,12 @@ func TestBinary(t *testing.T) {
 			banner := page.New(pages.ServiceName, id).Banner(page.User{Email: caller.Email, ProfileURL: "https://auth.example.test/", LogoutURL: "https://auth.example.test/logout"})
 			banner.Trail = []page.Level{pages.AboutLevel}
 			want := httptest.NewRecorder()
-			set.Write(want, req, 200, "about", pages.AboutData{Banner: banner, Description: pages.Description, DefaultType: valid.DefaultType, DefaultRootGB: valid.DefaultRootGB, DefaultDataGB: valid.DefaultDataGB})
+			defaults := store.DefaultBackupSettings()
+			set.Write(want, req, 200, "about", pages.AboutData{
+				Banner: banner, Description: pages.Description, DefaultType: valid.DefaultType, DefaultRootGB: valid.DefaultRootGB, DefaultDataGB: valid.DefaultDataGB,
+				BackupEveryMinutes: defaults.EveryMinutes, BackupHourly: defaults.Hourly, BackupDaily: defaults.Daily, BackupMonthly: defaults.Monthly,
+				BackupWindowDays: defaults.WindowDays, BackupFilesStaleMinutes: defaults.FilesStaleMinutes, BackupDatabaseStaleMinutes: defaults.DatabaseStaleMinutes,
+			})
 			if response.StatusCode != 200 || !bytes.Equal(body, want.Body.Bytes()) {
 				t.Fatal("about identity differs")
 			}

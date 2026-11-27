@@ -31,6 +31,8 @@ type MemoryConfig struct {
 	ApplyDelay time.Duration
 	Sleep      func(context.Context, time.Duration)
 	Now        func() time.Time
+	Disks      *Disks
+	Put        func(c protocol.Credentials, key string) error
 }
 
 // Account is the account identity present on a simulated host.
@@ -66,22 +68,38 @@ type Snapshot struct {
 	Bans      []protocol.Ban
 	Hostname  string
 	Seeds     []Seed
+	Backups   []protocol.AccountBackup
+	Restored  []string
+	Restores  []protocol.RestoreResult
 }
 
 // Memory is an in-memory machine for tests and sandbox hosts.
 type Memory struct {
-	mu        sync.Mutex
-	cfg       MemoryConfig
-	booted    time.Time
-	accounts  map[string]Account
-	users     map[string]User
-	folders   map[string]Seed
-	daemon    string
-	applies   int
-	failure   error
-	allowlist []string
-	bans      map[string]protocol.Ban
-	hostname  string
+	mu               sync.Mutex
+	cfg              MemoryConfig
+	booted           time.Time
+	accounts         map[string]Account
+	users            map[string]User
+	disk             *memoryDisk
+	identity         *byte
+	daemon           string
+	applies          int
+	failure          error
+	allowlist        []string
+	bans             map[string]protocol.Ban
+	hostname         string
+	backupMu         sync.Mutex
+	streamMu         sync.Mutex
+	backups          map[string]*memoryBackup
+	failing          map[string]bool
+	lastPass         backupSelection
+	hostBackup       protocol.HostBackup
+	hostFinalVersion int64
+	lockedClose      string
+	lockedVersion    int64
+	close            passDelay
+	restore          passDelay
+	requests         map[string]memoryRequest
 }
 
 // NewMemory makes an empty simulated host.
@@ -99,10 +117,17 @@ func NewMemory(cfg MemoryConfig) *Memory {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
+	if cfg.Disks == nil {
+		cfg.Disks = NewDisks()
+	}
+	if cfg.Put == nil {
+		cfg.Put = func(protocol.Credentials, string) error { return nil }
+	}
 	return &Memory{
 		cfg: cfg, booted: cfg.Now().UTC().Truncate(time.Second),
 		accounts: make(map[string]Account), users: make(map[string]User),
-		folders: make(map[string]Seed), bans: make(map[string]protocol.Ban),
+		identity: new(byte), bans: make(map[string]protocol.Ban),
+		backups: make(map[string]*memoryBackup), failing: make(map[string]bool), requests: make(map[string]memoryRequest),
 	}
 }
 
@@ -121,17 +146,12 @@ func (m *Memory) State() Snapshot {
 		user.Keys = slices.Clone(user.Keys)
 		out.Users = append(out.Users, user)
 	}
-	for slug := range m.folders {
-		out.Folders = append(out.Folders, slug)
-	}
 	sort.Slice(out.Accounts, func(i, j int) bool { return out.Accounts[i].Slug < out.Accounts[j].Slug })
 	sort.Slice(out.Users, func(i, j int) bool { return out.Users[i].Name < out.Users[j].Name })
-	slices.Sort(out.Folders)
-	for _, slug := range out.Folders {
-		seed := m.folders[slug]
-		seed.Files = slices.Clone(seed.Files)
-		out.Seeds = append(out.Seeds, seed)
+	if m.disk != nil {
+		m.disk.snapshot(&out)
 	}
+	out.Backups, out.Restores = m.backupReport(m.lastPass)
 	return out
 }
 
@@ -223,12 +243,27 @@ func (m *Memory) Apply(ctx context.Context, s protocol.DesiredState) error {
 	if s.Domain != "" {
 		host += "." + s.Domain
 	}
+	var restoreID string
+	if s.Backup != nil {
+		if s.Backup.Restore != nil {
+			restoreID = s.Backup.Restore.ID
+		}
+		if s.Backup.Close != "" {
+			m.lockedClose, m.lockedVersion = s.Backup.Close, s.Version
+		}
+	}
+	m.disk = m.cfg.Disks.disk(s.DataVolume, m.identity, restoreID)
+	if m.disk != nil {
+		m.disk.mu.Lock()
+		defer m.disk.mu.Unlock()
+	}
 	for _, account := range s.Accounts {
 		switch account.State {
 		case protocol.AccountActive:
 			m.accounts[account.Slug] = Account{Slug: account.Slug, GID: account.GID}
-			if _, exists := m.folders[account.Slug]; !exists {
-				m.folders[account.Slug] = Seed{
+			if _, exists := m.disk.folders[account.Slug]; !exists {
+				m.disk.folders[account.Slug] = struct{}{}
+				m.disk.seeds[account.Slug] = Seed{
 					Account: account.Slug, Files: seedFiles(), Commits: 1,
 					Author: account.Slug, Email: account.Slug + "@" + host, Message: SeedMessage,
 				}
@@ -309,6 +344,12 @@ func (m *Memory) Inspect(_ context.Context, s protocol.DesiredState) (protocol.R
 		report.Slices = append(report.Slices, protocol.Slice{Account: slug})
 	}
 	sort.Slice(report.Slices, func(i, j int) bool { return report.Slices[i].Account < report.Slices[j].Account })
+	selection := selectBackups(s)
+	report.Backups, report.Restores = m.backupReport(selection)
+	report.HostBackup = m.hostBackup
+	if selection.close == "" || report.HostBackup.Final.ID != selection.close {
+		report.HostBackup.Final = protocol.Step{}
+	}
 	return report, nil
 }
 

@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud/memory"
 	"github.com/ikigenba/ikigenba/accounts/internal/daemon"
 	"github.com/ikigenba/ikigenba/accounts/internal/hostauth"
+	"github.com/ikigenba/ikigenba/accounts/internal/machine"
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
 	"github.com/ikigenba/ikigenba/accounts/internal/settings"
 	"github.com/ikigenba/ikigenba/accounts/internal/valid"
@@ -51,6 +53,13 @@ func newSandboxBox(t *testing.T, dir string, hosts int, forward http.HandlerFunc
 
 func newSandbox(t *testing.T, boxDir, seedFile string, hosts int, forward http.HandlerFunc) *sandboxBox {
 	t.Helper()
+	return runSandbox(t, Config{
+		BoxDir: boxDir, SeedFile: seedFile, BanFile: filepath.Join(t.TempDir(), "sandbox-bans"),
+	}, hosts, forward)
+}
+
+func runSandbox(t *testing.T, cfg Config, hosts int, forward http.HandlerFunc) *sandboxBox {
+	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
 	clock := &simClock{}
 	c, first := sandboxCloud(t, clock)
@@ -58,7 +67,7 @@ func newSandbox(t *testing.T, boxDir, seedFile string, hosts int, forward http.H
 		t: t, ctx: ctx, clock: clock, cloud: c, hosts: []cloud.Instance{first},
 		states: make(map[string]chan protocol.DesiredState), reports: make(chan protocol.Report, hosts),
 		watches: make(chan chan time.Time, 1),
-		banFile: filepath.Join(t.TempDir(), "sandbox-bans"),
+		banFile: cfg.BanFile,
 	}
 	for n := 2; n <= hosts; n++ {
 		b.hosts = append(b.hosts, launchSandboxHost(t, c, fmt.Sprintf("host%02d", n)))
@@ -112,13 +121,14 @@ func newSandbox(t *testing.T, boxDir, seedFile string, hosts int, forward http.H
 	})
 	watch := watchTimer(t, b.watches)
 	after := func(d time.Duration) <-chan time.Time {
-		if d == daemon.BoxTimeout {
+		if d == daemon.BoxTimeout || d == daemon.StreamTick || d == daemon.BackupTick {
 			return make(chan time.Time)
 		}
 		return watch(d)
 	}
 	s := New(Config{
-		Cloud: c, Handler: h, Binding: binding, BoxDir: boxDir, SeedFile: seedFile, After: after, BanFile: b.banFile,
+		Cloud: c, Handler: h, Binding: binding, After: after,
+		BoxDir: cfg.BoxDir, SeedFile: cfg.SeedFile, BanFile: cfg.BanFile, BackupFile: cfg.BackupFile,
 		Digest: func() string { return "same" }, Now: clock.now,
 		Sleep: func(_ context.Context, d time.Duration) { clock.advance(d) },
 	})
@@ -137,7 +147,7 @@ func (b *sandboxBox) apply(host int, version int64, users ...protocol.User) prot
 	instance := b.hosts[host-1]
 	return b.applyState(host, protocol.DesiredState{
 		Protocol: protocol.Version, Host: instance.Tags[cloud.TagHost], Version: version, Daemon: "same",
-		DataVolume: "vol-data", DataGB: 100, RootGB: 20,
+		DataVolume: "vol-" + instance.ID, DataGB: 100, RootGB: 20,
 		Accounts: []protocol.Account{{Slug: "team", GID: 4040, State: protocol.AccountActive}},
 		Users:    users,
 	})
@@ -240,7 +250,7 @@ func readBoxAnswer(t *testing.T, conn net.Conn) boxmcp.Answer {
 }
 
 func TestBoxSocketsFollowAppliedUsers(t *testing.T) {
-	// R-Y48R-6BVL R-2FY1-20FT R-BG44-VSUM R-BHC1-9KLB R-Y0L2-10NI
+	// R-DDBS-X2AG R-DEJP-AU15 R-DFRL-OLRU R-DGZI-2DIJ R-Y0L2-10NI
 	base := shortTempDir(t)
 	dir := filepath.Join(base, "box")
 	t.Cleanup(func() { expectAbsent(t, dir) })
@@ -291,12 +301,14 @@ func TestBoxSocketsFollowAppliedUsers(t *testing.T) {
 	must(t, err)
 	t.Cleanup(func() { _ = old.Close() })
 	must(t, os.Remove(bobPath))
+	listingEvents := watchDirectory(t, dir)
 
 	otherAlice := activeBoxUser(alice.Name, 5252)
 	b.apply(2, 1, otherAlice)
 	b.look()
 	expectAbsent(t, path)
 	expectSocket(t, bobPath)
+	assertListingRename(t, listingEvents, SocketList, true)
 	expectListing(t, dir, listLine(dir, alice, "host01", StatusFailed)+listLine(dir, otherAlice, "host02", StatusFailed)+listLine(dir, bob, "host01", StatusServed))
 	oldContents, err := io.ReadAll(old)
 	must(t, err)
@@ -327,7 +339,7 @@ func TestBoxSocketsFollowAppliedUsers(t *testing.T) {
 }
 
 func TestBoxRefusesInvalidDirectory(t *testing.T) {
-	// R-BHC1-9KLB
+	// R-DGZI-2DIJ
 	base := shortTempDir(t)
 	file := filepath.Join(base, "not-a-directory")
 	must(t, os.WriteFile(file, []byte("keep"), 0o600))
@@ -354,20 +366,20 @@ func TestBoxRefusesInvalidDirectory(t *testing.T) {
 	expectAbsent(t, missing)
 }
 
-func TestNoBoxDirectoryConfigured(t *testing.T) {
-	// R-Y48R-6BVL
+func TestNoOptionalDropOrBoxConfigured(t *testing.T) {
+	// R-DDBS-X2AG R-DAW0-5IT2
 	b := newSandboxBox(t, "", 1, nil)
 	b.apply(1, 1, activeBoxUser("alice", 4242))
 	b.look()
 	entries, err := os.ReadDir(filepath.Dir(b.banFile))
 	must(t, err)
 	if len(entries) != 0 {
-		t.Fatalf("box disabled, but the state directory has entries: %v", entries)
+		t.Fatalf("box and backup drop disabled, but the state directory has entries: %v", entries)
 	}
 }
 
 func TestAbandonedBoxListingIsRemoved(t *testing.T) {
-	// R-BG44-VSUM R-BHC1-9KLB R-Y0L2-10NI
+	// R-Y0L2-10NI
 	for _, phase := range []string{"look", "shutdown"} {
 		t.Run(phase, func(t *testing.T) {
 			dir := filepath.Join(shortTempDir(t), "box")
@@ -485,7 +497,7 @@ func TestBoxSharesHostConnectionLimit(t *testing.T) {
 }
 
 func TestClosingBoxListenerDiscardsPendingConnection(t *testing.T) {
-	// R-2FY1-20FT R-2H5X-FS6I
+	// R-2H5X-FS6I
 	dir := shortTempDir(t)
 	path := filepath.Join(dir, "alice")
 	box := newHostListener(dir)
@@ -493,6 +505,77 @@ func TestClosingBoxListenerDiscardsPendingConnection(t *testing.T) {
 	if !box.listen(path, 4242) {
 		t.Fatal("listen failed")
 	}
+	assertUnanswered := pendingBoxClient(t, box, path)
+	must(t, box.Close())
+	expectAbsent(t, path)
+	if c, err := box.Accept(); c != nil || !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("closed listener returned %v, %v", c, err)
+	}
+	assertUnanswered()
+}
+
+func TestLookPrunesPendingSocketWithoutClosingHostListener(t *testing.T) {
+	// R-DEJP-AU15
+	dir := filepath.Join(shortTempDir(t), "box")
+	clock := &simClock{}
+	c, host := sandboxCloud(t, clock)
+	clock.advance(memory.BootDelay)
+	box := newHostListener(dir)
+	t.Cleanup(func() { _ = box.Close() })
+	disks := machine.NewDisks()
+	m := machine.NewMemory(machine.MemoryConfig{Now: clock.now, Disks: disks})
+	state := protocol.DesiredState{
+		Host: host.Tags[cloud.TagHost], Accounts: []protocol.Account{{Slug: "team", GID: 4040, State: protocol.AccountActive}},
+		Users:      []protocol.User{activeBoxUser("alice", 4242), activeBoxUser("bob", 4343), activeBoxUser("charlie", 4444)},
+		DataVolume: "vol-data",
+	}
+	must(t, m.Apply(t.Context(), state))
+	// Hold off Accept so the listener's first accepted connection stays pending.
+	loops := map[string]loop{host.ID: {cancel: func() {}, machine: m, box: box}}
+	s := New(Config{Cloud: c, BoxDir: dir})
+	must(t, s.look(t.Context(), loops, dir, disks))
+	path := filepath.Join(dir, "alice")
+	assertUnanswered := pendingBoxClient(t, box, path)
+	rawPath := filepath.Join(dir, "charlie")
+	raw := dialBox(t, rawPath)
+	sendBoxRequest(t, raw)
+	await(t, box.ready)
+	state.Users[0].State = protocol.UserLocked
+	state.Users[2].State = protocol.UserLocked
+	must(t, m.Apply(t.Context(), state))
+	must(t, s.look(t.Context(), loops, dir, disks))
+	expectAbsent(t, path)
+	expectAbsent(t, rawPath)
+	assertUnanswered()
+	must(t, raw.SetReadDeadline(time.Now().Add(5*time.Second)))
+	var response [1]byte
+	n, err := raw.Read(response[:])
+	if n != 0 || (!errors.Is(err, io.EOF) && !errors.Is(err, syscall.ECONNRESET)) {
+		t.Fatalf("pruned connection returned %d bytes, %v; want no bytes before close", n, err)
+	}
+	dialBox(t, filepath.Join(dir, "bob"))
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := box.Accept()
+		if err != nil {
+			t.Error(err)
+		}
+		accepted <- conn
+	}()
+	conn := await(t, accepted)
+	if conn == nil {
+		t.Fatal("look stopped the surviving host listener")
+	}
+	defer func() { must(t, conn.Close()) }()
+	uid, err := boxUID(conn)
+	must(t, err)
+	if uid != state.Users[1].UID {
+		t.Fatalf("surviving socket peer uid = %d, want %d", uid, state.Users[1].UID)
+	}
+}
+
+func pendingBoxClient(t *testing.T, box *hostListener, path string) func() {
+	t.Helper()
 	type result struct {
 		wire string
 		err  error
@@ -507,22 +590,20 @@ func TestClosingBoxListenerDiscardsPendingConnection(t *testing.T) {
 	}()
 	// Observe the accepted connection without handing it to the daemon.
 	await(t, box.ready)
-	must(t, box.Close())
-	expectAbsent(t, path)
-	if c, err := box.Accept(); c != nil || !errors.Is(err, net.ErrClosed) {
-		t.Fatalf("closed listener returned %v, %v", c, err)
-	}
-	got := await(t, resultCh)
-	must(t, got.err)
-	var response struct {
-		ID    int `json:"id"`
-		Error struct {
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	must(t, json.Unmarshal([]byte(got.wire), &response))
-	if response.ID != 1 || response.Error.Message != boxmcp.NotAnswering {
-		t.Fatalf("closed pending client received %q, want %q", got.wire, boxmcp.NotAnswering)
+	return func() {
+		t.Helper()
+		got := await(t, resultCh)
+		must(t, got.err)
+		var response struct {
+			ID    int `json:"id"`
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		must(t, json.Unmarshal([]byte(got.wire), &response))
+		if response.ID != 1 || response.Error.Message != boxmcp.NotAnswering {
+			t.Fatalf("closed pending client received %q, want %q", got.wire, boxmcp.NotAnswering)
+		}
 	}
 }
 

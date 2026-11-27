@@ -16,10 +16,21 @@ type Machine interface {
 	Apply(ctx context.Context, s protocol.DesiredState) error
 	Inspect(ctx context.Context, s protocol.DesiredState) (protocol.Report, error)
 	InstallDaemon(ctx context.Context, body io.Reader, digest string) error
+	Stream(ctx context.Context, s protocol.DesiredState) error
+	Backup(ctx context.Context, s protocol.DesiredState) error
 }
 
 // SeedMessage is the first commit's message in a new account folder.
 const SeedMessage = "Initialize account folder"
+
+// Shared backup diagnostics for the real and simulated hosts.
+const (
+	NotWAL               = "database is not in WAL mode"
+	NoCredentials        = noBackupSettingsText
+	TooManyDatabases     = "account has too many databases to stream"
+	DataTooLarge         = "account data directory exceeds discovery limits"
+	noBackupSettingsText = "backup credentials or settings are unavailable"
+)
 
 const (
 	noDataVolumeText   = "data volume is not attached"
@@ -28,6 +39,8 @@ const (
 	tooLargeText       = "daemon exceeds the maximum binary size"
 	identityText       = "host account or group conflicts with desired identity"
 	invalidStateText   = "invalid desired host state"
+	notSyncedText      = "database has not synced"
+	noSnapshotText     = "no snapshot at the requested time"
 )
 
 // Errors returned by reconciliation and daemon verification.
@@ -38,6 +51,8 @@ var (
 	ErrTooLarge       = errors.New(tooLargeText)
 	ErrIdentity       = errors.New(identityText)
 	ErrInvalidState   = errors.New(invalidStateText)
+	ErrNotSynced      = errors.New(notSyncedText)
+	ErrNoSnapshot     = errors.New(noSnapshotText)
 )
 
 // VerifyDaemon streams and verifies a daemon into dst. A nil dst verifies and

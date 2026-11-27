@@ -31,6 +31,7 @@ import (
 	"github.com/ikigenba/ikigenba/accounts/internal/sim"
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 	"github.com/ikigenba/ikigenba/accounts/internal/tools"
+	"github.com/ikigenba/ikigenba/accounts/internal/trail"
 	"github.com/ikigenba/ikigenba/accounts/internal/valid"
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
@@ -74,7 +75,16 @@ func TestAWSRegionResourcesAndWake(t *testing.T) {
 	alloc := make(chan cloud.Tags, 1)
 	records := make(chan [2]string, 1)
 	dir := t.TempDir()
-	r := startIntegration(t, integrationOptions{dir: dir, env: awsEnvironment(), cloud: func(_ context.Context, region string) (cloud.Cloud, error) {
+	env := awsEnvironment()
+	hosts := settings.SandboxHosts
+	hosts.Domain = env["IKIGENBA_HOSTS_DOMAIN"]
+	base, err := memory.New(memory.Config{
+		Path: filepath.Join(dir, "cloud-fixture.json"), Now: func() time.Time { return fixedTime }, Rand: &integrationRandom{}, Hosts: hosts,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := startIntegration(t, integrationOptions{dir: dir, env: env, cloud: func(_ context.Context, region string) (cloud.Cloud, error) {
 		calls.Add(1)
 		if region != " chosen region " {
 			return nil, fmt.Errorf("region %q", region)
@@ -82,7 +92,7 @@ func TestAWSRegionResourcesAndWake(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(dir, "state", "accounts.db")); err != nil {
 			return nil, err
 		}
-		return watchedCloud{Cloud: testMemoryCloud(t), alloc: func(_ context.Context, tags cloud.Tags) (cloud.Address, error) {
+		return watchedCloud{Cloud: base, alloc: func(_ context.Context, tags cloud.Tags) (cloud.Address, error) {
 			alloc <- tags
 			return cloud.Address{}, &cloud.Error{Code: "RequestLimitExceeded"}
 		}, find: func(_ context.Context, zone, name string) ([]cloud.Record, error) {
@@ -141,7 +151,7 @@ func TestUnavailableCloudModesStillServe(t *testing.T) {
 			if code != 404 {
 				t.Fatal(code)
 			}
-			for _, call := range append(changeCalls(validKey()), readCalls()...) {
+			for _, call := range append(append(changeCalls(validKey()), readCalls()...), backupReadCalls()...) {
 				r.refuse(call.name, call.args, tools.NotConfigured)
 			}
 			if r.stop() != 0 || r.out.Len() != 0 {
@@ -571,6 +581,13 @@ func TestSandboxDeleteHostAndData(t *testing.T) {
 	const name = "host01"
 	run.call(tools.ToolCreateHost, struct{}{}, nil)
 	waitForRunningHost(t, clock, run, name)
+	args := tools.HostArgs{Host: name}
+	run.call(tools.ToolCloseHost, args, nil)
+	driveUntil(t, clock, func() bool {
+		var host tools.HostRead
+		run.call(tools.ToolHost, args, &host)
+		return host.State == store.HostRunning && host.Closed != ""
+	})
 	deleteSandboxHost(t, clock, run, name, false)
 	if run.stop() != cli.ExitSuccess {
 		t.Fatal(run.err.String())
@@ -723,7 +740,7 @@ func (r *secrecyRandom) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// R-E18S-PNZ9 R-EKR6-TZUD R-IF26-P336 R-171J-ZR8S R-AL27-ZL79 R-1U30-4KIA
+// R-E18S-PNZ9 R-EKR6-TZUD R-IF26-P336 R-171J-ZR8S R-AL27-ZL79 R-1U30-4KIA R-EOQ0-QXWL
 func TestRunSecrecy(t *testing.T) {
 	key := secrecyKey(t, "")
 	clock := newDrivenClock()
@@ -780,6 +797,7 @@ func TestRunSecrecy(t *testing.T) {
 		}
 	}
 	deletion, kept := runSecretVolumeDelete(t, clock, run)
+	backupChanges := runSecretBackupChanges(t, clock, run)
 	if run.stop() != cli.ExitSuccess {
 		t.Fatal(run.err.String())
 	}
@@ -802,6 +820,62 @@ func TestRunSecrecy(t *testing.T) {
 		t.Fatal("the join POST did not record enrollment through the admin invite")
 	}
 	assertSecretVolumeEvents(t, events, deletion, kept)
+	assertSecretBackupEvents(t, events, backupChanges)
+}
+
+func runSecretBackupChanges(t *testing.T, clock *drivenClock, run *integrationRun) map[string]string {
+	t.Helper()
+	const host = "host01"
+	hostArgs := tools.HostArgs{Host: host}
+	run.call(tools.ToolBackupStatus, tools.BackupStatusArgs{}, nil)
+	run.call(tools.ToolBackupStatus, tools.BackupStatusArgs{Host: &hostArgs.Host}, nil)
+	run.call(tools.ToolRestorePoints, tools.AccountArgs{Account: "acme"}, nil)
+	operations := make(map[string]string)
+	for _, step := range []struct {
+		tool  string
+		args  any
+		ready func(tools.HostRead) bool
+	}{
+		{tools.ToolCloseHost, hostArgs, func(h tools.HostRead) bool { return h.Closed != "" }},
+		{tools.ToolOpenHost, hostArgs, func(h tools.HostRead) bool { return h.State == store.HostRunning && h.Closed == "" }},
+		{tools.ToolReplaceHost, tools.ReplaceHostArgs{Host: host, From: store.ReplaceVolume}, func(h tools.HostRead) bool {
+			return h.State == store.HostRunning && h.Replace == ""
+		}},
+	} {
+		var started tools.HostChange
+		run.call(step.tool, step.args, &started)
+		if started.Operation == "" {
+			t.Fatalf("%s did not start an operation", step.tool)
+		}
+		operations[step.tool] = started.Operation
+		driveUntil(t, clock, func() bool {
+			var current tools.HostRead
+			run.call(tools.ToolHost, hostArgs, &current)
+			return step.ready(current)
+		})
+	}
+	run.call(tools.ToolDeleteAccountBackups, tools.AccountArgs{Account: "absent"}, nil)
+	return operations
+}
+
+func assertSecretBackupEvents(t *testing.T, events []telemetry.Event, operations map[string]string) {
+	t.Helper()
+	for tool, operation := range operations {
+		for _, name := range []string{trail.EventOperationStarted, trail.EventOperationFinished, trail.EventHostChanged} {
+			if !slices.ContainsFunc(events, func(e telemetry.Event) bool {
+				return e.Name == name && e.Attrs["operation"] == operation
+			}) {
+				t.Errorf("%s did not exercise %s for operation %s", tool, name, operation)
+			}
+		}
+	}
+	for _, tool := range []string{tools.ToolCloseHost, tools.ToolOpenHost, tools.ToolReplaceHost, tools.ToolDeleteAccountBackups} {
+		if !slices.ContainsFunc(events, func(e telemetry.Event) bool {
+			return e.Name == trail.EventChangeFinished && e.Attrs["tool"] == tool && e.User == "owner"
+		}) {
+			t.Errorf("%s did not exercise %s", tool, trail.EventChangeFinished)
+		}
+	}
 }
 
 func runSecretVolumeDelete(t *testing.T, clock *drivenClock, run *integrationRun) (tools.HostChange, tools.KeptVolume) {

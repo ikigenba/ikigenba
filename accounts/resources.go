@@ -12,7 +12,7 @@ var assets embed.FS
 //go:embed etc/manifest.toml etc/nginx.conf
 var etc embed.FS
 
-//go:embed migrations/0001_accounts.sql migrations/0002_hosts.sql migrations/0003_bans.sql migrations/0004_invites.sql migrations/0005_host_records.sql migrations/0006_kept_volumes.sql
+//go:embed migrations/0001_accounts.sql migrations/0002_hosts.sql migrations/0003_bans.sql migrations/0004_invites.sql migrations/0005_host_records.sql migrations/0006_kept_volumes.sql migrations/0007_host_backups.sql
 var migrations embed.FS
 
 // SeedVersion identifies the team template tag embedded in Seed.

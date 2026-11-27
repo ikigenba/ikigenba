@@ -25,6 +25,9 @@ type Config struct {
 // DNSCheckTimeout bounds one account's DNS reservation check.
 const DNSCheckTimeout = 5 * time.Second
 
+// BackupCheckTimeout bounds one account's backup reservation check.
+const BackupCheckTimeout = 5 * time.Second
+
 // FirstLine returns the first line of a tool description.
 func FirstLine(description string) string {
 	line, _, _ := strings.Cut(description, "\n")
@@ -63,6 +66,15 @@ const (
 	ToolUnbanIP       = "unban_ip"
 	ToolAllowIP       = "allow_ip"
 	ToolDisallowIP    = "disallow_ip"
+
+	ToolCloseHost            = "close_host"
+	ToolOpenHost             = "open_host"
+	ToolReplaceHost          = "replace_host"
+	ToolBackupStatus         = "backup_status"
+	ToolRestorePoints        = "restore_points"
+	ToolRestoreDatabase      = "restore_database"
+	ToolRestoreFiles         = "restore_files"
+	ToolDeleteAccountBackups = "delete_account_backups"
 )
 
 // Tool and argument descriptions.
@@ -97,18 +109,34 @@ const (
 	DescribeUnbanIP       string = "Lift an SSH ban on one running host or all running hosts."
 	DescribeAllowIP       string = "Allow an address or network on one SSH host and lift any bans it covers."
 	DescribeDisallowIP    string = "Remove an address or network from one SSH host's allowlist."
-	ArgHost               string = "SSH host name."
-	ArgIP                 string = "IP address or, for allowlist changes, a CIDR prefix."
-	ArgAccount            string = "SSH account slug."
-	ArgUser               string = "SSH user name."
-	ArgKey                string = "OpenSSH public key, including its comment."
-	ArgAdmin              string = "Whether the user has account admin rights."
-	ArgInvite             string = "SSH account invite ID."
-	ArgType               string = "EC2 instance type."
-	ArgRootGB             string = "Root volume size in GB."
-	ArgDataGB             string = "Data volume size in GB."
-	ArgKeepData           string = "Keep the data volume when deleting the host. Defaults to true."
-	ArgVolume             string = "Kept data volume ID."
+
+	DescribeCloseHost            string = "Close a host and confirm its final backups."
+	DescribeOpenHost             string = "Open a host for SSH access."
+	DescribeReplaceHost          string = "Replace a host from its data volume or backups.\nThe old instance is permanently terminated."
+	DescribeBackupStatus         string = "List SSH account backup status and health."
+	DescribeRestorePoints        string = "List an account's file snapshots and database restore ranges."
+	DescribeRestoreDatabase      string = "Restore a database beside its original."
+	DescribeRestoreFiles         string = "Restore files beside their originals."
+	DescribeDeleteAccountBackups string = "Permanently delete a removed account's backups.\nThis cannot be undone."
+
+	ArgHost     string = "SSH host name."
+	ArgIP       string = "IP address or, for allowlist changes, a CIDR prefix."
+	ArgAccount  string = "SSH account slug."
+	ArgUser     string = "SSH user name."
+	ArgKey      string = "OpenSSH public key, including its comment."
+	ArgAdmin    string = "Whether the user has account admin rights."
+	ArgInvite   string = "SSH account invite ID."
+	ArgType     string = "EC2 instance type."
+	ArgRootGB   string = "Root volume size in GB."
+	ArgDataGB   string = "Data volume size in GB."
+	ArgKeepData string = "Keep the data volume when deleting the host. Defaults to true."
+	ArgVolume   string = "Kept data volume ID."
+
+	ArgFrom     string = "Replace from the data volume or backups: volume or backup."
+	ArgLost     string = "The host is already lost. Defaults to false."
+	ArgPath     string = "Path relative to the account folder or the user's home."
+	ArgAsOf     string = "Database restore time in RFC 3339 format."
+	ArgSnapshot string = "File snapshot time in RFC 3339 format."
 )
 
 // Refusal text returned to tool callers.
@@ -143,7 +171,7 @@ const (
 	UserNotLocked   string = "the user must be locked before deletion"
 	UserRemoving    string = "the user is being removed"
 	NameHasRecord   string = "a DNS record already holds that name"
-	CloudFailed     string = "the DNS check failed"
+	CloudFailed     string = "the cloud check failed"
 	InvalidAddress  string = "the IP address or allowlist entry is invalid"
 	PrefixTooWide   string = "the allowlist prefix must be at least /24 for IPv4 or /48 for IPv6"
 	TooManyUnbans   string = "a host already holds its maximum number of pending unbans"
@@ -153,6 +181,22 @@ const (
 	AllowlistFull   string = "the host already holds its maximum number of allowlist entries"
 	NoKeptVolume    string = "no kept data volume has that id"
 	VolumeDeleting  string = "the kept data volume is already being deleted"
+
+	HostNotClosed    string = "the host is not closed"
+	NoDataVolume     string = "the host has no data volume to keep"
+	KeepsVolumeSize  string = "replacing from the existing volume keeps its size"
+	BadReplace       string = "the replacement source must be volume or backup"
+	InvalidPath      string = "the restore path is invalid"
+	BadTime          string = "the restore time is not in RFC 3339 format"
+	AccountNotActive string = "the account is not active"
+	NoDatabase       string = "no backed-up database has that path"
+	NotRestorable    string = "the database cannot be restored at that time"
+	NoSnapshot       string = "no file snapshot exists at that time"
+	TooManyRestores  string = "the host already holds its maximum number of pending restores"
+	AccountExists    string = "an account still holds that slug"
+	NameHasBackups   string = "backups already hold that account slug"
+	BackupsDeleting  string = "backups for that account slug are being deleted"
+	NoAddress        string = "the host has no Elastic IP allocation"
 )
 
 // HostsArgs selects a window of live hosts.
@@ -170,6 +214,7 @@ type HostArgs struct {
 type DeleteHostArgs struct {
 	Host     string `json:"host" description:"SSH host name." mcp:"required"`
 	KeepData *bool  `json:"keep_data" description:"Keep the data volume when deleting the host. Defaults to true."`
+	Lost     *bool  `json:"lost" description:"The host is already lost. Defaults to false."`
 }
 
 // KeptVolumesArgs selects a window of kept data volumes.
@@ -279,6 +324,8 @@ type Host struct {
 	EIP      string `json:"eip" mcp:"required"`
 	Accounts int    `json:"accounts" mcp:"required"`
 	Reported string `json:"reported" mcp:"required"`
+	Closed   string `json:"closed" mcp:"required"`
+	Replace  string `json:"replace" mcp:"required"`
 }
 
 // HostList holds one window of hosts.
@@ -301,6 +348,8 @@ type HostRead struct {
 	EIP          string          `json:"eip" mcp:"required"`
 	Accounts     int             `json:"accounts" mcp:"required"`
 	Reported     string          `json:"reported" mcp:"required"`
+	Closed       string          `json:"closed" mcp:"required"`
+	Replace      string          `json:"replace" mcp:"required"`
 	InstanceID   string          `json:"instance_id" mcp:"required"`
 	DataVolume   string          `json:"data_volume" mcp:"required"`
 	Version      int64           `json:"version" mcp:"required"`
@@ -358,6 +407,7 @@ type HostResize struct {
 type KeptVolume struct {
 	Volume  string `json:"volume" mcp:"required"`
 	Host    string `json:"host" mcp:"required"`
+	Cause   string `json:"cause" mcp:"required"`
 	SizeGB  int    `json:"size_gb" mcp:"required"`
 	Deleted string `json:"deleted" mcp:"required"`
 	State   string `json:"state" mcp:"required"`

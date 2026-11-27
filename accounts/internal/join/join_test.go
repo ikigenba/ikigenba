@@ -555,7 +555,7 @@ func TestUnusableLinksAreIdentical(t *testing.T) {
 	_, validLink := f.mint(t, f.acct.Slug, true)
 	f.place(t, "departing")
 	_, removing := f.mint(t, "departing", false)
-	_, op, err := f.store.RemoveAccount(ctx, "departing", inviter)
+	_, op, _, err := f.store.RemoveAccount(ctx, "departing", inviter)
 	if err != nil {
 		t.Fatal(err)
 	}

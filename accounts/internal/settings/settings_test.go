@@ -168,6 +168,28 @@ func TestCloudMode(t *testing.T) {
 	}
 }
 
+// R-1X6C-LOBE R-1YE8-ZG23 R-1ZM5-D7SS
+func TestBackupResourceNames(t *testing.T) {
+	var bucketName, roleName func(settings.Hosts) string
+	bucketName, roleName = settings.Hosts.BackupBucket, settings.Hosts.BackupRole
+	for _, tc := range []struct {
+		hosts        settings.Hosts
+		bucket, role string
+	}{
+		{settings.Hosts{Domain: "metaspot.org", InstanceProfile: "ikigenba.dev-hosts"}, "metaspot-org-hosts-backups", "ikigenba.dev-hosts-backup"},
+		{settings.SandboxHosts, "hosts-test-hosts-backups", "sandbox-hosts-backup"},
+		{settings.Hosts{}, "-hosts-backups", "-backup"},
+		{settings.Hosts{Region: "unused", Domain: ".X..ä\xff.", ZoneID: "unused", LaunchTemplate: "unused", InstanceProfile: " P.ä\xff "}, "-X--ä\xff--hosts-backups", " P.ä\xff -backup"},
+	} {
+		if got := bucketName(tc.hosts); got != tc.bucket {
+			t.Errorf("%+v.BackupBucket() = %q, want %q", tc.hosts, got, tc.bucket)
+		}
+		if got := roleName(tc.hosts); got != tc.role {
+			t.Errorf("%+v.BackupRole() = %q, want %q", tc.hosts, got, tc.role)
+		}
+	}
+}
+
 // R-YLJP-EGNP R-YU30-2UUK R-YVAW-GML9
 func TestServiceURLAndBinding(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "services.json")

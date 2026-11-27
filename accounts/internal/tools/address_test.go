@@ -42,7 +42,7 @@ func (f *fixture) changeHostState(name, kind string, finish bool) {
 	var op store.Operation
 	var err error
 	if kind == store.OpDelete {
-		_, op, err = f.st.DeleteHost(f.t.Context(), name, true, f.caller)
+		_, op, err = f.st.DeleteHost(f.t.Context(), name, true, false, f.caller)
 	} else {
 		_, op, err = f.st.StartHostOp(f.t.Context(), name, kind, store.Target{}, f.caller)
 	}
@@ -239,7 +239,7 @@ func TestAllowlistHostChecks(t *testing.T) {
 	}
 }
 
-// R-0PUB-I51D R-FLLO-H10X R-FO1H-8KIB
+// R-H49Q-K5A1 R-FLLO-H10X R-FO1H-8KIB
 func TestAddressChangeTrail(t *testing.T) {
 	f := setup(t)
 	f.serveLoopback()

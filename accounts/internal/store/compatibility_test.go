@@ -59,6 +59,15 @@ func observe2[T, U any](v T, u U, err error) observation {
 	return observe(pair{v, u}, err)
 }
 
+func observe3[T, U, V any](v T, u U, w V, err error) observation {
+	type triple struct {
+		first  T
+		second U
+		third  V
+	}
+	return observe(triple{v, u, w}, err)
+}
+
 func noOutput(err error) observation { return observe(struct{}{}, err) }
 
 func (o observation) assertZero(t *testing.T, want error) {
@@ -96,13 +105,13 @@ func TestInvalidInput(t *testing.T) {
 	for _, call := range []observation{
 		observe2(s.CreateHost(ctx, store.HostSpec{Type: "type", RootGB: -1, DataGB: 10}, caller)),
 		observe2(s.StartHostOp(ctx, h.Name, "", store.Target{}, caller)),
-		observe2(s.DeleteHost(ctx, "", true, caller)),
+		observe2(s.DeleteHost(ctx, "", true, true, caller)),
 		observe(s.KeptVolume(ctx, "")),
 		observe(s.DeleteKeptVolume(ctx, "", caller)),
 		noOutput(s.DeferVolumeDelete(ctx, "", baseTime, 1)),
 		noOutput(s.FinishVolumeDelete(ctx, "")),
 		noOutput(s.FailVolumeDelete(ctx, "", "refusal")),
-		observe2(s.RetryHost(ctx, h.Name, (store.Operation{}).Caller)), observe(s.Operation(ctx, "")),
+		observe(s.Operation(ctx, "")),
 		observe(s.OperationsOf(ctx, "", "", 1)), noOutput(s.RecordStep(ctx, op.ID, "", 1, baseTime)),
 		noOutput(s.RecordStep(ctx, op.ID, "step", 0, baseTime)), noOutput(s.Advance(ctx, op.ID, store.Update{DataGB: -1})),
 		noOutput(s.Defer(ctx, "", baseTime, 1)), noOutput(s.Fail(ctx, "", "failed")), noOutput(s.Finish(ctx, "", store.Update{})),
@@ -110,7 +119,7 @@ func TestInvalidInput(t *testing.T) {
 		noOutput(s.RecordHostChange(ctx, op.ID, "", "change")),
 		noOutput(s.RecordHostChange(ctx, op.ID, h.Name, "")), noOutput(s.NoteHostRecord(ctx, "", "", "conflict")),
 		noOutput(s.SettleDeleted(ctx, "")),
-		observe2(s.RemoveAccount(ctx, "", caller)), observe(s.AccountsOn(ctx, "")),
+		observe3(s.RemoveAccount(ctx, "", caller)), observe(s.AccountsOn(ctx, "")),
 		observe(s.AddUser(ctx, a.Slug, "user", key, caller)),
 		observe(s.AddKey(ctx, a.Slug, "user", key)), observe2(s.RemoveKey(ctx, a.Slug, "user", store.Key{})),
 		observe(s.Lock(ctx, a.Slug, "")), observe(s.Unlock(ctx, a.Slug, "")), observe(s.Delete(ctx, a.Slug, "")),
@@ -158,7 +167,7 @@ func exercise(c context.Context, s *store.Store, host string, opID string) []obs
 		observe(s.Report(c, host)), observe(s.NoteStray(c, "resource", "instance", host, baseTime)),
 		observe(s.Explains(c, "instance")), noOutput(s.NoteGrow(c, "volume", baseTime)),
 		noOutput(s.RecordChange(c, "op_0000000000000004", "business", "change")),
-		observe2(s.RemoveAccount(c, "business", caller)),
+		observe3(s.RemoveAccount(c, "business", caller)),
 	)
 	return out
 }
@@ -176,7 +185,7 @@ func TestDatabaseFailuresTakePrecedence(t *testing.T) {
 		t.Helper()
 		calls := append(exercise(c, s, h.Name, op.ID), inviteExercise(c, s, h.Name)...)
 		calls = append(calls, noOutput(s.SettleDeleted(c, h.Name)),
-			observe2(s.DeleteHost(c, h.Name, false, caller)), observe(s.AdoptKept(c, 1)),
+			observe2(s.DeleteHost(c, h.Name, false, true, caller)), observe(s.AdoptKept(c, 1)),
 			observe(s.KeptVolume(c, "vol-data")), observe(s.DeleteKeptVolume(c, "vol-data", caller)),
 			observe(s.ListKeptVolumes(c, time.Time{}, "", 1)), observe(s.ListKeptVolumesBefore(c, baseTime, "vol-data", 1)),
 			observe(s.LastKeptVolumes(c, 1)), observe(s.DueVolumeDeletes(c, baseTime, "", 1)),
@@ -254,8 +263,9 @@ func TestAdditiveMigrations(t *testing.T) {
 	inviteSchema := value(t, result(fs.ReadFile(migrations, "0004_invites.sql")))
 	hostRecordsSchema := value(t, result(fs.ReadFile(migrations, "0005_host_records.sql")))
 	keptSchema := value(t, result(fs.ReadFile(migrations, "0006_kept_volumes.sql")))
+	backupSchema := value(t, result(fs.ReadFile(migrations, "0007_host_backups.sql")))
 	for _, table := range tableNames(string(old) + string(newSchema) + string(bansSchema) + string(inviteSchema) +
-		string(hostRecordsSchema) + string(keptSchema)) {
+		string(hostRecordsSchema) + string(keptSchema) + string(backupSchema)) {
 		extra.WriteString("ALTER TABLE " + table + " ADD COLUMN future_note TEXT;\n")
 	}
 	extra.WriteString(`ALTER TABLE host_records ADD COLUMN name TEXT;
@@ -266,7 +276,7 @@ ALTER TABLE hosts ADD COLUMN record_reason TEXT;
 	expanded := fstest.MapFS{"0001_accounts.sql": {Data: old}, "0002_hosts.sql": {Data: newSchema},
 		"0003_bans.sql": {Data: bansSchema}, "0004_invites.sql": {Data: inviteSchema},
 		"0005_host_records.sql": {Data: hostRecordsSchema}, "0006_kept_volumes.sql": {Data: keptSchema},
-		"0007_expand.sql": {Data: []byte(extra.String())}}
+		"0007_host_backups.sql": {Data: backupSchema}, "0008_expand.sql": {Data: []byte(extra.String())}}
 	cfg.Rand = new(counterRandom)
 	_, withExtra := open(t, filepath.Join(t.TempDir(), "expand.db"), expanded, cfg)
 	for _, s := range []*store.Store{baseline, withoutLegacy, withExtra} {
@@ -443,7 +453,7 @@ func TestInviteMigrationPreservesEarlierRecord(t *testing.T) {
 	cfg := store.Config{Now: func() time.Time { return baseTime }, Rand: new(counterRandom)}
 	path := filepath.Join(t.TempDir(), "previous.db")
 	d, old := open(t, path, earlier, cfg)
-	h, _ := create(t, old)
+	h, _ := seedEarlierCreate(t, d.Write, 1)
 	const slug = "legacy"
 	checkErr(t, d.Write(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, "INSERT INTO names (name) VALUES (?)", slug); err != nil {
@@ -496,8 +506,8 @@ func TestHostRecordsMigrationPreservesEarlierHosts(t *testing.T) {
 
 	cfg := store.Config{Now: func() time.Time { return baseTime }, Rand: new(counterRandom)}
 	path := filepath.Join(t.TempDir(), "previous.db")
-	d, old := open(t, path, earlier, cfg)
-	h, op := create(t, old)
+	d, _ := open(t, path, earlier, cfg)
+	h, op := seedEarlierCreate(t, d.Write, 1)
 	// Model the address the earlier release learned without a host_records table.
 	h.EIP = "192.0.2.9"
 	checkErr(t, d.Write(ctx, func(tx *sql.Tx) error {
@@ -513,8 +523,8 @@ func TestHostRecordsMigrationPreservesEarlierHosts(t *testing.T) {
 	h.Change, h.RecordReason = "change", "conflict"
 	checkErr(t, d.Close(), nil)
 
-	d, old = open(t, path, earlier, cfg)
-	second, _ := create(t, old)
+	d, _ = open(t, path, earlier, cfg)
+	second, _ := seedEarlierCreate(t, d.Write, 2)
 	// The earlier release leaves the EIP and DNS details when it deletes a host.
 	checkErr(t, d.Write(ctx, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, "UPDATE hosts SET state = ? WHERE name = ?", store.HostDeleted, h.Name)

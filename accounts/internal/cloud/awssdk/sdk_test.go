@@ -1,7 +1,10 @@
 package awssdk_test
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -10,8 +13,10 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/smithy-go"
 
@@ -27,11 +32,75 @@ func (r wire) RoundTrip(req *http.Request) (*http.Response, error) {
 	return r(req)
 }
 
+type endpointSource string
+
+func (s endpointSource) GetServiceBaseEndpoint(context.Context, string) (string, bool, error) {
+	return string(s), true, nil
+}
+
 func configFor(r wire) aws.Config {
 	return aws.Config{
 		Region:      region,
-		Credentials: credentials.NewStaticCredentialsProvider("TESTKEY", "testsecret", ""),
+		Credentials: testCredentials(),
 		HTTPClient:  &http.Client{Transport: r},
+	}
+}
+
+func testCredentials() credentials.StaticCredentialsProvider {
+	return credentials.NewStaticCredentialsProvider("TESTKEY", "testsecret", "")
+}
+
+func checkSignature(t *testing.T, r *http.Request, service, signingRegion string) {
+	t.Helper()
+	var body []byte
+	if r.Body != nil {
+		var err error
+		body, err = io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := r.Body.Close(); err != nil {
+			t.Fatal(err)
+		}
+		r.Body = io.NopCloser(bytes.NewReader(body))
+	}
+	digest := sha256.Sum256(body)
+	payload := hex.EncodeToString(digest[:])
+	headerPayload := r.Header.Get("X-Amz-Content-Sha256")
+	if service == "s3" && headerPayload == "UNSIGNED-PAYLOAD" {
+		payload = headerPayload
+	}
+	if headerPayload != "" && headerPayload != payload {
+		t.Fatalf("%s request carried a payload hash that differs from its body", service)
+	}
+	at, err := time.Parse("20060102T150405Z", r.Header.Get("X-Amz-Date"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	creds, err := testCredentials().Retrieve(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth := r.Header.Get("Authorization")
+	_, tail, found := strings.Cut(auth, "SignedHeaders=")
+	names, _, hasSignature := strings.Cut(tail, ", Signature=")
+	if !found || !hasSignature {
+		t.Fatalf("%s request is missing a SigV4 authorization header", service)
+	}
+	unsigned := r.Clone(t.Context())
+	unsigned.Header = make(http.Header)
+	for _, name := range strings.Split(names, ";") {
+		canonical := http.CanonicalHeaderKey(name)
+		if values := r.Header[canonical]; len(values) > 0 {
+			unsigned.Header[canonical] = values
+		}
+	}
+	signer := v4.NewSigner(func(options *v4.SignerOptions) { options.DisableURIPathEscaping = service == "s3" })
+	if err := signer.SignHTTP(t.Context(), creds, unsigned, payload, service, signingRegion, at); err != nil {
+		t.Fatal(err)
+	}
+	if unsigned.Header.Get("Authorization") != auth {
+		t.Errorf("%s authorization does not match the signature for this request, region and credentials", service)
 	}
 }
 
@@ -97,49 +166,87 @@ func checkError(t *testing.T, err error, service, op, subject, code string, clas
 }
 
 func TestOpenAndAccount(t *testing.T) {
-	// R-X328-TTPW R-X4A5-7LGL R-XP0F-PP2E
+	// R-X328-TTPW R-YJ87-CXA2 R-XP0F-PP2E
 	var opener cloud.Opener = awssdk.Open
 	if opener == nil {
 		t.Fatal("missing default opener")
 	}
 	ctx := t.Context()
 	loadFailure := errors.New("loader failed")
+	loads := 0
 	var load awssdk.ConfigLoader = func(gotCtx context.Context, gotRegion string) (aws.Config, error) {
+		loads++
 		if gotCtx != ctx || gotRegion != "custom-region" {
 			t.Errorf("loader received %v and %q", gotCtx, gotRegion)
 		}
 		return aws.Config{}, loadFailure
 	}
 	c, err := awssdk.OpenWithLoader(ctx, "custom-region", load)
-	if c != nil || !errors.Is(err, loadFailure) || reflect.TypeOf(err) != reflect.TypeOf(loadFailure) {
+	if c != nil || !errors.Is(err, loadFailure) || reflect.TypeOf(err) != reflect.TypeOf(loadFailure) || loads != 1 {
 		t.Fatalf("loader failure = %v, %v", c, err)
 	}
 
+	const targetRegion = "us-west-2"
+	const bucket = "wire-test-bucket"
+	tests := []struct {
+		serviceRegion, service, url, action, body string
+	}{
+		{targetRegion, "ec2", "https://ec2." + targetRegion + ".amazonaws.com/", "StopInstances", `<StopInstancesResponse/>`},
+		{"us-east-1", "route53", "", "", `<GetChangeResponse><ChangeInfo><Status>INSYNC</Status></ChangeInfo></GetChangeResponse>`},
+		{targetRegion, "sts", "https://sts." + targetRegion + ".amazonaws.com/", "GetCallerIdentity", `<GetCallerIdentityResponse><GetCallerIdentityResult><Account>123456789012</Account></GetCallerIdentityResult></GetCallerIdentityResponse>`},
+		{targetRegion, "sts", "https://sts." + targetRegion + ".amazonaws.com/", "AssumeRole", roleResponse(roleFields)},
+		{targetRegion, "s3", "https://" + bucket + ".s3." + targetRegion + ".amazonaws.com/?list-type=2&max-keys=1&prefix=backups%2F", "", `<ListBucketResult><IsTruncated>false</IsTruncated></ListBucketResult>`},
+	}
 	calls := 0
 	cfg := configFor(func(r *http.Request) (*http.Response, error) {
+		if calls >= len(tests) {
+			t.Fatalf("extra request %s %s", r.Method, r.URL)
+		}
+		step := tests[calls]
 		calls++
-		auth := r.Header.Get("Authorization")
-		if calls == 1 {
-			checkForm(t, form(t, r, "GetCallerIdentity"), nil)
-			if r.URL.String() != "https://sts."+region+".amazonaws.com/" || !strings.Contains(auth, "Credential=TESTKEY/") ||
-				!strings.Contains(auth, "/"+region+"/sts/aws4_request") {
-				t.Errorf("STS request = %s, %s", r.URL, auth)
+		if step.url != "" && r.URL.String() != step.url {
+			t.Errorf("%s URL = %s, want %s", step.service, r.URL, step.url)
+		}
+		checkSignature(t, r, step.service, step.serviceRegion)
+		if step.action != "" {
+			params := form(t, r, step.action)
+			if step.action == "GetCallerIdentity" {
+				checkForm(t, params, nil)
 			}
-			return xmlResponse(200, `<GetCallerIdentityResponse><GetCallerIdentityResult><Account>123456789012</Account></GetCallerIdentityResult></GetCallerIdentityResponse>`), nil
 		}
-		if !strings.Contains(auth, "Credential=TESTKEY/") || !strings.Contains(auth, "/us-east-1/route53/aws4_request") {
-			t.Errorf("Route 53 signing = %s", auth)
-		}
-		return xmlResponse(200, `<GetChangeResponse><ChangeInfo><Status>INSYNC</Status></ChangeInfo></GetChangeResponse>`), nil
+		return xmlResponse(200, step.body), nil
 	})
-	c = openConfig(t, cfg)
+	cfg.BaseEndpoint = aws.String("https://base-endpoint.invalid/")
+	cfg.ConfigSources = []any{endpointSource("https://service-endpoint.invalid/")}
+	c, err = awssdk.OpenWithLoader(ctx, targetRegion, func(gotCtx context.Context, gotRegion string) (aws.Config, error) {
+		loads++
+		if gotCtx != ctx || gotRegion != targetRegion {
+			t.Errorf("loader received context %v and region %q", gotCtx, gotRegion)
+		}
+		return cfg, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.StopInstance(ctx, "i-test"); err != nil {
+		t.Fatal(err)
+	}
+	inSync, err := c.ChangeInsync(ctx, "change-1")
+	if !inSync || err != nil {
+		t.Fatalf("ChangeInsync = %v, %v", inSync, err)
+	}
 	id, err := c.Account(ctx)
 	if id != "123456789012" || err != nil {
 		t.Fatalf("Account = %q, %v", id, err)
 	}
-	inSync, err := c.ChangeInsync(ctx, "change-1")
-	if !inSync || err != nil || calls != 2 {
-		t.Fatalf("ChangeInsync = %v, %v; calls = %d", inSync, err, calls)
+	if _, err := c.AssumeRole(ctx, cloud.RoleRequest{RoleARN: "test-role", SessionName: "test-session", Duration: time.Hour}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.HasKeys(ctx, bucket, "backups/"); err != nil {
+		t.Fatal(err)
+	}
+	if calls != len(tests) || loads != 2 {
+		t.Fatalf("requests = %d, loader calls = %d", calls, loads)
 	}
 }
 
@@ -148,7 +255,7 @@ func failureXML(code string) string {
 }
 
 func TestErrorCodesAndClasses(t *testing.T) {
-	// R-X5I1-LD7A R-X6PX-Z4XZ R-XRG8-H8JS
+	// R-YKG3-QP0R R-YI0A-Z5JD R-XRG8-H8JS
 	tests := []struct {
 		code  string
 		class cloud.Class
@@ -159,6 +266,7 @@ func TestErrorCodesAndClasses(t *testing.T) {
 		{"InvalidAssociationID.NotFound", cloud.ClassNotFound},
 		{"InvalidVolumeModification.NotFound", cloud.ClassNotFound},
 		{"NoSuchChange", cloud.ClassNotFound},
+		{"NoSuchBucket", cloud.ClassNotFound},
 		{"IdempotentParameterMismatch", cloud.ClassMismatch},
 		{"VolumeModificationRateExceeded", cloud.ClassTransient},
 		{"RequestLimitExceeded", cloud.ClassTransient},
@@ -171,6 +279,10 @@ func TestErrorCodesAndClasses(t *testing.T) {
 		{"Unavailable", cloud.ClassTransient},
 		{"IncorrectInstanceState", cloud.ClassTransient},
 		{"IncorrectState", cloud.ClassTransient},
+		{"SlowDown", cloud.ClassTransient},
+		{"RequestTimeout", cloud.ClassTransient},
+		{"AccessDenied", cloud.ClassRefused},
+		{"ExpiredToken", cloud.ClassRefused},
 		{"UnauthorizedOperation", cloud.ClassRefused},
 		{cloud.CodeTagContract, cloud.ClassRefused},
 		{cloud.CodeBadResponse, cloud.ClassRefused},
@@ -191,10 +303,12 @@ func TestErrorCodesAndClasses(t *testing.T) {
 		})
 	}
 	t.Run("coded service failure", func(t *testing.T) {
-		c := open(t, func(*http.Request) (*http.Response, error) {
-			return xmlResponse(503, failureXML("Unrecognized")), nil
-		})
-		checkError(t, c.StopInstance(t.Context(), "i-test"), "ec2", "StopInstances", "i-test", "Unrecognized", cloud.ClassTransient)
+		for _, code := range []string{"InvalidInstanceID.NotFound", "IdempotentParameterMismatch", "AccessDenied"} {
+			c := open(t, func(*http.Request) (*http.Response, error) {
+				return xmlResponse(503, failureXML(code)), nil
+			})
+			checkError(t, c.StopInstance(t.Context(), "i-test"), "ec2", "StopInstances", "i-test", code, cloud.ClassTransient)
+		}
 	})
 	t.Run("uncoded service failure", func(t *testing.T) {
 		c := open(t, func(*http.Request) (*http.Response, error) {

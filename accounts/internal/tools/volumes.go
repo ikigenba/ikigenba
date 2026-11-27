@@ -11,7 +11,7 @@ import (
 
 func keptVolumeAnswer(volume store.KeptVolume) KeptVolume {
 	return KeptVolume{
-		Volume: volume.Volume, Host: volume.Host, SizeGB: volume.SizeGB,
+		Volume: volume.Volume, Host: volume.Host, Cause: volume.Cause, SizeGB: volume.SizeGB,
 		Deleted: stamp(volume.Deleted), State: volume.State, Reason: volume.Reason,
 	}
 }

@@ -7,9 +7,9 @@ import (
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 )
 
-// R-GRT3-SIFT R-H7NS-RJ2U R-H214-5FQN R-71LM-K5LQ R-HCJE-AM1M
-// R-HSE3-9MON R-HTLZ-NEFC R-HUTW-1661 R-HW1S-EXWQ R-HX9O-SPNF R-HYHL-6HE4
-// R-RAJ3-7PFM R-I0XD-Y0VI R-HIMW-7GR3 R-I4L3-3C3L R-0LHN-KXWI
+// R-H7NS-RJ2U R-H214-5FQN R-HCJE-AM1M
+// R-HSE3-9MON R-HTLZ-NEFC R-HUTW-1661 R-HX9O-SPNF R-HYHL-6HE4
+// R-HIMW-7GR3 R-I4L3-3C3L
 func TestOperationCheckpoints(t *testing.T) {
 	_, s, now := fixture(t)
 	h, op := create(t, s)
@@ -88,7 +88,7 @@ func TestOperationCheckpoints(t *testing.T) {
 	eq(t, value(t, result(s.NextTry(ctx))), time.Time{})
 }
 
-// R-78X0-US1W R-HOQE-4BGK R-7A4X-8JSL R-RAJ3-7PFM R-J7LV-BZTT R-J8TR-PRKI
+// R-HOQE-4BGK R-7A4X-8JSL R-J8TR-PRKI
 func TestHostGuardsAndVolumeWindow(t *testing.T) {
 	_, s, now := fixture(t)
 	h, c := create(t, s)

@@ -25,7 +25,6 @@ import (
 	"github.com/ikigenba/ikigenba/accounts/internal/settings"
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 	"github.com/ikigenba/ikigenba/accounts/internal/tools"
-	"github.com/ikigenba/ikigenba/accounts/internal/valid"
 	"github.com/ikigenba/ikigenba/appkit/db"
 	"github.com/ikigenba/ikigenba/appkit/identity"
 	"github.com/ikigenba/ikigenba/appkit/mcp"
@@ -109,8 +108,16 @@ func expected(f *fixture, method, target, name string, status int, data any) *ht
 }
 func same(t *testing.T, a, b *httptest.ResponseRecorder) {
 	t.Helper()
-	if a.Code != b.Code || !reflect.DeepEqual(a.Header(), b.Header()) || a.Body.String() != b.Body.String() {
-		t.Fatalf("answers differ: %d %v %q; want %d %v %q", a.Code, a.Header(), a.Body.String(), b.Code, b.Header(), b.Body.String())
+	if a.Code != b.Code || !reflect.DeepEqual(a.Header(), b.Header()) {
+		t.Fatalf("answer status and headers = %d %v, want %d %v", a.Code, a.Header(), b.Code, b.Header())
+	}
+	got, want := a.Body.String(), b.Body.String()
+	if got != want {
+		first := 0
+		for first < min(len(got), len(want)) && got[first] == want[first] {
+			first++
+		}
+		t.Fatalf("bodies differ at byte %d: got %q, want %q", first, got[first:min(first+100, len(got))], want[first:min(first+100, len(want))])
 	}
 }
 
@@ -174,7 +181,7 @@ func TestPageNamesAndTimeLayouts(t *testing.T) {
 	}
 }
 
-// R-2QRO-TAYI R-2RZL-72P7 R-2T7H-KUFW R-2UFD-YM6L R-CVUA-IWJR
+// R-2QRO-TAYI R-CDGQ-KT3P R-CEOM-YKUE R-CFWJ-CCL3 R-CH4F-Q4BS R-CICC-3W2H R-CM01-97AK R-CJK8-HNT6 R-CVUA-IWJR
 func TestPageDataShapes(t *testing.T) {
 	t.Helper()
 	_ = struct {
@@ -195,12 +202,13 @@ func TestPageDataShapes(t *testing.T) {
 		RootGB, DataGB                                       int
 		EIP                                                  string
 		AccountCount                                         int
-		Reported, ReportedText                               string
+		Reported, ReportedText, Closed, ClosedText           string
+		BackupFlagged                                        int
 	}(pages.HostRow{})
 	_ = struct {
-		Slug, Host, DNSName, State, Reason string
-		UserCount, InviteCount             int
-		Created, CreatedText               string
+		Slug, Host, DNSName, State, Reason                   string
+		UserCount, InviteCount                               int
+		Backup, Snapshot, SnapshotText, Created, CreatedText string
 	}(pages.AccountRow{})
 	_ = struct {
 		Login, Account             string
@@ -211,23 +219,51 @@ func TestPageDataShapes(t *testing.T) {
 		LastSignIn, LastSignInText string
 	}(pages.UserRow{})
 	_ = struct {
-		Volume, Host         string
+		Volume, Host, Cause  string
 		SizeGB               int
 		Deleted, DeletedText string
 	}(pages.KeptVolumeRow{})
 	_ = struct {
-		Banner page.Banner
-		Host   pages.HostView
-		Report *pages.ReportView
+		Banner        page.Banner
+		Host          pages.HostView
+		Report        *pages.ReportView
+		Backups       []pages.BackupRow
+		DatabaseCount int
+		Restores      []pages.RestoreRow
+		RestoreTotal  int
 	}(pages.HostData{})
 	_ = struct {
-		Name, DNSName, State, Reason, OnDelete, Health, Type                 string
-		RootGB, DataGB                                                       int
-		EIP                                                                  string
-		AccountCount                                                         int
-		Reported, ReportedText, InstanceID, DataVolume, Created, CreatedText string
-		Allowlist                                                            []string
+		Name, DNSName, State, Reason, OnDelete, Health, Type  string
+		RootGB, DataGB                                        int
+		EIP                                                   string
+		AccountCount                                          int
+		Reported, ReportedText, Closed, ClosedText            string
+		BackupFlagged                                         int
+		Replace, InstanceID, DataVolume, Created, CreatedText string
+		Allowlist                                             []string
 	}(pages.HostView{})
+	_ = struct {
+		Account, Health                                                                           string
+		FilesStale                                                                                bool
+		Snapshot, SnapshotText, Checked, CheckedText, Error, Final, FinalAt, FinalAtText, Restore string
+		Databases                                                                                 []pages.DatabaseRow
+		DatabaseTotal                                                                             int
+	}(pages.BackupRow{})
+	_ = struct {
+		Path, Health, Written, WrittenText, Error string
+	}(pages.DatabaseRow{})
+	_ = struct {
+		Account, Kind, Path, AsOf, AsOfText, Copy, State, Reason, Asked, AskedText string
+	}(pages.RestoreRow{})
+	_ = struct {
+		Banner                                                                                                                                                            page.Banner
+		Description, DefaultType                                                                                                                                          string
+		DefaultRootGB, DefaultDataGB, BackupEveryMinutes, BackupHourly, BackupDaily, BackupMonthly, BackupWindowDays, BackupFilesStaleMinutes, BackupDatabaseStaleMinutes int
+	}(pages.AboutData{})
+	const databaseRows, restoreRows int = pages.MaxDatabaseRows, pages.MaxRestoreRows
+	if databaseRows != 50 || restoreRows != 25 {
+		t.Fatalf("row limits = %d databases and %d restores, want 50 and 25", databaseRows, restoreRows)
+	}
 	_ = struct {
 		Received, ReceivedText, Hostname, InstanceID, Type, AMI, OS, Kernel, DaemonVersion, Booted, BootedText string
 		Applied, Wanted                                                                                        int64
@@ -245,7 +281,7 @@ func TestPageDataShapes(t *testing.T) {
 	}(pages.ReportView{})
 }
 
-// R-A8L8-1TI4 R-A9T4-FL8T R-ATBI-JX3X R-2VNA-CDXA R-CVUA-IWJR R-SD1G-G1F7 R-AICF-3ZFO R-AJKB-HR6D R-AM04-9ANR R-7E62-5GAS R-7FDY-J81H
+// R-A8L8-1TI4 R-A9T4-FL8T R-ATBI-JX3X R-CY71-2WPI R-CVUA-IWJR R-AICF-3ZFO R-AJKB-HR6D R-AM04-9ANR R-7E62-5GAS R-7FDY-J81H
 func TestTemplateSet(t *testing.T) {
 	t.Chdir(t.TempDir())
 	independent, err := page.Templates().ParseFS(accounts.Assets(), "*.html")
@@ -286,57 +322,48 @@ func TestTemplateSet(t *testing.T) {
 	check("notfound", pages.NotFoundData{b})
 	check("landing", pages.LandingData{Banner: b})
 	check("landing", pages.LandingData{Banner: b, Configured: true, Hosts: []pages.HostRow{}, KeptVolumes: []pages.KeptVolumeRow{}, Accounts: []pages.AccountRow{}, Users: []pages.UserRow{}})
-	states := []string{store.HostProvisioning, store.HostRunning, store.HostStopping, store.HostStopped, store.HostStarting, store.HostResizing, store.HostDeleting, store.HostFailed}
+	reports := hostTemplateReports()
+	states := []string{store.HostProvisioning, store.HostRunning, store.HostStopping, store.HostStopped, store.HostStarting, store.HostResizing, store.HostDeleting, store.HostClosing, store.HostOpening, store.HostReplacing, store.HostRestoring, store.HostFailed}
 	healths := []string{store.HealthSync, store.HealthPending, store.HealthError, store.HealthSilent, store.HealthNone}
 	for _, full := range []bool{false, true} {
 		var dnsName, eip, reason, stamp, visible, instance, volume string
 		var rows []pages.ToolRow
-		var report *pages.ReportView
 		if full {
 			b.Release, b.Commit = "chosen-release", "chosen-commit"
 			dnsName = "chosen-host.work.test"
 			eip, reason, stamp, visible = "192.0.2.1", "chosen-reason", "2026-11-17T14:05:09Z", "2026-11-17 14:05"
 			instance, volume = "chosen-instance", "chosen-volume"
 			rows = []pages.ToolRow{{"chosen-tool", "chosen-copy"}}
-			report = &pages.ReportView{stamp, visible, "reported-host.work.test", instance, "chosen-type", "chosen-ami", "chosen-os", "chosen-kernel", "chosen-daemon", stamp, visible, 2, 3, reason, 1, 2, 3, 4, 10, 11, 12, 13, pages.VolumeView{1, 2, 3, 4}, pages.VolumeView{5, 6, 7, 8}, 15, 16, true, []string{}, []pages.SliceRow{}, []pages.BanRow{}, 0, []string{}}
 		}
 		var hosts []pages.HostRow
 		for i, state := range states {
 			health := healths[i%len(healths)]
-			data := pages.HostData{b, pages.HostView{"chosen-host", dnsName, state, reason, "", health, "chosen-type", 20, 50, eip, 3, stamp, visible, instance, volume, stamp, visible, []string{}}, report}
-			for _, choice := range []string{"", store.OnDeleteKeep, store.OnDeleteDelete} {
-				hosts = append(hosts, pages.HostRow{"chosen-host", dnsName, state, reason, choice, health, "chosen-type", 20, 50, eip, 3, stamp, visible})
-				data.Host.OnDelete = choice
-				check("host", data)
-			}
-			if report != nil {
-				withoutHostname := *report
-				withoutHostname.Hostname = ""
-				data.Report = &withoutHostname
-				check("host", data)
-				populated := *report
-				populated.FailedUnits = []string{"chosen-unit"}
-				populated.Slices = []pages.SliceRow{{"chosen-slice", 17, 18}}
-				populated.Bans = []pages.BanRow{{"203.0.113.7", stamp, visible, stamp, visible}}
-				populated.BanTotal = len(populated.Bans)
-				populated.Allowlist = []string{"192.0.2.7"}
+			view := pages.HostView{Name: "chosen-host", DNSName: dnsName, State: state, Reason: reason, Health: health, Type: "chosen-type",
+				RootGB: 20, DataGB: 50, EIP: eip, AccountCount: 3, Reported: stamp, ReportedText: visible, Closed: stamp, ClosedText: visible,
+				InstanceID: instance, DataVolume: volume, Created: stamp, CreatedText: visible, Allowlist: []string{}}
+			data := pages.HostData{Banner: b, Host: view}
+			if full {
+				data.Host.BackupFlagged = 2
 				data.Host.Allowlist = []string{"192.0.2.0/24"}
-				data.Report = &populated
-				check("host", data)
-				populated.BanTotal++
-				check("host", data)
-				empty := *report
-				data.Report = &empty
-				for _, total := range []int{1, 517} {
-					empty.BanTotal = total
-					check("host", data)
+			}
+			for _, choice := range []string{"", store.OnDeleteKeep, store.OnDeleteDelete} {
+				hosts = append(hosts, pages.HostRow{Name: view.Name, DNSName: dnsName, State: state, Reason: reason, OnDelete: choice, Health: health, Type: view.Type,
+					RootGB: 20, DataGB: 50, EIP: eip, AccountCount: 3, Reported: stamp, ReportedText: visible, Closed: stamp, ClosedText: visible, BackupFlagged: data.Host.BackupFlagged})
+				data.Host.OnDelete = choice
+				for _, replace := range []string{"", store.ReplaceVolume, store.ReplaceBackup} {
+					data.Host.Replace = replace
+					checkHostTemplateLists(check, data, reports)
 				}
 			}
 		}
 		var accountsRows []pages.AccountRow
 		for _, state := range []string{store.AccountPending, store.AccountActive, store.AccountFailed, store.AccountRemoving} {
 			for _, invites := range []int{0, 2} {
-				accountsRows = append(accountsRows, pages.AccountRow{"chosen-account", "chosen-host", "chosen-account.work.test", state, reason, 3, invites, stamp, visible})
+				for _, backup := range []string{store.BackupNone, store.BackupHealthy, store.BackupStale, store.BackupError} {
+					accountsRows = append(accountsRows, pages.AccountRow{Slug: "chosen-account", Host: "chosen-host", DNSName: "chosen-account.work.test",
+						State: state, Reason: reason, UserCount: 3, InviteCount: invites, Backup: backup,
+						Snapshot: stamp, SnapshotText: visible, Created: stamp, CreatedText: visible})
+				}
 			}
 		}
 		var users []pages.UserRow
@@ -347,10 +374,14 @@ func TestTemplateSet(t *testing.T) {
 				}
 			}
 		}
-		volumes := []pages.KeptVolumeRow{{"vol-chosen", "chosen-host", 50, "2026-11-17T14:05:09Z", "2026-11-17 14:05"}}
+		volumes := []pages.KeptVolumeRow{
+			{Volume: "vol-deleted", Host: "deleted-host", Cause: store.CauseDeleted, SizeGB: 50, Deleted: "2026-11-17T14:04:09Z", DeletedText: "2026-11-17 14:04"},
+			{Volume: "vol-replaced", Host: "chosen-host", Cause: store.CauseReplaced, SizeGB: 50, Deleted: "2026-11-17T14:05:09Z", DeletedText: "2026-11-17 14:05"},
+		}
 		check("landing", pages.LandingData{b, true, "work.test", hosts, "hp", "hprev", "hnext", volumes, "vp", "vprev", "vnext", accountsRows, "ap", "aprev", "anext", users, "up", "uprev", "unext"})
 		check("tools", pages.ToolsData{b, rows})
-		check("about", pages.AboutData{b, pages.Description, valid.DefaultType, valid.DefaultRootGB, valid.DefaultDataGB})
+		check("about", aboutData(b, store.DefaultBackupSettings()))
+		check("about", aboutData(b, otherBackupSettings))
 	}
 	checkJoinTemplates(t, check)
 	for _, tc := range []struct {
@@ -363,6 +394,48 @@ func TestTemplateSet(t *testing.T) {
 			if w.Code != 500 || w.Body.Len() != 0 || !reflect.DeepEqual(w.Header().Values("Content-Type"), []string{"text/html; charset=utf-8"}) {
 				t.Fatal("template failure leaked partial output")
 			}
+		}
+	}
+}
+
+func hostTemplateReports() []*pages.ReportView {
+	const stamp, visible = "2026-11-17T14:05:09Z", "2026-11-17 14:05:09 UTC"
+	const hostname = "reported-host.work.test"
+	empty := pages.ReportView{stamp, visible, hostname, "chosen-instance", "chosen-type", "chosen-ami", "chosen-os", "chosen-kernel",
+		"chosen-daemon", stamp, visible, 2, 3, "chosen-reason", 1, 2, 3, 4, 10, 11, 12, 13, pages.VolumeView{1, 2, 3, 4},
+		pages.VolumeView{5, 6, 7, 8}, 15, 16, true, []string{}, []pages.SliceRow{}, []pages.BanRow{}, 0, []string{}}
+	withoutHostname := empty
+	withoutHostname.Hostname = ""
+	positiveBanTotal := empty
+	positiveBanTotal.BanTotal = 517
+	full := empty
+	full.FailedUnits = []string{"chosen-unit"}
+	full.Slices = []pages.SliceRow{{"chosen-slice", 17, 18}}
+	full.Bans = []pages.BanRow{{"203.0.113.7", stamp, visible, stamp, visible}}
+	full.BanTotal = len(full.Bans)
+	full.Allowlist = []string{"192.0.2.7"}
+	truncated := full
+	truncated.BanTotal++
+	return []*pages.ReportView{nil, &withoutHostname, &positiveBanTotal, &full, &truncated}
+}
+
+func checkHostTemplateLists(check func(string, any), data pages.HostData, reports []*pages.ReportView) {
+	const stamp, visible = "2026-11-17T14:05:09Z", "2026-11-17 14:05:09 UTC"
+	var populated pages.HostData
+	fillBackupTemplates(&populated, stamp, visible, "chosen-reason")
+	for _, report := range reports {
+		data.Report = report
+		for _, backups := range [][]pages.BackupRow{{}, populated.Backups} {
+			data.Backups, data.DatabaseCount = backups, 0
+			for _, backup := range backups {
+				data.DatabaseCount += len(backup.Databases)
+			}
+			data.Restores, data.RestoreTotal = []pages.RestoreRow{}, 0
+			check("host", data)
+			data.Restores, data.RestoreTotal = populated.Restores, len(populated.Restores)
+			check("host", data)
+			data.RestoreTotal++
+			check("host", data)
 		}
 	}
 }
@@ -404,7 +477,7 @@ func statusWithHeader(status int, name, value string) *httptest.ResponseRecorder
 	return w
 }
 
-// R-ADGT-KWGW R-CQYO-ZTKZ R-AY74-302P R-RSB5-XXTE R-RZMK-8K9K R-SFH9-7KWL R-RX6R-H0S6 R-SGP5-LCNA R-SHX1-Z4DZ R-26DQ-4UHE R-SQGC-NIKU R-3GDK-UHJ3
+// R-ADGT-KWGW R-CQYO-ZTKZ R-AY74-302P R-RSB5-XXTE R-RZMK-8K9K R-SFH9-7KWL R-RX6R-H0S6 R-SGP5-LCNA R-SHX1-Z4DZ R-MNRM-LE5Z R-SQGC-NIKU R-CVR8-BD84
 func TestPageDecisionOrder(t *testing.T) {
 	f := setup(t)
 	f.cfg.ServicesPath = servicesFile(t, "https://chosen-auth.test/")
@@ -454,7 +527,7 @@ func TestPageDecisionOrder(t *testing.T) {
 	}
 }
 
-// R-SU41-STSX R-SVBY-6LJM R-SWJU-KDAB
+// R-SU41-STSX R-CWZ4-P4YT R-ZI18-EL12 R-SWJU-KDAB
 func TestInformationPagesAndHead(t *testing.T) {
 	f := setup(t)
 	for _, registered := range []bool{false, true} {
@@ -473,7 +546,16 @@ func TestInformationPagesAndHead(t *testing.T) {
 					target := "/tools?ignored=one"
 					same(t, answer(f, method, target, "viewer"), expected(f, method, target, "tools", 200, pages.ToolsData{Banner: banner(f, target, []page.Level{pages.ToolsLevel}), Tools: rows}))
 					target = "/about?ignored=one"
-					same(t, answer(f, method, target, "viewer"), expected(f, method, target, "about", 200, pages.AboutData{Banner: banner(f, target, []page.Level{pages.AboutLevel}), Description: pages.Description, DefaultType: valid.DefaultType, DefaultRootGB: valid.DefaultRootGB, DefaultDataGB: valid.DefaultDataGB}))
+					if failing {
+						w := statusWithHeader(503, "Content-Type", "text/plain; charset=utf-8")
+						if method == "GET" {
+							w.Body.WriteString(store.Unreachable + "\n")
+						}
+						same(t, answer(f, method, target, "viewer"), w)
+					} else {
+						same(t, answer(f, method, target, "viewer"), expected(f, method, target, "about", 200,
+							aboutData(banner(f, target, []page.Level{pages.AboutLevel}), store.DefaultBackupSettings())))
+					}
 				}
 				for _, target := range []string{"/", "/?hosts_page=last", "/?users_page=bogus", "/nope", "/hosts/host01", "/tools", "/about"} {
 					get, head := answer(f, "GET", target, "viewer"), answer(f, "HEAD", target, "viewer")

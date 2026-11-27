@@ -8,7 +8,7 @@ import (
 )
 
 func TestResolveCommand(t *testing.T) {
-	// R-AWMT-N6LM
+	// R-XVSO-DMEJ
 	const name = "probe"
 	base := t.TempDir()
 	root, err := os.OpenRoot(base)

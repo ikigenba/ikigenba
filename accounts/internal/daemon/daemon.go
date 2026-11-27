@@ -45,6 +45,8 @@ const (
 	MaxBackoff      = time.Minute
 	RequestTimeout  = protocol.LongPoll + 15*time.Second
 	DownloadTimeout = 5 * time.Minute
+	StreamTick      = 30 * time.Second
+	BackupTick      = time.Minute
 	UserAgent       = "accountsd"
 )
 
@@ -57,7 +59,10 @@ const (
 	DiagUpdate    = "daemon update failed"
 	DiagApply     = "state apply failed"
 	DiagReport    = "report delivery failed"
+	DiagBackup    = "backup pass failed"
 	invalidBase   = "expected an absolute HTTP or HTTPS URL without credentials, query or fragment"
+	missingTimer  = "daemon requires a timer"
+	missingPeer   = "box listener requires peer credentials"
 	statusError   = "unexpected HTTP status %d"
 )
 
@@ -68,6 +73,8 @@ type reconciler struct {
 	lastSigned time.Time
 	haveSigned bool
 	latest     atomic.Pointer[protocol.DesiredState]
+	reconciled atomic.Pointer[protocol.DesiredState]
+	firstApply chan struct{}
 	diagnostic sync.Mutex
 	attempted  int64
 	applied    int64
@@ -78,8 +85,10 @@ func Run(ctx context.Context, cfg Config) (result error) {
 	u, err := parseBaseURL(cfg.BaseURL)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		err = ctxErr
-	} else if cfg.Box != nil && (cfg.PeerUID == nil || cfg.After == nil) {
-		err = errors.New("box listener requires peer credentials and a timer")
+	} else if cfg.After == nil {
+		err = errors.New(missingTimer)
+	} else if cfg.Box != nil && cfg.PeerUID == nil {
+		err = errors.New(missingPeer)
 	}
 	if err != nil {
 		if cfg.Box != nil {
@@ -88,23 +97,37 @@ func Run(ctx context.Context, cfg Config) (result error) {
 		return err
 	}
 
-	r := reconciler{cfg: cfg, binding: strings.ToLower(u.Host), signing: make(chan struct{}, 1)}
+	r := reconciler{
+		cfg: cfg, binding: strings.ToLower(u.Host), signing: make(chan struct{}, 1),
+		firstApply: make(chan struct{}),
+	}
+	passCtx, stopPasses := context.WithCancel(ctx)
+	var passes sync.WaitGroup
+	passes.Go(func() { r.runPasses(passCtx, StreamTick, machine.Machine.Stream) })
+	passes.Go(func() { r.runPasses(passCtx, BackupTick, machine.Machine.Backup) })
+	var stopAccept context.CancelFunc
+	var boxDone chan struct{}
 	if cfg.Box != nil {
-		acceptCtx, stopAccept := context.WithCancel(ctx)
-		drained := make(chan struct{})
+		var acceptCtx context.Context
+		acceptCtx, stopAccept = context.WithCancel(ctx)
+		boxDone = make(chan struct{})
 		go func() {
-			defer close(drained)
+			defer close(boxDone)
 			r.serveBox(acceptCtx, ctx)
 		}()
-		defer func() {
+	}
+	defer func() {
+		stopPasses()
+		if stopAccept != nil {
 			stopAccept()
 			_ = cfg.Box.Close()
-			<-drained
-			if ctx.Err() != nil {
-				result = ctx.Err()
-			}
-		}()
-	}
+			<-boxDone
+		}
+		passes.Wait()
+		if ctx.Err() != nil {
+			result = ctx.Err()
+		}
+	}()
 	fetchBackoff, updateBackoff := MinBackoff, MinBackoff
 	for ctx.Err() == nil {
 		state, err := r.fetch(ctx)
@@ -143,6 +166,28 @@ func Run(ctx context.Context, cfg Config) (result error) {
 		}
 	}
 	return ctx.Err()
+}
+
+func (r *reconciler) runPasses(ctx context.Context, interval time.Duration, pass func(machine.Machine, context.Context, protocol.DesiredState) error) {
+	select {
+	case <-ctx.Done():
+		return
+	case <-r.firstApply:
+	}
+	for ctx.Err() == nil {
+		tick := r.cfg.After(interval)
+		if ctx.Err() != nil {
+			return
+		}
+		if err := pass(r.cfg.Machine, ctx, *r.reconciled.Load()); err != nil && ctx.Err() == nil {
+			r.diagnose(DiagBackup, err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick:
+		}
+	}
 }
 
 func parseBaseURL(raw string) (*url.URL, error) {
@@ -253,6 +298,9 @@ func (r *reconciler) applyAndReport(ctx context.Context, state protocol.DesiredS
 		return err
 	}
 	applyErr := r.cfg.Machine.Apply(ctx, state)
+	if r.reconciled.Swap(&state) == nil {
+		close(r.firstApply)
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}

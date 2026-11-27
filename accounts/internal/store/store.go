@@ -41,6 +41,8 @@ type Host struct {
 	Allowlist                                                                []string
 	Change, RecordReason                                                     string
 	OnDelete                                                                 string
+	Closed                                                                   time.Time
+	Replace                                                                  string
 }
 
 // KeptVolume records a deleted host's data volume and its own deletion state.
@@ -52,6 +54,7 @@ type KeptVolume struct {
 	Attempts      int
 	NextTry       time.Time
 	Caller        identity.Caller
+	Cause         string
 }
 
 // Delete choices and kept-volume states.
@@ -93,6 +96,7 @@ type Update struct {
 	Generation                                                                     int
 	InstanceID, RootVolume, DataVolume, AllocationID, AssociationID, EIP, AZ, Type string
 	RootGB, DataGB                                                                 int
+	HostState                                                                      string
 }
 
 // Account is a business placed on one host.
@@ -145,6 +149,10 @@ const (
 	HostDeleting     = "deleting"
 	HostFailed       = "failed"
 	HostDeleted      = "deleted"
+	HostClosing      = "closing"
+	HostOpening      = "opening"
+	HostReplacing    = "replacing"
+	HostRestoring    = "restoring"
 )
 
 // Account and user states.
@@ -183,6 +191,10 @@ const (
 	OpDelete    = "delete"
 	OpPlace     = "place"
 	OpUnplace   = "unplace"
+	OpClose     = "close"
+	OpOpen      = "open"
+	OpReplace   = "replace"
+	OpRestore   = "restore"
 )
 
 // Store limits and timing.
