@@ -81,9 +81,14 @@ func checkRestore(q query, r RestoreRequest, stamp time.Time) (Host, error) {
 	if err := checkRestoreTime(r, entries, stamp); err != nil {
 		return Host{}, err
 	}
-	var pending int
-	err = q.row("SELECT count(*) FROM restores WHERE host = ? AND host_seq = ? AND state = 'pending'", h.Name, h.Seq).Scan(&pending)
-	if err == nil && pending >= valid.MaxRestoresPerHost {
+	var unfinished int
+	err = q.row(`SELECT count(*) FROM (
+		SELECT id FROM backup_operations WHERE host = ? AND host_seq = ? AND kind = 'restore' AND status = 'running'
+		UNION ALL
+		SELECT r.id FROM restores r WHERE r.host = ? AND r.host_seq = ? AND r.state = 'pending'
+			AND NOT EXISTS (SELECT 1 FROM backup_operations b WHERE b.id = r.id AND b.status = 'running')
+		LIMIT ?)`, h.Name, h.Seq, h.Name, h.Seq, valid.MaxRestoresPerHost).Scan(&unfinished)
+	if err == nil && unfinished >= valid.MaxRestoresPerHost {
 		return Host{}, ErrTooManyRestores
 	}
 	return h, err
@@ -182,8 +187,7 @@ func cancelRestores(q query, seq int64, account string, stamp time.Time) ([]stri
 		predicate += " AND account = ?"
 		args = append(args, account)
 	}
-	// The request cap bounds pending rows; settled rows may still have a running
-	// operation until the engine processes them. Keep the returned ID list bounded.
+	// Keep the result bounded even if a database predates the unfinished-restore cap.
 	ids, err := collect(q, scanString, "SELECT id FROM backup_operations"+
 		predicate+" AND kind = 'restore' AND status = 'running' ORDER BY id LIMIT ?",
 		append(args, valid.MaxRestoresPerHost+1)...)
@@ -224,38 +228,56 @@ func recordRestoreResults(q query, h Host, results []protocol.RestoreResult) err
 	return nil
 }
 
+type restorePath struct {
+	account, path string
+}
+
+func compareRestorePaths(a, b restorePath) int {
+	return cmp.Or(cmp.Compare(a.account, b.account), cmp.Compare(a.path, b.path))
+}
+
+func eligibleRestorePaths(q query, h Host, entries []protocol.AccountBackup) ([]restorePath, error) {
+	// Keep only the first distinct account and path pairs, even when a report
+	// lists one account in several entries.
+	paths := make([]restorePath, 0, protocol.MaxDatabases)
+	for _, a := range entries {
+		var eligible bool
+		if err := q.row("SELECT EXISTS (SELECT 1 FROM accounts WHERE slug = ? AND host = ? AND state <> 'removing')",
+			a.Account, h.Name).Scan(&eligible); err != nil {
+			return nil, err
+		}
+		if !eligible {
+			continue
+		}
+		for _, d := range a.Databases {
+			path := restorePath{account: a.Account, path: d.Path}
+			i, duplicate := slices.BinarySearchFunc(paths, path, compareRestorePaths)
+			if duplicate || i == protocol.MaxDatabases {
+				continue
+			}
+			if len(paths) < protocol.MaxDatabases {
+				paths = append(paths, restorePath{})
+			}
+			copy(paths[i+1:], paths[i:])
+			paths[i] = path
+		}
+	}
+	return paths, nil
+}
+
 func copyRestorePaths(q query, h Host, opID string) error {
 	report, err := latestReport(q, h.Name)
 	if report == nil || err != nil {
 		return err
 	}
-	entries := report.Body.Backups
-	slices.SortStableFunc(entries, func(a, b protocol.AccountBackup) int { return cmp.Compare(a.Account, b.Account) })
-	remaining := protocol.MaxDatabases
-	for _, a := range entries {
-		var eligible bool
-		if err := q.row("SELECT EXISTS (SELECT 1 FROM accounts WHERE slug = ? AND host = ? AND state <> 'removing')",
-			a.Account, h.Name).Scan(&eligible); err != nil {
+	paths, err := eligibleRestorePaths(q, h, report.Body.Backups)
+	if err != nil {
+		return err
+	}
+	for _, path := range paths {
+		if err := q.exec("INSERT INTO restore_databases (operation_id, account, path) VALUES (?, ?, ?)",
+			opID, path.account, path.path); err != nil {
 			return err
-		}
-		if !eligible {
-			continue
-		}
-		slices.SortFunc(a.Databases, func(a, b protocol.Database) int { return cmp.Compare(a.Path, b.Path) })
-		for _, d := range a.Databases {
-			res, err := q.ExecContext(q.Context, "INSERT INTO restore_databases (operation_id, account, path) VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
-				opID, a.Account, d.Path)
-			if err != nil {
-				return err
-			}
-			n, err := res.RowsAffected()
-			if err != nil {
-				return err
-			}
-			remaining -= int(n)
-			if remaining == 0 {
-				return nil
-			}
 		}
 	}
 	return nil

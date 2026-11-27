@@ -9,8 +9,8 @@ import (
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 )
 
-// R-GVGS-XTNW R-HBBH-WUAX R-IXUO-9TW9 R-IZ2K-NLMY R-ZIHY-2QU5
-// R-J0AH-1DDN R-J1ID-F54C R-J2Q9-SWV1 R-J6DY-Y834 R-IQJ9-Z7G3
+// R-GVGS-XTNW R-HBBH-WUAX R-IXUO-9TW9 R-IZ2K-NLMY R-PKAD-JM2E
+// R-J0AH-1DDN R-J1ID-F54C R-J2Q9-SWV1 R-J6DY-Y834 R-IQJ9-Z7G3 R-50PQ-7WUW
 func TestDesiredReportAndWatch(t *testing.T) {
 	_, s, now := fixture(t)
 	h, provision := create(t, s)

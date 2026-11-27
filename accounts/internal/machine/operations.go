@@ -2,6 +2,7 @@ package machine
 
 import (
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
@@ -205,15 +206,23 @@ func (m *Memory) restoreCopy(disk *memoryDisk, q protocol.RestoreRequest, failin
 		result.Error = ErrInvalidState.Error()
 		return result
 	}
-	if disk.copies[scope] == nil {
-		disk.copies[scope] = make(map[string]struct{})
+	copies := disk.copies[scope]
+	if copies == nil {
+		copies = &memoryCopies{paths: make(map[string]struct{}), fileDirectories: make(map[string]struct{})}
+		disk.copies[scope] = copies
 	}
 	for attempt := 1; ; attempt++ {
 		name := CopyName(q, attempt)
-		if _, used := disk.copies[scope][name]; used || databases[name] != nil {
+		if q.Kind == protocol.RestoreFiles {
+			directory := strings.TrimSuffix(name, "/"+q.Path)
+			if _, used := copies.fileDirectories[directory]; used {
+				continue
+			}
+			copies.fileDirectories[directory] = struct{}{}
+		} else if _, used := copies.paths[name]; used || databases[name] != nil {
 			continue
 		}
-		disk.copies[scope][name] = struct{}{}
+		copies.paths[name] = struct{}{}
 		result.State, result.Copy = protocol.StepDone, name
 		return result
 	}

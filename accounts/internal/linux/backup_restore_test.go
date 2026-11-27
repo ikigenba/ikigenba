@@ -3,14 +3,19 @@ package linux_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/ikigenba/ikigenba/accounts/internal/linux"
 	"github.com/ikigenba/ikigenba/accounts/internal/machine"
@@ -82,7 +87,9 @@ func wholeRestoreState() protocol.DesiredState {
 	state.Backup.Restore = &protocol.HostRestore{
 		ID: "replace_one", Accounts: []protocol.RestoreAccount{{Slug: "acme", GID: 20001}},
 	}
-	state.Backup.Accounts = []protocol.AccountCredentials{{Account: "acme", Credentials: state.Backup.Host}}
+	state.Backup.Accounts = []protocol.AccountCredentials{{Account: "acme", Credentials: protocol.Credentials{
+		AccessKeyID: "AKIDaccountfixture", SecretAccessKey: "FixtureAccountSecret", SessionToken: "FixtureAccountToken",
+	}}}
 	return state
 }
 
@@ -94,7 +101,7 @@ func (f *hardeningFixture) prepareWholeRestore(state protocol.DesiredState) {
 }
 
 func TestWholeRestoreWaitsForApplyAndChecksInputs(t *testing.T) {
-	// R-UVJ8-V1XA R-Z2JU-7NY6
+	// R-W2WU-KKDB R-Z2JU-7NY6
 	for _, tc := range []struct {
 		name string
 		edit func(*hardeningFixture, *protocol.DesiredState)
@@ -105,6 +112,12 @@ func TestWholeRestoreWaitsForApplyAndChecksInputs(t *testing.T) {
 			if err := os.Remove(f.path(linux.RestoreMarker)); err != nil {
 				f.t.Fatal(err)
 			}
+		}, protocol.CodeNotEmpty, ""},
+		{"wrong marker", func(f *hardeningFixture, _ *protocol.DesiredState) {
+			f.put(linux.RestoreMarker, "restore an_earlier_replace\n", 0o600)
+		}, protocol.CodeNotEmpty, ""},
+		{"overlong marker", func(f *hardeningFixture, s *protocol.DesiredState) {
+			f.put(linux.RestoreMarker, "restore "+s.Backup.Restore.ID+"\n"+strings.Repeat("x", linux.MaxCapture), 0o600)
 		}, protocol.CodeNotEmpty, ""},
 		{"linked marker", func(f *hardeningFixture, s *protocol.DesiredState) {
 			f.put("/marker-target", "restore "+s.Backup.Restore.ID+"\n", 0o600)
@@ -156,12 +169,34 @@ func TestWholeRestoreWaitsForApplyAndChecksInputs(t *testing.T) {
 			if got := f.backupReport(state).HostBackup; got != before {
 				t.Fatalf("Apply without data device advanced restore to %+v", got)
 			}
+			otherID := *state.Backup.Restore
+			otherID.ID = "another_replace"
+			otherBackup := *state.Backup
+			otherBackup.Restore = &otherID
+			otherState := state
+			otherState.Backup = &otherBackup
+			f.apply(otherState)
+			f.backup(state)
+			if got := f.backupReport(state).HostBackup; got != before {
+				t.Fatalf("Apply for a different restore advanced restore to %+v", got)
+			}
 			f.prepareWholeRestore(state)
+			const keptWork = "/srv/.accountsd-restore-acme/kept"
+			f.put(keptWork, "existing work", 0o600)
 			tc.edit(f, &state)
+			markerPath := f.path(linux.RestoreMarker)
+			marker, markerErr := os.Lstat(markerPath)
 			f.backup(state)
 			want := protocol.Step{ID: state.Backup.Restore.ID, State: protocol.StepFailed, Code: tc.code, At: f.env.Now().UTC()}
 			if got := f.backupReport(state).HostBackup; got.Restored != want || got.Error != tc.text {
 				t.Fatalf("restore failure = %+v, want %+v and %q", got, want, tc.text)
+			}
+			f.expectFile(keptWork, "existing work", 0o600)
+			if errors.Is(markerErr, os.ErrNotExist) {
+				f.expectAbsent(linux.RestoreMarker)
+			} else if after, err := os.Lstat(markerPath); markerErr != nil || err != nil || !os.SameFile(marker, after) ||
+				marker.Mode() != after.Mode() || marker.ModTime() != after.ModTime() {
+				t.Fatalf("restore changed the marker: before %v (%v), after %v (%v)", marker, markerErr, after, err)
 			}
 			f.expectAbsent("/srv/acme")
 		})
@@ -169,28 +204,42 @@ func TestWholeRestoreWaitsForApplyAndChecksInputs(t *testing.T) {
 }
 
 func TestWholeRestoreSelectsNewestTargetsAndRecoversAfterRestart(t *testing.T) {
-	// R-UZ6Y-0D5D R-V1MQ-RWMR R-V2UN-5ODG R-VA61-GATM R-ZJMF-KGBW R-ZKUB-Y82L
+	// R-W7SG-3NC3 R-VZ95-F958 R-VVLG-9XX5 R-W90C-HF2S R-VRXR-4MP2 R-ZJMF-KGBW R-ZKUB-Y82L
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := wholeRestoreState()
 	state.Backup.Restore.Accounts[0].Databases = []string{"data/default.db", "data/manifest.db"}
 	hostRestores, accountRestores, homeRestores := 0, 0, 0
+	var databases []string
 	wantManifest := f.path(linux.BackupDir + "/manifest/acme")
 	f.executeBackupFixtures(func(c linux.Command) (linux.Result, error) {
 		if c.Name == f.path(linux.LitestreamPath) {
 			f.checkRestoreLitestream(c, state, "-if-replica-exists")
+			databases = append(databases, filepath.Base(c.Args[7]))
+			if c.Args[6] != f.path("/srv/.accountsd-restore-acme/.database") {
+				t.Fatalf("database work output = %s", c.Args[6])
+			}
+			for _, suffix := range []string{"", "-wal", "-shm", "-journal"} {
+				f.expectAbsent("/srv/.accountsd-restore-acme/.database" + suffix)
+			}
 			// When a replica is absent, a successful restore leaves no output.
 			if filepath.Base(c.Args[len(c.Args)-1]) == "manifest.db" {
 				f.put(strings.TrimPrefix(c.Args[len(c.Args)-2], f.root), "replica", 0o600)
 			}
 			return linux.Result{}, nil
 		}
-		f.checkRestoreRestic(c, state)
 		args := c.Args[3:]
+		hostListing := []string{"snapshots", "--json"}
+		hostRestore := []string{"restore", "new-key:" + f.path("/data/ssh"), "--target", f.path("/data/ssh")}
+		account := "acme"
+		if slices.Equal(args, hostListing) || slices.Equal(args, hostRestore) {
+			account = ""
+		}
+		f.checkRestoreRestic(c, state, account)
 		switch {
-		case slices.Equal(args, []string{"snapshots", "--json"}):
+		case slices.Equal(args, hostListing):
 			restoreStdout(t, c, `[{"id":"older","time":"2026-11-17T12:00:00Z"},{"id":"new-key","time":"2026-11-17T13:00:00Z"}]`)
-		case slices.Equal(args, []string{"restore", "new-key:" + f.path("/data/ssh"), "--target", f.path("/data/ssh")}):
+		case slices.Equal(args, hostRestore):
 			hostRestores++
 			f.put(dataPrivateKey, "restored host key", 0o600)
 		case slices.Equal(args, []string{"snapshots", "--host", "acme", "--json"}):
@@ -205,22 +254,36 @@ func TestWholeRestoreSelectsNewestTargetsAndRecoversAfterRestart(t *testing.T) {
 		case slices.Equal(args, []string{"restore", "new-snapshot:" + f.path("/srv"), "--target",
 			f.path("/srv/.accountsd-restore-acme"), "--include", "/acme", "--overwrite", "if-changed"}):
 			accountRestores++
+			f.expectMode("/srv/.accountsd-restore-acme", 0o700)
 			f.put("/srv/.accountsd-restore-acme/acme/doc.txt", "account files", 0o600)
+			f.put("/srv/.accountsd-restore-acme/acme/data/restic.db", "already restored", 0o600)
+			for _, suffix := range []string{"", "-wal", "-shm", "-journal"} {
+				f.put("/srv/.accountsd-restore-acme/.database"+suffix, "old output", 0o600)
+			}
 		case slices.Equal(args, []string{"restore", "new-snapshot:" + f.path("/home"), "--target",
 			f.path("/home/.accountsd-restore-alice"), "--include", "/alice", "--overwrite", "if-changed"}):
 			homeRestores++
+			f.expectMode("/home/.accountsd-restore-alice", 0o700)
 			if homeRestores == 1 {
+				f.put("/home/.accountsd-restore-alice/alice/partial.txt", "first attempt", 0o600)
 				return linux.Result{ExitCode: 2}, nil
 			}
+			f.expectFile("/home/.accountsd-restore-alice/alice/partial.txt", "first attempt", 0o600)
 			f.put("/home/.accountsd-restore-alice/alice/doc.txt", "home files", 0o600)
 		case slices.Equal(args, []string{"dump", "new-snapshot", wantManifest}):
-			restoreStdout(t, c, "23456 34567 0640 data/manifest.db\n123 123 0666 data/manifest.db\n")
+			restoreStdout(t, c, "23456 34567 0640 data/manifest.db\n123 123 0666 data/manifest.db\n123 123 0666 data/restic.db\n")
 		default:
 			t.Fatalf("unexpected restic command %v", args)
 		}
 		return linux.Result{}, nil
 	})
 	f.prepareWholeRestore(state)
+	f.backupDirs("/srv/.accountsd-restore-acme")
+	f.setMode("/srv/.accountsd-restore-acme", 0o755)
+	f.put("/work-link-target", "retained", 0o600)
+	if err := os.Symlink(f.path("/work-link-target"), f.path("/home/.accountsd-restore-alice")); err != nil {
+		t.Fatal(err)
+	}
 
 	creds := state.Backup.Host
 	state.Backup.Host = protocol.Credentials{}
@@ -254,15 +317,26 @@ func TestWholeRestoreSelectsNewestTargetsAndRecoversAfterRestart(t *testing.T) {
 	f.backup(state)
 	report := f.backupReport(state)
 	if report.HostBackup.Restored.State != protocol.StepDone || report.Backups[0].Restored.State != protocol.StepDone ||
-		report.Backups[0].Error != "" || hostRestores != 1 || accountRestores != 2 || homeRestores != 2 {
+		report.Backups[0].Error != "" || hostRestores != 1 || accountRestores != 2 || homeRestores != 2 ||
+		!slices.Equal(databases, []string{"default.db", "manifest.db"}) {
 		t.Fatalf("finished report %+v and %d/%d/%d restores", report, hostRestores, accountRestores, homeRestores)
 	}
 	f.expectFile(dataPrivateKey, "restored host key", 0o600)
 	f.expectFile("/srv/acme/doc.txt", "account files", 0o600)
 	f.expectFile("/srv/acme/data/manifest.db", "replica", 0o640)
+	f.expectFile("/srv/acme/data/restic.db", "already restored", 0o600)
 	f.expectFile("/home/alice/doc.txt", "home files", 0o600)
+	f.expectFile("/home/alice/partial.txt", "first attempt", 0o600)
+	f.expectFile("/work-link-target", "retained", 0o600)
 	if !slices.Contains(f.commands, "chown --no-dereference 23456:34567 "+f.path("/srv/.accountsd-restore-acme/.database")) {
 		t.Fatal("manifest ownership was not assigned")
+	}
+	if os.Getuid() != 0 || os.Getgid() != 0 {
+		for _, work := range []string{"/srv/.accountsd-restore-acme", "/home/.accountsd-restore-alice"} {
+			if !slices.Contains(f.commands, "chown --no-dereference root:root "+f.path(work)) {
+				t.Fatalf("restore work %s did not get the root ownership command", work)
+			}
+		}
 	}
 	f.expectAbsent("/home/not")
 	f.expectAbsent("/home/unrooted")
@@ -288,15 +362,126 @@ func TestWholeRestoreSelectsNewestTargetsAndRecoversAfterRestart(t *testing.T) {
 	}
 }
 
-func (f *hardeningFixture) checkRestoreRestic(c linux.Command, state protocol.DesiredState) {
+func TestWholeRestoreRemovesLitestreamConfigOnFailure(t *testing.T) {
+	// R-VRXR-4MP2
+	f := newHardeningFixture(t)
+	f.putBackupProgramStamps()
+	state := wholeRestoreState()
+	state.Backup.Restore.Accounts[0].Databases = []string{"data/app.db"}
+	const work = "/srv/.accountsd-restore-acme"
+	const config = work + "/litestream.yml"
+	var previous []byte
+	var stale os.FileInfo
+	var databases int
+	f.executeBackupFixtures(func(c linux.Command) (linux.Result, error) {
+		if c.Name == f.path(linux.LitestreamPath) {
+			f.checkRestoreLitestream(c, state, "-if-replica-exists")
+			databases++
+			if databases == 1 {
+				var err error
+				previous, err = os.ReadFile(filepath.Clean(c.Args[2]))
+				if err != nil {
+					t.Fatal(err)
+				}
+				return linux.Result{ExitCode: 1}, nil
+			}
+			if os.SameFile(stale, f.stat(config)) {
+				t.Fatal("a stale restore config was reused")
+			}
+			return linux.Result{}, nil
+		}
+		args := c.Args[3:]
+		switch {
+		case slices.Equal(args, []string{"snapshots", "--json"}):
+			return linux.Result{ExitCode: 10}, nil
+		case slices.Equal(args, []string{"snapshots", "--host", "acme", "--json"}):
+			restoreStdout(t, c, `[{"id":"copy","time":"2026-11-18T12:00:00Z"}]`)
+		case args[0] == "restore":
+			f.backupDirs(work + "/acme")
+		default:
+			t.Fatalf("unexpected restic command %v", args)
+		}
+		return linux.Result{}, nil
+	})
+	f.prepareWholeRestore(state)
+	f.failedBackupPass(state)
+	f.expectMode(work, 0o700)
+	f.expectAbsent(config)
+	f.put(config, string(previous), 0o600)
+	stale = f.stat(config)
+	f.backup(state)
+	if got := f.backupReport(state).Backups[0].Restored; got.State != protocol.StepDone || databases != 2 {
+		t.Fatalf("restore after a command failure = %+v, database commands = %d", got, databases)
+	}
+	f.expectAbsent(config)
+}
+
+func TestWholeRestoreWithNoSnapshots(t *testing.T) {
+	// R-W2WU-KKDB R-W7SG-3NC3 R-VZ95-F958 R-VVLG-9XX5
+	for _, status := range []int{0, 10} {
+		t.Run(fmt.Sprintf("exit %d", status), func(t *testing.T) {
+			f := newHardeningFixture(t)
+			f.putBackupProgramStamps()
+			state := wholeRestoreState()
+			state.Accounts = installTestState().Accounts
+			state.Backup.Close = "close_one"
+			state.Backup.Restores = []protocol.RestoreRequest{
+				{ID: "partial_one", Account: "acme", Kind: protocol.RestoreFiles, AsOf: restoreAsOf},
+			}
+			f.put(dataPrivateKey, "existing private key", 0o600)
+			f.put(dataPublicKey, "existing public key", 0o644)
+			var listings []string
+			f.executeBackupFixtures(func(c linux.Command) (linux.Result, error) {
+				args := c.Args[3:]
+				account := ""
+				if len(args) == 4 {
+					account = "acme"
+				}
+				f.checkRestoreRestic(c, state, account)
+				if !slices.Equal(args, []string{"snapshots", "--json"}) && !slices.Equal(args, []string{"snapshots", "--host", "acme", "--json"}) {
+					t.Fatalf("unexpected restore command: %v", args)
+				}
+				listings = append(listings, strings.Join(args, " "))
+				if status == 10 {
+					restoreStdout(t, c, `[{"id":"ignored","time":"2026-11-18T12:00:00Z"}]`)
+				} else {
+					restoreStdout(t, c, `[]`)
+				}
+				return linux.Result{ExitCode: status}, nil
+			})
+			f.prepareWholeRestore(state)
+			if err := f.host.Stream(t.Context(), state); err != nil {
+				t.Fatal(err)
+			}
+			f.backup(state)
+			f.backup(state)
+			report := f.backupReport(state)
+			want := protocol.Step{ID: state.Backup.Restore.ID, State: protocol.StepDone, At: f.env.Now().UTC()}
+			if report.HostBackup.Restored != want || report.Backups[0].Restored != want || len(report.Restores) != 0 ||
+				!slices.Equal(listings, []string{"snapshots --json", "snapshots --host acme --json"}) {
+				t.Fatalf("host/account reports = %+v/%+v, listings = %v", report.HostBackup, report.Backups, listings)
+			}
+			f.expectFile(dataPrivateKey, "existing private key", 0o600)
+			f.expectFile(dataPublicKey, "existing public key", 0o644)
+			f.expectAbsent("/srv/acme")
+			f.forbidRestoreWork()
+		})
+	}
+}
+
+func (f *hardeningFixture) checkRestoreRestic(c linux.Command, state protocol.DesiredState, account string) {
 	f.t.Helper()
 	b := state.Backup
 	creds := b.Host
 	prefix := strings.TrimRight(b.HostPrefix, "/")
 	cache := ".host"
-	if len(c.Args) > 1 && strings.HasSuffix(c.Args[1], "/"+protocol.FilesPrefix("acme")) {
-		creds = b.Accounts[0].Credentials
-		prefix, cache = protocol.FilesPrefix("acme"), "acme"
+	if account != "" {
+		i := slices.IndexFunc(b.Accounts, func(c protocol.AccountCredentials) bool { return c.Account == account })
+		if i < 0 {
+			f.t.Fatalf("fixture has no credentials for %q", account)
+		}
+		creds = b.Accounts[i].Credentials
+		prefix, cache = protocol.FilesPrefix(account), account
 	}
 	wantArgs := []string{"-r", "s3:s3." + b.Region + ".amazonaws.com/" + b.Bucket + "/" + prefix, "--insecure-no-password"}
 	wantEnv := []string{"AWS_ACCESS_KEY_ID=" + creds.AccessKeyID, "AWS_SECRET_ACCESS_KEY=" + creds.SecretAccessKey,
@@ -328,7 +513,7 @@ func (f *hardeningFixture) checkRestoreLitestream(c linux.Command, state protoco
 		f.t.Fatal("wrong Litestream credential environment")
 	}
 	config := strings.TrimPrefix(c.Args[2], f.root)
-	if filepath.Dir(c.Args[2]) != filepath.Dir(c.Args[len(c.Args)-2]) {
+	if c.Args[2] != filepath.Join(filepath.Dir(c.Args[len(c.Args)-2]), "litestream.yml") {
 		f.t.Fatalf("Litestream config was outside work directory: %v", c.Args)
 	}
 	quote := func(s string) string {
@@ -343,7 +528,7 @@ func (f *hardeningFixture) checkRestoreLitestream(c linux.Command, state protoco
 }
 
 func TestWholeRestoreRetriesUnexpectedExitThreeTimes(t *testing.T) {
-	// R-V0EU-E4W2
+	// R-W0H1-T0VX
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := wholeRestoreState()
@@ -364,6 +549,16 @@ func TestWholeRestoreRetriesUnexpectedExitThreeTimes(t *testing.T) {
 		return linux.Result{}, nil
 	})
 	f.prepareWholeRestore(state)
+	creds := state.Backup.Accounts
+	state.Backup.Accounts = nil
+	for range linux.RestoreAttempts + 1 {
+		f.backup(state)
+		got := f.backupReport(state).Backups[0]
+		if got.Restored.State != protocol.StepPending || got.Error != machine.NoCredentials || calls != 0 {
+			t.Fatalf("credential wait counted as an attempt: got %+v and %d commands", got, calls)
+		}
+	}
+	state.Backup.Accounts = creds
 	for pass := 1; pass <= linux.RestoreAttempts+1; pass++ {
 		f.host = linux.New(f.env)
 		f.apply(state)
@@ -386,11 +581,16 @@ func TestWholeRestoreRetriesUnexpectedExitThreeTimes(t *testing.T) {
 	}
 }
 
-func TestWholeRestoreBoundsManifestAndKeepsFirstMetadata(t *testing.T) {
-	// R-V8Y5-2J2X
+func TestWholeRestoreBoundsManifest(t *testing.T) {
+	// R-WW6F-R25Z
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := wholeRestoreState()
+	watch, err := unix.InotifyInit1(unix.IN_NONBLOCK | unix.IN_CLOEXEC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = unix.Close(watch) })
 	calls := 0
 	f.executeBackupFixtures(func(c linux.Command) (linux.Result, error) {
 		if c.Name == f.path(linux.LitestreamPath) {
@@ -407,13 +607,22 @@ func TestWholeRestoreBoundsManifestAndKeepsFirstMetadata(t *testing.T) {
 		case slices.Equal(args, []string{"snapshots", "--json"}):
 			return linux.Result{ExitCode: 10}, nil
 		case slices.Equal(args, []string{"snapshots", "--host", "acme", "--json"}):
-			restoreStdout(t, c, `[{"id":"copy","time":"2026-11-18T12:00:00Z","excludes":"`)
+			writeOlderRestoreSnapshots(f, c)
+			restoreStdout(t, c, `{"id":"copy","time":"2026-11-18T12:00:00Z","excludes":"`)
 			restoreStdout(t, c, strings.Repeat("x", linux.MaxJournalLine*2))
 			restoreStdout(t, c, fmt.Sprintf(`","paths":[%q]}]`, f.path(linux.BackupDir+"/manifest/acme")))
-		case args[0] == "restore":
-			f.backupDirs("/srv/.accountsd-restore-acme/acme")
+		case slices.Equal(args, []string{"restore", "copy:" + f.path("/srv"), "--target",
+			f.path("/srv/.accountsd-restore-acme"), "--include", "/acme", "--overwrite", "if-changed"}):
+			const restored = "/srv/.accountsd-restore-acme/acme/document"
+			f.put(restored, "contents the restore must never read", 0o600)
+			if _, err := unix.InotifyAddWatch(watch, f.path(restored), unix.IN_ACCESS); err != nil {
+				t.Fatal(err)
+			}
 		case args[0] == "dump":
-			restoreStdout(t, c, strings.Repeat("x", linux.MaxJournalLine*2)+"\n")
+			// The UID's leading zeroes make this line overlong without
+			// changing its value or making the path itself invalid.
+			restoreStdout(t, c, strings.Repeat("0", linux.MaxJournalLine*2))
+			restoreStdout(t, c, "20001 20001 0660 data/db-oversize\n")
 			for i := range linux.MaxDatabasesPerAccount + 10 {
 				restoreStdout(t, c, fmt.Sprintf("20001 20001 0660 data/db-%03d\n", i))
 			}
@@ -427,23 +636,55 @@ func TestWholeRestoreBoundsManifestAndKeepsFirstMetadata(t *testing.T) {
 	if got := f.backupReport(state).Backups[0]; got.Restored.State != protocol.StepDone || calls != linux.MaxDatabasesPerAccount {
 		t.Fatalf("bounded manifest gave %d restores, account %+v", calls, got)
 	}
+	var events [512]byte
+	if n, err := unix.Read(watch, events[:]); !errors.Is(err, unix.EAGAIN) {
+		t.Fatalf("watch for reads of the restored file returned %d bytes, %v", n, err)
+	}
+	f.expectFile("/srv/acme/document", "contents the restore must never read", 0o600)
+}
+
+func writeOlderRestoreSnapshots(f *hardeningFixture, c linux.Command) {
+	f.t.Helper()
+	paths := make([]string, 120)
+	for i := range paths {
+		paths[i] = f.path(fmt.Sprintf("/home/user-%03d", i))
+	}
+	encoded, err := json.Marshal(paths)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	var baseline, during runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&baseline)
+	restoreStdout(f.t, c, "[")
+	for i := range 1536 {
+		restoreStdout(f.t, c, fmt.Sprintf(`{"id":"%064x","time":"2026-11-17T12:00:00Z","paths":%s},`, i, encoded))
+	}
+	// The listing is still open, so a reader that collected the whole
+	// array would still hold its buffer or its decoded entries.
+	runtime.GC()
+	runtime.ReadMemStats(&during)
+	if during.HeapInuse > baseline.HeapInuse+(4<<20) {
+		f.t.Fatalf("restore listing retained %d bytes of heap", during.HeapInuse-baseline.HeapInuse)
+	}
 }
 
 func TestWholeRestoreRefusesOccupiedTargetsAndRetriesRemainingMoves(t *testing.T) {
-	// R-V1MQ-RWMR R-V2UN-5ODG
+	// R-VZ95-F958 R-VVLG-9XX5
 	for _, occupiedInitially := range []bool{true, false} {
 		t.Run(fmt.Sprintf("occupied initially %t", occupiedInitially), func(t *testing.T) {
 			f := newHardeningFixture(t)
 			f.putBackupProgramStamps()
 			state := wholeRestoreState()
-			accountCalls, homeCalls := 0, 0
+			accountCalls, homeCalls, dumps := 0, 0, 0
+			manifest := f.path(linux.BackupDir + "/manifest/acme")
 			f.executeBackupFixtures(func(c linux.Command) (linux.Result, error) {
 				args := c.Args[3:]
 				switch {
 				case slices.Equal(args, []string{"snapshots", "--json"}):
 					return linux.Result{ExitCode: 10}, nil
 				case slices.Equal(args, []string{"snapshots", "--host", "acme", "--json"}):
-					restoreStdout(t, c, fmt.Sprintf(`[{"id":"copy","time":"2026-11-18T12:00:00Z","paths":[%q]}]`, f.path("/home/alice")))
+					restoreStdout(t, c, fmt.Sprintf(`[{"id":"copy","time":"2026-11-18T12:00:00Z","paths":[%q,%q]}]`, f.path("/home/alice"), manifest))
 				case args[0] == "restore" && args[5] == "/acme":
 					accountCalls++
 					f.put("/srv/.accountsd-restore-acme/acme/doc", "account", 0o600)
@@ -453,6 +694,8 @@ func TestWholeRestoreRefusesOccupiedTargetsAndRetriesRemainingMoves(t *testing.T
 						f.put("/home/alice/doc", "arrived after target check", 0o600)
 					}
 					f.put("/home/.accountsd-restore-alice/alice/doc", "home", 0o600)
+				case slices.Equal(args, []string{"dump", "copy", manifest}):
+					dumps++
 				default:
 					t.Fatalf("unexpected command %v", args)
 				}
@@ -489,8 +732,8 @@ func TestWholeRestoreRefusesOccupiedTargetsAndRetriesRemainingMoves(t *testing.T
 			f.apply(state)
 			f.backup(state)
 			f.expectFile("/home/alice/doc", "home", 0o600)
-			if got := f.backupReport(state).Backups[0]; got.Restored.State != protocol.StepDone || accountCalls != 1 || homeCalls != 2 {
-				t.Fatalf("restarted restore %+v, account/home calls %d/%d", got, accountCalls, homeCalls)
+			if got := f.backupReport(state).Backups[0]; got.Restored.State != protocol.StepDone || accountCalls != 1 || homeCalls != 2 || dumps != 1 {
+				t.Fatalf("restarted restore %+v, account/home/dump calls %d/%d/%d", got, accountCalls, homeCalls, dumps)
 			}
 		})
 	}
@@ -504,13 +747,19 @@ func partialRestoreState() protocol.DesiredState {
 }
 
 func TestPartialDatabaseRestoreNamesCopiesAndKeepsResults(t *testing.T) {
-	// R-V5AF-X7UU R-ZB34-W251 R-V6IC-AZLJ R-ZIEJ-6OL7
+	// R-VY19-1HEJ R-ZB34-W251 R-VWTC-NPNU R-VRXR-4MP2 R-ZIEJ-6OL7
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := partialRestoreState()
+	state.Backup.Host = installTestState().Backup.Host
+	f.put(dataPrivateKey, "host private key", 0o600)
+	f.put(dataPublicKey, "host public key", 0o644)
+	state.Accounts = append(state.Accounts, protocol.Account{Slug: "inactive", GID: 20002, State: protocol.AccountRemoved})
+	state.Backup.Accounts = append(state.Backup.Accounts, protocol.AccountCredentials{Account: "inactive", Credentials: state.Backup.Accounts[0].Credentials})
 	state.Backup.Restores = []protocol.RestoreRequest{
 		{ID: "z_database", Account: "acme", Kind: protocol.RestoreDatabase, Path: "data/app.db", AsOf: restoreAsOf},
 		{ID: "b_waiting", Account: "absent", Kind: protocol.RestoreDatabase, Path: "data/app.db", AsOf: restoreAsOf},
+		{ID: "b_inactive", Account: "inactive", Kind: protocol.RestoreDatabase, Path: "data/app.db", AsOf: restoreAsOf},
 		{ID: "a_hidden", Account: "acme", Kind: protocol.RestoreDatabase, Path: "data/.cache", AsOf: restoreAsOf},
 		{ID: "a_invalid", Account: "acme", Kind: protocol.RestoreFiles, Path: "../escape", AsOf: restoreAsOf},
 		{ID: "!!invalid", Account: "acme", Kind: protocol.RestoreDatabase, Path: "data/app.db", AsOf: restoreAsOf},
@@ -519,22 +768,55 @@ func TestPartialDatabaseRestoreNamesCopiesAndKeepsResults(t *testing.T) {
 		{ID: "invalid_path", Account: "acme", Kind: protocol.RestoreDatabase, Path: "data/../app.db", AsOf: restoreAsOf},
 		{ID: "invalid_user", Account: "acme", Kind: protocol.RestoreFiles, User: "absent", AsOf: restoreAsOf},
 	}
+	f.put(linux.RestoreMarker, "restore earlier_replace\n", 0o600)
 	f.put("/srv/acme/data/app.db", "original database", 0o640)
 	f.put("/srv/acme/data/app.restored-20261118T120000Z.db", "older copy", 0o600)
+	live := f.stat("/srv/acme/data/app.db").Sys().(*syscall.Stat_t)
 	var calls []string
+	var backupOrder []string
+	var assignedOwners []string
+	f.observe = func(c linux.Command) {
+		if c.Name == "chown" && len(c.Args) == 3 && c.Args[0] == "--no-dereference" &&
+			strings.HasPrefix(c.Args[2], f.path("/srv/.accountsd-restore-")) && filepath.Base(c.Args[2]) == "database" {
+			f.expectAbsent(strings.TrimPrefix(filepath.Join(filepath.Dir(c.Args[2]), "litestream.yml"), f.root))
+			assignedOwners = append(assignedOwners, c.Args[1])
+		}
+	}
 	f.executeBackupFixtures(func(c linux.Command) (linux.Result, error) {
+		if c.Name == f.path(linux.ResticPath) {
+			f.checkRestoreRestic(c, state, "")
+			verb := c.Args[3]
+			backupOrder = append(backupOrder, verb)
+			switch verb {
+			case "cat", "forget":
+			case "backup":
+				restoreStdout(t, c, fmt.Sprintf("{\"message_type\":\"summary\",\"snapshot_id\":\"key\",\"backup_end\":%q}\n",
+					f.env.Now().Format(time.RFC3339)))
+			default:
+				t.Fatalf("unexpected host backup command %v", c.Args)
+			}
+			return linux.Result{}, nil
+		}
+		backupOrder = append(backupOrder, "litestream")
 		f.checkRestoreLitestream(c, state, "-timestamp")
+		f.expectAbsent(linux.RestoreMarker)
 		if c.Args[5] != "2026-11-18T12:00:01Z" || filepath.Base(c.Args[7]) != "database" {
 			t.Fatalf("wrong restore timestamp or work output: %v", c.Args)
 		}
 		if f.stat(strings.TrimPrefix(filepath.Dir(c.Args[7]), f.root)).Mode().Perm() != 0o700 {
 			t.Fatal("restore work directory is not private")
 		}
+		if (os.Getuid() != 0 || os.Getgid() != 0) && !slices.Contains(f.commands, "chown --no-dereference root:root "+filepath.Dir(c.Args[7])) {
+			t.Fatal("restore work directory was not assigned to root")
+		}
 		calls = append(calls, filepath.Base(c.Args[8]))
 		f.put(strings.TrimPrefix(c.Args[7], f.root), "saved "+filepath.Base(c.Args[8]), 0o600)
 		return linux.Result{}, nil
 	})
 	f.backup(state)
+	if want := []string{"cat", "backup", "forget", "litestream", "litestream"}; !slices.Equal(backupOrder, want) {
+		t.Fatalf("backup and partial restore order = %v, want %v", backupOrder, want)
+	}
 	f.host = linux.New(f.env)
 	f.backup(state)
 	errText := machine.ErrInvalidState.Error()
@@ -551,6 +833,9 @@ func TestPartialDatabaseRestoreNamesCopiesAndKeepsResults(t *testing.T) {
 	if got := f.backupReport(state).Restores; !slices.Equal(got, want) || !slices.Equal(calls, []string{".cache", "app.db"}) {
 		t.Fatalf("results = %+v, calls %v", got, calls)
 	}
+	if wantOwners := []string{fmt.Sprintf("%d:%d", state.Accounts[0].GID, state.Accounts[0].GID), fmt.Sprintf("%d:%d", live.Uid, live.Gid)}; !slices.Equal(assignedOwners, wantOwners) {
+		t.Fatalf("database ownership commands = %v, want %v", assignedOwners, wantOwners)
+	}
 	f.expectFile("/srv/acme/data/app.db", "original database", 0o640)
 	f.expectFile("/srv/acme/data/app.restored-20261118T120000Z.db", "older copy", 0o600)
 	f.expectFile("/srv/acme/"+want[1].Copy, "saved .cache", 0o660)
@@ -564,11 +849,24 @@ func TestPartialDatabaseRestoreNamesCopiesAndKeepsResults(t *testing.T) {
 	if got := f.backupReport(state).Restores; len(got) != 0 {
 		t.Fatalf("removed request results are still present: %v", got)
 	}
+	state.Backup.Restores = []protocol.RestoreRequest{
+		{ID: "new_waiting", Account: "acme", Kind: protocol.RestoreDatabase, Path: "data/waiting.db", AsOf: restoreAsOf},
+	}
+	credentials := state.Backup.Accounts
 	state.Backup.Accounts = nil
 	f.backup(state)
-	if len(calls) != 2 {
-		t.Fatalf("requests lacking credentials ran: %v", calls)
+	if got := f.backupReport(state).Restores; len(got) != 0 || len(calls) != 2 {
+		t.Fatalf("request lacking credentials reported %+v and ran %v", got, calls)
 	}
+	state.Backup.Accounts = credentials
+	f.backup(state)
+	wantWaiting := []protocol.RestoreResult{
+		{ID: "new_waiting", State: protocol.StepDone, Copy: "data/waiting.restored-20261118T120000Z.db"},
+	}
+	if got := f.backupReport(state).Restores; !slices.Equal(got, wantWaiting) || !slices.Equal(calls, []string{".cache", "app.db", "waiting.db"}) {
+		t.Fatalf("request after receiving credentials reported %+v and ran %v", got, calls)
+	}
+	f.expectFile("/srv/acme/"+wantWaiting[0].Copy, "saved waiting.db", 0o660)
 }
 
 func (f *hardeningFixture) forbidRestoreWork() {
@@ -634,8 +932,47 @@ func TestPartialDatabaseRestoreRefusesSymlinkAndCollision(t *testing.T) {
 	}
 }
 
+func TestPartialDatabaseRestoreKeepsPublishedResultOnCleanupError(t *testing.T) {
+	// R-VWTC-NPNU
+	f := newHardeningFixture(t)
+	f.putBackupProgramStamps()
+	f.backupDirs("/srv/acme/data")
+	state := partialRestoreState()
+	state.Backup.Restores = []protocol.RestoreRequest{
+		{ID: "database_copy", Account: "acme", Kind: protocol.RestoreDatabase, Path: "data/app.db", AsOf: restoreAsOf},
+	}
+	calls := 0
+	var residue string
+	f.executeBackupFixtures(func(c linux.Command) (linux.Result, error) {
+		f.checkRestoreLitestream(c, state, "-timestamp")
+		calls++
+		output := strings.TrimPrefix(c.Args[7], f.root)
+		f.put(output, "published data", 0o600)
+		residue = filepath.Join(filepath.Dir(output), "residue")
+		f.put(residue+"/part", "staging residue", 0o600)
+		f.setMode(residue, 0)
+		t.Cleanup(func() {
+			if _, err := os.Lstat(f.path(residue)); !errors.Is(err, os.ErrNotExist) {
+				f.setMode(residue, 0o700)
+			}
+		})
+		return linux.Result{}, nil
+	})
+	_ = f.host.Backup(t.Context(), state)
+	f.expectMode(residue, 0)
+	f.host = linux.New(f.env)
+	f.backup(state)
+	want := []protocol.RestoreResult{
+		{ID: "database_copy", State: protocol.StepDone, Copy: "data/app.restored-20261118T120000Z.db"},
+	}
+	if got := f.backupReport(state).Restores; !slices.Equal(got, want) || calls != 1 {
+		t.Fatalf("published restore reports %+v and ran %d times", got, calls)
+	}
+	f.expectFile("/srv/acme/"+want[0].Copy, "published data", 0o660)
+}
+
 func TestPartialFilesRestoreEscapesPatternAndCopiesIntoHome(t *testing.T) {
-	// R-ZB34-W251
+	// R-VT5N-IEFR R-VRXR-4MP2 R-W90C-HF2S R-ZB34-W251
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := partialRestoreState()
@@ -648,7 +985,7 @@ func TestPartialFilesRestoreEscapesPatternAndCopiesIntoHome(t *testing.T) {
 	f.put("/home/alice/docs/a[1].txt", "live", 0o600)
 	copies := 0
 	f.executeBackupFixtures(func(c linux.Command) (linux.Result, error) {
-		f.checkRestoreRestic(c, state)
+		f.checkRestoreRestic(c, state, "acme")
 		args := c.Args[3:]
 		switch {
 		case slices.Equal(args, []string{"snapshots", "--host", "acme", "--json"}):
@@ -674,9 +1011,82 @@ func TestPartialFilesRestoreEscapesPatternAndCopiesIntoHome(t *testing.T) {
 	}
 	f.expectMode("/home/alice/restored", 0o700)
 	f.expectMode("/home/alice/restored/20261118T120000Z", 0o700)
+	if !slices.ContainsFunc(f.commands, func(command string) bool {
+		return strings.HasPrefix(command, "chown --no-dereference 22001:22001 "+f.path("/home/.accountsd-restore-")) && strings.HasSuffix(command, "/restored")
+	}) {
+		t.Fatal("new restored directory was not assigned to the user")
+	}
 	f.expectFile("/home/alice/"+want[0].Copy, "saved", 0o600)
 	f.expectFile("/home/alice/"+want[2].Copy, "saved", 0o600)
 	f.expectFile("/home/alice/docs/a[1].txt", "live", 0o600)
+	f.forbidRestoreWork()
+}
+
+func TestPartialFilesRestoreSkipsOccupiedTimestampDirectory(t *testing.T) {
+	// R-VT5N-IEFR
+	f := newHardeningFixture(t)
+	f.putBackupProgramStamps()
+	state := partialRestoreState()
+	state.Backup.Restores = []protocol.RestoreRequest{
+		{ID: "copy_files", Account: "acme", Kind: protocol.RestoreFiles, Path: "docs/a.txt", AsOf: restoreAsOf},
+		{ID: "copy_whole", Account: "acme", Kind: protocol.RestoreFiles, AsOf: restoreAsOf},
+		{ID: "missing_file", Account: "acme", Kind: protocol.RestoreFiles, Path: "docs/missing.txt", AsOf: restoreAsOf},
+	}
+	const occupied = "/srv/acme/restored/20261118T120000Z"
+	f.put(occupied+"/unrelated", "retained", 0o600)
+	var output []string
+	f.executeBackupFixtures(func(c linux.Command) (linux.Result, error) {
+		f.checkRestoreRestic(c, state, "acme")
+		args := c.Args[3:]
+		if slices.Equal(args, []string{"snapshots", "--host", "acme", "--json"}) {
+			restoreStdout(t, c, `[{"id":"wanted","time":"2026-11-18T06:00:00.9-06:00"}]`)
+			return linux.Result{}, nil
+		}
+		if len(args) < 4 || !slices.Equal(args[:3], []string{"restore", "wanted:" + f.path("/srv/acme"), "--target"}) ||
+			!strings.HasPrefix(args[3], f.path("/srv/.accountsd-restore-")) || filepath.Base(args[3]) != "r" {
+			t.Fatalf("restore args = %v", args)
+		}
+		restored := strings.TrimPrefix(args[3], f.root)
+		f.expectMode(filepath.Dir(restored), 0o700)
+		output = append(output, args[3])
+		switch len(output) {
+		case 1:
+			if !slices.Equal(args[4:], []string{"--include", "/docs/a.txt"}) {
+				t.Fatalf("include arguments = %v", args[4:])
+			}
+			f.put(restored+"/docs/a.txt", "saved", 0o600)
+			return linux.Result{}, nil
+		case 2:
+			if len(args) != 4 {
+				t.Fatalf("whole-folder restore arguments = %v", args)
+			}
+			f.put(restored+"/unpublished", "failed", 0o600)
+			return linux.Result{ExitCode: 1}, nil
+		default:
+			if !slices.Equal(args[4:], []string{"--include", "/docs/missing.txt"}) {
+				t.Fatalf("include arguments = %v", args[4:])
+			}
+			return linux.Result{}, nil
+		}
+	})
+	f.failedBackupPass(state)
+	got := f.backupReport(state).Restores
+	want := protocol.RestoreResult{ID: "copy_files", State: protocol.StepDone, Copy: "restored/20261118T120000Z-2/docs/a.txt"}
+	if len(got) != 3 || got[0] != want || got[1].ID != "copy_whole" || got[1].State != protocol.StepFailed || got[1].Copy != "" ||
+		!strings.Contains(got[1].Error, "exit status 1") || got[2].ID != "missing_file" || got[2].State != protocol.StepFailed ||
+		got[2].Copy != "" || got[2].Error == "" || len(output) != 3 {
+		t.Fatalf("partial files results = %+v, output directories = %v", got, output)
+	}
+	if want := fmt.Sprintf("chown --no-dereference %[1]d:%[1]d %s", state.Accounts[0].GID, output[0]); !slices.Contains(f.commands, want) {
+		t.Fatalf("missing account ownership command %q", want)
+	}
+	if mode := f.stat("/srv/acme/restored/20261118T120000Z-2").Mode(); mode.Perm() != 0o770 || mode&os.ModeSetgid == 0 {
+		t.Fatalf("account copy directory mode = %v, want 02770", mode)
+	}
+	f.expectFile("/srv/acme/"+want.Copy, "saved", 0o600)
+	f.expectFile(occupied+"/unrelated", "retained", 0o600)
+	f.expectAbsent(occupied + "/docs")
+	f.expectAbsent(occupied + "-3")
 	f.forbidRestoreWork()
 }
 
@@ -726,7 +1136,7 @@ func TestWholeRestoreStatePrunesAbsentPartialRequest(t *testing.T) {
 }
 
 func TestWholeRestoreRetriesTargetThatWasNeverMoved(t *testing.T) {
-	// R-V2UN-5ODG
+	// R-VVLG-9XX5
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := wholeRestoreState()

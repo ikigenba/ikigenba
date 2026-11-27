@@ -27,7 +27,7 @@ type memoryDisk struct {
 	seeds     map[string]Seed
 	databases map[string]map[string]*memoryDatabase
 	restored  map[string]struct{}
-	copies    map[copyScope]map[string]struct{}
+	copies    map[copyScope]*memoryCopies
 }
 
 type memoryDatabase struct {
@@ -41,6 +41,11 @@ type copyScope struct {
 	user    string
 }
 
+type memoryCopies struct {
+	paths           map[string]struct{}
+	fileDirectories map[string]struct{}
+}
+
 func (d *Disks) disk(volume string, owner *byte, restoreID string) *memoryDisk {
 	if volume == "" {
 		return nil
@@ -52,7 +57,7 @@ func (d *Disks) disk(volume string, owner *byte, restoreID string) *memoryDisk {
 		disk = &memoryDisk{
 			owner: owner, restoreID: restoreID, folders: make(map[string]struct{}), seeds: make(map[string]Seed),
 			databases: make(map[string]map[string]*memoryDatabase), restored: make(map[string]struct{}),
-			copies: make(map[copyScope]map[string]struct{}),
+			copies: make(map[copyScope]*memoryCopies),
 		}
 		d.volumes[volume] = disk
 	}

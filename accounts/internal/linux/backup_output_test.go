@@ -39,7 +39,7 @@ func TestBackupJSONProjectionKeepsSnapshotIDAtLimit(t *testing.T) {
 }
 
 func TestBackupJSONProjectionParsesPaddedTransactionNumbers(t *testing.T) {
-	// R-7U8Y-HYUT R-UFOJ-W1A9
+	// R-7U8Y-HYUT
 	zeros := strings.Repeat("0", MaxJournalLine/2)
 	var synced bool
 	writer := newBackupJSONArray([]string{"local_txid", "max_txid"}, func(row map[string]string) {

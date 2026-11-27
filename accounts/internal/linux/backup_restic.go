@@ -181,6 +181,7 @@ func (h *Host) Backup(ctx context.Context, s protocol.DesiredState) error {
 		}
 		return nil
 	}
+	ctx = withBackupDiagnosticRedactor(ctx, b)
 	h.lockedBackupRepos = make(map[string]error)
 	defer func() { h.lockedBackupRepos = nil }()
 	installErr := errors.Join(h.ensureRestic(ctx), h.privateBackupDir(BackupDir), h.privateBackupDir(ResticCache))

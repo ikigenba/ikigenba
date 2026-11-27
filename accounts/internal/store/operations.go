@@ -313,16 +313,20 @@ func FinishWithRemoved(ctx context.Context, s *Store, opID string, u Update) ([]
 		if err != nil {
 			return err
 		}
-		if err := applyHost(w, &h, *op, u, stamp); err != nil {
-			return err
-		}
+		var restoring bool
 		if op.Kind == OpReplace {
-			withheld, err := backupReplacementWithheld(w.query, op.ID)
+			_, restoring, err = replacementState(w.query, h)
 			if err != nil {
 				return err
 			}
-			if withheld {
-				return ErrConflict
+		}
+		version := h.Version
+		if err := applyHost(w, &h, *op, u, stamp); err != nil {
+			return err
+		}
+		if restoring && h.Version == version {
+			if _, err := w.bump(h.Name); err != nil {
+				return err
 			}
 		}
 		switch op.Kind {

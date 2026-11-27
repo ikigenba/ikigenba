@@ -214,6 +214,7 @@ var (
 	ErrConflict        = errors.New("record state conflict")
 	ErrBusy            = fmt.Errorf("host already has an operation: %w", ErrConflict)
 	ErrHostFailed      = fmt.Errorf("host failed: %w", ErrConflict)
+	ErrWithheld        = fmt.Errorf("host accounts are withheld: %w", ErrConflict)
 	ErrNotFailed       = fmt.Errorf("host has not failed: %w", ErrConflict)
 	ErrNotRunning      = fmt.Errorf("host is not running: %w", ErrConflict)
 	ErrNotStopped      = fmt.Errorf("host is not stopped: %w", ErrConflict)

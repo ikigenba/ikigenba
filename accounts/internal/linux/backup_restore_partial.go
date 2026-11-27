@@ -115,10 +115,12 @@ func (h *Host) runPartialRestore(ctx context.Context, s protocol.DesiredState, q
 		repo := h.resticCommand(s.Backup, credentials, protocol.FilesPrefix(q.Account), q.Account)
 		copyName, err = h.partialFilesRestore(ctx, repo, q, user, gid)
 	}
-	if err != nil {
-		result.Error = boundBackupError(err.Error())
-	} else {
+	// A copy has been published once it has a name. A subsequent cleanup
+	// error fails the pass without discarding the published copy's result.
+	if copyName != "" {
 		result.State, result.Copy = protocol.StepDone, copyName
+	} else if err != nil {
+		result.Error = boundBackupError(err.Error())
 	}
 	if errors.Is(err, machine.ErrNoSnapshot) {
 		err = nil
@@ -234,6 +236,11 @@ func (h *Host) partialFilesRestore(ctx context.Context, repo backupRestic, q pro
 	}
 	if err := h.requireRestoreEntry(restored, unix.S_IFDIR); err != nil {
 		return "", err
+	}
+	if q.Path != "" {
+		if _, err := h.restoreEntry(filepath.Join(restored, q.Path)); err != nil {
+			return "", err
+		}
 	}
 	if err := h.restoreDatabaseOwner(ctx, restored, permissions); err != nil {
 		return "", err

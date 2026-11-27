@@ -2,6 +2,11 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"math"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
@@ -168,6 +173,13 @@ func (s *Store) ReplaceHost(ctx context.Context, name, mode string, target Targe
 				return hostReplacement{}, ErrHostFailed
 			}
 		}
+		withheld, restoring, err := replacementState(w.query, h)
+		if err != nil {
+			return hostReplacement{}, err
+		}
+		if mode == ReplaceVolume && withheld {
+			return hostReplacement{}, ErrWithheld
+		}
 		if mode == ReplaceVolume && h.DataVolume == "" {
 			return hostReplacement{}, ErrNoDataVolume
 		}
@@ -177,9 +189,6 @@ func (s *Store) ReplaceHost(ctx context.Context, name, mode string, target Targe
 		if h.State != HostRunning && h.State != HostStopped && h.State != HostFailed {
 			return hostReplacement{}, ErrNotRunning
 		}
-		if err := guardFailedBackupReplacement(w.query, h); err != nil {
-			return hostReplacement{}, err
-		}
 		computed := Target{Type: h.Type, RootGB: h.RootGB, DataGB: h.DataGB}
 		assign(&computed.Type, target.Type)
 		assign(&computed.RootGB, target.RootGB)
@@ -188,6 +197,12 @@ func (s *Store) ReplaceHost(ctx context.Context, name, mode string, target Targe
 		cancelled, err := cancelRestores(w.query, h.Seq, "", stamp)
 		if err != nil {
 			return hostReplacement{}, err
+		}
+		if restoring {
+			h.Version, err = w.bump(h.Name)
+			if err != nil {
+				return hostReplacement{}, err
+			}
 		}
 		started, err := newHostBackupOp(s, w, h, Operation{Kind: OpReplace, Target: computed, Caller: c}, stamp)
 		if err != nil {
@@ -218,23 +233,42 @@ func getReplacement(q query, opID string) (r Replacement, err error) {
 	return r, err
 }
 
-func backupReplacementWithheld(q query, opID string) (bool, error) {
-	var withheld bool
-	err := q.row(`SELECT EXISTS (SELECT 1 FROM replacements
-		WHERE operation_id = ? AND mode = ? AND retired AND NOT admitted)`, opID, ReplaceBackup).Scan(&withheld)
-	return withheld, err
+func retiredReplacementKey(seq int64) string {
+	return "retired_replace:" + strconv.FormatInt(seq, 10)
 }
 
-func guardFailedBackupReplacement(q query, h Host) error {
-	if h.State != HostFailed || h.Replace != ReplaceBackup {
-		return nil
+// replacementState reads the last retirement for this host incarnation, which
+// survives operations that replace the host's current operation pointer.
+func replacementState(q query, h Host) (withheld, restoring bool, err error) {
+	err = q.row(`SELECT r.retired AND NOT r.admitted,
+			r.retired AND NOT r.admitted AND r.operation_id = ? AND r.mode = ? AND b.status IN ('running', 'failed')
+		FROM replacements r JOIN backup_operations b ON b.id = r.operation_id
+		WHERE r.operation_id = (SELECT printf('op_%016x', value) FROM counters WHERE name = ?)
+			AND b.host_seq = ? AND b.kind = 'replace'`, h.Operation, ReplaceBackup, retiredReplacementKey(h.Seq), h.Seq).
+		Scan(&withheld, &restoring)
+	if errors.Is(err, sql.ErrNoRows) {
+		err = nil
 	}
-	withheld, err := backupReplacementWithheld(q, h.Operation)
-	if err == nil && withheld {
-		// Keep the current restore visible until its retry reaches Admit.
-		return ErrBusy
+	return withheld, restoring, err
+}
+
+func rememberRetirement(q query, opID string) error {
+	// Operation IDs wrap eight random bytes. Store those same bits in the
+	// integer value of the host's private counter to preserve the schema.
+	id, err := strconv.ParseUint(strings.TrimPrefix(opID, "op_"), 16, 64)
+	if err != nil {
+		return err
 	}
-	return err
+	var seq int64
+	if err := q.row("SELECT host_seq FROM backup_operations WHERE id = ?", opID).Scan(&seq); err != nil {
+		return err
+	}
+	value := int64(id & math.MaxInt64)
+	if id > math.MaxInt64 {
+		value += math.MinInt64
+	}
+	return q.exec("INSERT INTO counters (name, value) VALUES (?, ?) ON CONFLICT (name) DO UPDATE SET value = excluded.value",
+		retiredReplacementKey(seq), value)
 }
 
 func (s *recordReader) Replacement(ctx context.Context, opID string) (Replacement, error) {
@@ -260,6 +294,11 @@ func (s *Store) markReplacement(ctx context.Context, opID, column string) error 
 		count, err := res.RowsAffected()
 		if err != nil || count == 0 {
 			return err
+		}
+		if column == "retired" {
+			if err := rememberRetirement(w.query, opID); err != nil {
+				return err
+			}
 		}
 		_, err = w.bump(op.Host)
 		return err

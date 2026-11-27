@@ -171,7 +171,7 @@ func (d *backupSecrecyDaemon) checkCredentials(current tools.HostRead, account s
 	}
 }
 
-// R-57GW-5DJ6 R-58OS-J59V
+// R-AG9R-XYHR R-KZBC-ZF9T
 func TestRunAWSBackupSecrecy(t *testing.T) {
 	const account = "acme"
 	d := newBackupSecrecyRun(t)

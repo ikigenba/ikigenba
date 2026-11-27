@@ -84,14 +84,21 @@ func (f *hardeningFixture) path(path string) string { return filepath.Join(f.roo
 
 func (f *hardeningFixture) put(path, contents string, mode fs.FileMode) {
 	f.t.Helper()
-	full := f.path(path)
-	if err := os.MkdirAll(filepath.Dir(full), 0o700); err != nil {
+	root, err := os.OpenRoot(f.root)
+	if err != nil {
 		f.t.Fatal(err)
 	}
-	if err := os.WriteFile(full, []byte(contents), mode); err != nil {
+	defer func() { _ = root.Close() }()
+	name := strings.TrimPrefix(path, "/")
+	if err := root.MkdirAll(filepath.Dir(name), 0o700); err != nil {
 		f.t.Fatal(err)
 	}
-	f.setMode(path, mode)
+	if err := root.WriteFile(name, []byte(contents), mode); err != nil {
+		f.t.Fatal(err)
+	}
+	if err := root.Chmod(name, mode); err != nil {
+		f.t.Fatal(err)
+	}
 }
 
 func (f *hardeningFixture) setMode(path string, mode fs.FileMode) {

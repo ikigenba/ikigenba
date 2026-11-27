@@ -25,11 +25,15 @@ func (h *Host) restoreDatabase(ctx context.Context, b *protocol.Backup, credenti
 	}
 	_ = dir.Close()
 	config := filepath.Join(work, "litestream.yml")
-	if _, err := h.writeAtomic(config, backupLitestreamYAML(b, slug, []string{path}), 0o600); err != nil {
+	temp, err := h.stageFile(config, backupLitestreamYAML(b, slug, []string{path}), 0o600)
+	if err != nil {
 		return err
 	}
+	if err := os.Rename(temp, h.path(config)); err != nil {
+		return errors.Join(hostError(config, err), os.Remove(temp))
+	}
 	defer func() {
-		if err := os.Remove(h.path(config)); err != nil {
+		if err := os.Remove(h.path(config)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			result = errors.Join(result, hostError(config, err))
 		}
 	}()

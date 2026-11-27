@@ -99,6 +99,32 @@ func TestDeleteHostChoice(t *testing.T) {
 	refusal(t, f.call(tools.ToolDeleteHost, tools.DeleteHostArgs{Host: removed.Name}), tools.NoHost)
 }
 
+// R-4KP7-WV9U
+func TestDeleteHostRestoreVersion(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		delta int64
+	}{
+		{"without restore", 0},
+		{"with failed whole restore", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := setup(t)
+			f.serveLoopback()
+			h, _ := f.seedHost(true)
+			if tc.delta != 0 {
+				failRetiredReplacement(t, f, h.Name)
+			}
+			before := readHost(t, f, h.Name)
+			result := answer[tools.HostChange](t, f.call(tools.ToolDeleteHost, tools.DeleteHostArgs{Host: h.Name}))
+			if after := readHost(t, f, h.Name); after.Version != before.Version+tc.delta ||
+				after.Operation == nil || after.Operation.Operation != result.Operation {
+				t.Fatalf("delete %+v changed host from %+v to %+v, want version delta %d", result, before, after, tc.delta)
+			}
+		})
+	}
+}
+
 func assertDeleteHostChange(t *testing.T, f *fixture, got tools.HostChange, host, choice string) {
 	t.Helper()
 	if got.Host != host || got.State != store.HostDeleting || got.OnDelete != choice || got.Operation == "" {

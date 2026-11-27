@@ -226,7 +226,7 @@ func TestDesiredBanEditsAndReportPurge(t *testing.T) {
 	eq(t, value(t, result(s.Desired(ctx, h.Name))), want)
 }
 
-// R-ZIHY-2QU5
+// R-PKAD-JM2E
 func TestDesiredOrdersAccountsUsersAndKeys(t *testing.T) {
 	_, s, _ := fixture(t)
 	h := runningHost(t, s, "host")

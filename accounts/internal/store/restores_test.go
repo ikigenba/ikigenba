@@ -2,11 +2,13 @@ package store_test
 
 import (
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	accounts "github.com/ikigenba/ikigenba/accounts"
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 	"github.com/ikigenba/ikigenba/accounts/internal/valid"
@@ -20,7 +22,7 @@ func requestRestore(t *testing.T, s *store.Store, r store.RestoreRequest) (store
 	return restore, operation
 }
 
-// R-6OGS-YO6X R-GY4B-ELKT R-5NVT-HJY3
+// R-6OGS-YO6X R-FNP2-UKNY R-5NVT-HJY3
 func TestRestoreChecksArgumentsAndTheLatestReportBeforeRecording(t *testing.T) {
 	_, s, now := fixture(t)
 	h, other := readyHost(t, s), readyHost(t, s)
@@ -88,7 +90,7 @@ func TestRestoreChecksArgumentsAndTheLatestReportBeforeRecording(t *testing.T) {
 	checkErr(t, s.Finish(ctx, stopping.ID, store.Update{}), nil)
 }
 
-// R-6QWL-Q7OB R-6BLI-POCE R-W9TP-MEN4 R-ZEU8-XFM2 R-ZJPU-GIKU R-4X21-2LMT
+// R-6QWL-Q7OB R-6BLI-POCE R-W9TP-MEN4 R-ZEU8-XFM2 R-PMQ6-B5JS R-OYDR-9HO5
 // R-4VU4-OTW4 R-535I-ZGCA
 func TestRestoreResultsStayWithTheirHostAndLeavePendingDesired(t *testing.T) {
 	_, s, now := fixture(t)
@@ -160,6 +162,145 @@ func TestRestoreResultsStayWithTheirHostAndLeavePendingDesired(t *testing.T) {
 	direct.State = protocol.StepFailed
 	eq(t, value(t, result(s.Restore(ctx, direct.ID))), direct)
 	eq(t, value(t, result(s.Operation(ctx, directOp.ID))).Status, store.OpFailed)
+}
+
+// R-FNP2-UKNY R-PV9G-ZJQN
+func TestUnfinishedRestoresBoundCancellation(t *testing.T) {
+	for _, cancel := range []string{"remove account", "replace host"} {
+		t.Run(cancel, func(t *testing.T) {
+			_, s, now := fixture(t)
+			h := readyHost(t, s)
+			acme := activeAccount(t, s, "acme", h.Name)
+			at := now.Add(-time.Minute)
+			fact := protocol.AccountBackup{Account: acme.Slug, Snapshots: []int64{at.Unix()}}
+			recordBackup(t, s, h, *now, fact)
+			req := store.RestoreRequest{Account: acme.Slug, Kind: protocol.RestoreFiles, AsOf: at}
+			ids := make([]string, 0, valid.MaxRestoresPerHost)
+			for range valid.MaxRestoresPerHost {
+				r, op := requestRestore(t, s, req)
+				ids = append(ids, op.ID)
+				_, err := s.RecordReport(ctx, h.Name, protocol.Report{
+					Backups:  []protocol.AccountBackup{fact},
+					Restores: []protocol.RestoreResult{{ID: r.ID, State: protocol.StepDone, Copy: "work/copy"}},
+				}, *now)
+				checkErr(t, err, nil)
+				eq(t, value(t, result(s.Restore(ctx, r.ID))).State, protocol.StepDone)
+			}
+			desired := value(t, result(s.Desired(ctx, h.Name)))
+			eq(t, desired.Backup.Restores, []protocol.RestoreRequest{})
+			observe2(s.RequestRestore(ctx, req, caller)).assertZero(t, store.ErrTooManyRestores)
+			eq(t, value(t, result(s.Desired(ctx, h.Name))), desired)
+			var cancelled []string
+			if cancel == "remove account" {
+				var err error
+				_, _, cancelled, err = s.RemoveAccount(ctx, acme.Slug, caller)
+				checkErr(t, err, nil)
+			} else {
+				_, _, cancelled = replaceHost(t, s, h.Name, store.ReplaceBackup, store.Target{})
+			}
+			eq(t, cancelled, ids)
+			for _, id := range cancelled {
+				eq(t, value(t, result(s.Operation(ctx, id))).Status, store.OpCancelled)
+				eq(t, value(t, result(s.Restore(ctx, id))).State, protocol.StepDone)
+			}
+		})
+	}
+}
+
+// R-FNP2-UKNY
+func TestPendingRestoresCountAfterOperationsFinish(t *testing.T) {
+	_, s, now := fixture(t)
+	h := readyHost(t, s)
+	acme := activeAccount(t, s, "acme", h.Name)
+	at := now.Add(-time.Minute)
+	recordBackup(t, s, h, *now, protocol.AccountBackup{Account: acme.Slug, Snapshots: []int64{at.Unix()}})
+	req := store.RestoreRequest{Account: acme.Slug, Kind: protocol.RestoreFiles, AsOf: at}
+	for range valid.MaxRestoresPerHost {
+		r, op := requestRestore(t, s, req)
+		checkErr(t, s.Finish(ctx, op.ID, store.Update{}), nil)
+		eq(t, value(t, result(s.Restore(ctx, r.ID))), r)
+	}
+	desired := value(t, result(s.Desired(ctx, h.Name)))
+	eq(t, len(desired.Backup.Restores), valid.MaxRestoresPerHost)
+	observe2(s.RequestRestore(ctx, req, caller)).assertZero(t, store.ErrTooManyRestores)
+	eq(t, value(t, result(s.Desired(ctx, h.Name))), desired)
+}
+
+// R-FNP2-UKNY
+func TestRestoreCapCountsPendingAndRunningTogether(t *testing.T) {
+	_, s, now := fixture(t)
+	h := readyHost(t, s)
+	acme := activeAccount(t, s, "acme", h.Name)
+	at := now.Add(-time.Minute)
+	fact := protocol.AccountBackup{Account: acme.Slug, Snapshots: []int64{at.Unix()}}
+	recordBackup(t, s, h, *now, fact)
+	req := store.RestoreRequest{Account: acme.Slug, Kind: protocol.RestoreFiles, AsOf: at}
+	pending := valid.MaxRestoresPerHost / 2
+	var completed []protocol.RestoreResult
+	for i := range valid.MaxRestoresPerHost {
+		r, op := requestRestore(t, s, req)
+		if i < pending {
+			checkErr(t, s.Finish(ctx, op.ID, store.Update{}), nil)
+			continue
+		}
+		completed = append(completed, protocol.RestoreResult{ID: r.ID, State: protocol.StepDone, Copy: "work/copy"})
+	}
+	_, err := s.RecordReport(ctx, h.Name, protocol.Report{Backups: []protocol.AccountBackup{fact}, Restores: completed}, *now)
+	checkErr(t, err, nil)
+	desired := value(t, result(s.Desired(ctx, h.Name)))
+	eq(t, len(desired.Backup.Restores), pending)
+	observe2(s.RequestRestore(ctx, req, caller)).assertZero(t, store.ErrTooManyRestores)
+	eq(t, value(t, result(s.Desired(ctx, h.Name))), desired)
+
+	checkErr(t, s.Finish(ctx, completed[0].ID, store.Update{}), nil)
+	r, _ := requestRestore(t, s, req)
+	eq(t, value(t, result(s.Restore(ctx, r.ID))), r)
+	observe2(s.RequestRestore(ctx, req, caller)).assertZero(t, store.ErrTooManyRestores)
+}
+
+// R-NME6-5759
+func TestRemoveAccountCancelsRunningRestoresInIDOrder(t *testing.T) {
+	now := baseTime
+	rand := counterRandom(0)
+	_, s := open(t, filepath.Join(t.TempDir(), "record.db"), accounts.Migrations(),
+		store.Config{Now: func() time.Time { return now }, Rand: &rand})
+	h := readyHost(t, s)
+	acme := activeAccount(t, s, "acme", h.Name)
+	beta := activeAccount(t, s, "beta", h.Name)
+	at := now.Add(-time.Minute)
+	recordBackup(t, s, h, now, protocol.AccountBackup{Account: acme.Slug, Snapshots: []int64{at.Unix()}},
+		protocol.AccountBackup{Account: beta.Slug, Snapshots: []int64{at.Unix()}})
+	req := store.RestoreRequest{Account: beta.Slug, Kind: protocol.RestoreFiles, AsOf: at}
+	other, otherOp := requestRestore(t, s, req)
+	req.Account = acme.Slug
+	settled, settledOp := requestRestore(t, s, req)
+	checkErr(t, s.Finish(ctx, settledOp.ID, store.Update{}), nil)
+	rand = 0xaf
+	first, firstOp := requestRestore(t, s, req)
+	rand = 0x9f
+	second, secondOp := requestRestore(t, s, req)
+	now = now.Add(time.Minute)
+	_, _, ids, err := s.RemoveAccount(ctx, acme.Slug, caller)
+	checkErr(t, err, nil)
+	eq(t, ids, []string{secondOp.ID, firstOp.ID})
+	for _, r := range []store.Restore{first, second, settled} {
+		r.State = protocol.StepFailed
+		eq(t, value(t, result(s.Restore(ctx, r.ID))), r)
+	}
+	eq(t, value(t, result(s.Operation(ctx, settledOp.ID))).Status, store.OpDone)
+	for _, op := range []store.Operation{firstOp, secondOp} {
+		op.Status, op.Finished = store.OpCancelled, now.UTC().Truncate(time.Second)
+		eq(t, value(t, result(s.Operation(ctx, op.ID))), op)
+	}
+	d := value(t, result(s.Desired(ctx, h.Name)))
+	eq(t, d.Backup.Restores, []protocol.RestoreRequest{{
+		ID: other.ID, Account: other.Account, Kind: other.Kind, AsOf: other.AsOf,
+	}})
+	eq(t, value(t, result(s.Operation(ctx, otherOp.ID))), otherOp)
+	gamma := activeAccount(t, s, "gamma", h.Name)
+	_, _, ids, err = s.RemoveAccount(ctx, gamma.Slug, caller)
+	checkErr(t, err, nil)
+	eq(t, ids, []string(nil))
 }
 
 // R-WB1M-06DT

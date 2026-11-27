@@ -36,17 +36,15 @@ func (s *recordReader) Desired(ctx context.Context, host string) (protocol.Desir
 		if current.Kind == OpClose && current.Status == OpRunning {
 			d.Backup.Close = current.ID
 		}
-		if h.Replace != "" {
-			replacement, err := getReplacement(q, current.ID)
-			if err != nil {
-				return protocol.DesiredState{}, err
+		withheld, restoring, err := replacementState(q, h)
+		if err != nil {
+			return protocol.DesiredState{}, err
+		}
+		if withheld {
+			if restoring {
+				d.Backup.Restore, err = desiredHostRestore(q, h, current.ID)
 			}
-			if replacement.Retired && !replacement.Admitted {
-				if replacement.Mode == ReplaceBackup {
-					d.Backup.Restore, err = desiredHostRestore(q, h, current.ID)
-				}
-				return d, err
-			}
+			return d, err
 		}
 		if err := desiredAccountsAndUsers(q, h, &d); err != nil {
 			return protocol.DesiredState{}, err

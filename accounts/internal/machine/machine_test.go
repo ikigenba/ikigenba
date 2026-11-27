@@ -307,13 +307,18 @@ func TestMemorySeeds(t *testing.T) {
 }
 
 func TestMemoryInspect(t *testing.T) {
-	// R-BE5O-M23X R-YP4Y-06SJ
-	m := fixedMachine()
+	// R-BE5O-M23X R-WYM8-ILND
+	now := time.Unix(48, 1234).In(time.FixedZone("test", -3600))
+	m := backupMachine(&now, nil, nil)
 	s := protocol.DesiredState{Host: "host01", Domain: "hosts.example.com", RootGB: 20, DataGB: 30, DataVolume: "vol-00000001", Accounts: []protocol.Account{
 		{Slug: "zebra", GID: 20000, State: protocol.AccountActive},
 		{Slug: "alpaca", GID: 20001, State: protocol.AccountActive},
 	}}
 	apply(t, m, s)
+	now = now.Add(time.Minute)
+	if got := inspect(t, m, s); len(got.Allowlist) != 0 || len(got.Bans) != 0 || got.BanTotal != 0 {
+		t.Fatalf("initial allowlist or bans: %+v", got)
+	}
 	m.Ban("192.0.2.77")
 	m.Ban("192.0.2.7")
 	s.Allowlist = []string{"2001:db8::1", "198.51.100.0/24"}
@@ -325,19 +330,22 @@ func TestMemoryInspect(t *testing.T) {
 	want := protocol.Report{
 		OS: machine.MemoryOS, Kernel: machine.MemoryKernel, Booted: time.Unix(48, 0).UTC(),
 		MemoryUsed: machine.MemoryUsed, MemoryAvailable: machine.MemoryAvailable,
-		Root:   protocol.Disk{UsedBytes: machine.MemoryDiskUsed, SizeBytes: 20 << 30, InodesUsed: machine.MemoryInodesUsed, InodesTotal: machine.MemoryInodesTotal},
-		Data:   protocol.Disk{UsedBytes: machine.MemoryDiskUsed, SizeBytes: 30 << 30, InodesUsed: machine.MemoryInodesUsed, InodesTotal: machine.MemoryInodesTotal},
+		Root:   protocol.Disk{UsedBytes: machine.MemoryDiskUsed, SizeBytes: 21 << 30, InodesUsed: machine.MemoryInodesUsed, InodesTotal: machine.MemoryInodesTotal},
+		Data:   protocol.Disk{UsedBytes: machine.MemoryDiskUsed, SizeBytes: 31 << 30, InodesUsed: machine.MemoryInodesUsed, InodesTotal: machine.MemoryInodesTotal},
 		Slices: []protocol.Slice{{Account: "alpaca"}, {Account: "zebra"}},
 		Bans: []protocol.Ban{
-			{Address: "192.0.2.7", Banned: time.Unix(48, 0).UTC(), Expires: time.Unix(648, 0).UTC()},
-			{Address: "192.0.2.77", Banned: time.Unix(48, 0).UTC(), Expires: time.Unix(648, 0).UTC()},
+			{Address: "192.0.2.7", Banned: time.Unix(108, 0).UTC(), Expires: time.Unix(708, 0).UTC()},
+			{Address: "192.0.2.77", Banned: time.Unix(108, 0).UTC(), Expires: time.Unix(708, 0).UTC()},
 		},
 		BanTotal:  2,
 		Allowlist: []string{"198.51.100.0/24", "2001:db8::1"},
 		Hostname:  "host01.hosts.example.com",
-		Backups:   []protocol.AccountBackup{{Account: "alpaca"}, {Account: "zebra"}},
+		Backups:   []protocol.AccountBackup{{Account: "alpaca"}, {Account: "beaver"}},
 	}
 	s.Domain = ""
+	s.RootGB, s.DataGB = 21, 31
+	s.Accounts[0].State = protocol.AccountRemoved
+	s.Accounts = append(s.Accounts, protocol.Account{Slug: "beaver", State: protocol.AccountActive})
 	for _, volume := range []string{s.DataVolume, ""} {
 		s.DataVolume = volume
 		if volume == "" {

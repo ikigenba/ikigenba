@@ -269,7 +269,11 @@ func (h *Host) run(ctx context.Context, program string, args ...string) (Result,
 
 func (h *Host) query(ctx context.Context, c Command, allowed ...int) (Result, error) {
 	res, err := h.env.Execute(ctx, c)
-	res, err = redactProcessCredentials(c.Env, res, err)
+	if redact := backupDiagnosticRedactor(ctx); redact != nil {
+		res.Stdout = []byte(redact.Replace(string(res.Stdout)))
+		res.Stderr = []byte(redact.Replace(string(res.Stderr)))
+		err = redactBackupDiagnostic(redact, err)
+	}
 	if err == nil {
 		if len(allowed) == 0 {
 			return res, nil
@@ -287,33 +291,45 @@ func (h *Host) query(ctx context.Context, c Command, allowed ...int) (Result, er
 	return res, &CommandError{Label: label, Result: res, Err: err}
 }
 
-func redactProcessCredentials(env []string, result Result, err error) (Result, error) {
+type backupDiagnosticKey struct{}
+
+// Use every credential in the pass when an external error names a credential
+// other than the one passed to the failing command.
+func withBackupDiagnosticRedactor(ctx context.Context, backup *protocol.Backup) context.Context {
 	var secrets []string
-	for _, variable := range env {
-		name, value, _ := strings.Cut(variable, "=")
-		switch name {
-		case "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN":
+	add := func(c protocol.Credentials) {
+		for _, value := range []string{c.AccessKeyID, c.SecretAccessKey, c.SessionToken} {
 			if value != "" {
 				secrets = append(secrets, value)
 			}
 		}
 	}
+	add(backup.Host)
+	for _, account := range backup.Accounts {
+		add(account.Credentials)
+	}
 	if len(secrets) == 0 {
-		return result, err
+		return ctx
 	}
 	slices.SortFunc(secrets, func(a, b string) int { return len(b) - len(a) })
 	pairs := make([]string, 0, 2*len(secrets))
 	for _, value := range secrets {
 		pairs = append(pairs, value, "***")
 	}
-	redact := strings.NewReplacer(pairs...)
-	result.Stdout = []byte(redact.Replace(string(result.Stdout)))
-	result.Stderr = []byte(redact.Replace(string(result.Stderr)))
-	if err != nil {
+	return context.WithValue(ctx, backupDiagnosticKey{}, strings.NewReplacer(pairs...))
+}
+
+func backupDiagnosticRedactor(ctx context.Context) *strings.Replacer {
+	redact, _ := ctx.Value(backupDiagnosticKey{}).(*strings.Replacer)
+	return redact
+}
+
+func redactBackupDiagnostic(redact *strings.Replacer, err error) error {
+	if redact != nil && err != nil {
 		message := err.Error()
 		if cleaned := redact.Replace(message); cleaned != message {
-			err = errors.New(cleaned)
+			return errors.New(cleaned)
 		}
 	}
-	return result, err
+	return err
 }

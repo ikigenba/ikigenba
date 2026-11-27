@@ -247,11 +247,11 @@ func (h *Host) restoreWholeAccount(ctx context.Context, b *protocol.Backup, acco
 		}
 	}
 
-	manifest, err := h.restoreManifest(ctx, repo, snapshot, account.Slug)
-	if err != nil {
-		return err
-	}
 	if !slices.Contains(attempt.Moved, targets[0].path) {
+		manifest, err := h.restoreManifest(ctx, repo, snapshot, account.Slug)
+		if err != nil {
+			return err
+		}
 		if err := h.restoreWholeDatabases(ctx, b, account, credentials, manifest, targets[0].work); err != nil {
 			return err
 		}

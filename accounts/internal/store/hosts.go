@@ -278,8 +278,15 @@ func (s *Store) startHostOp(ctx context.Context, name, kind string, target Targe
 			if !keepData && !lost && h.Closed.IsZero() {
 				return hostOp{}, ErrNotClosed
 			}
-			if err := guardFailedBackupReplacement(w.query, h); err != nil {
+			_, restoring, err := replacementState(w.query, h)
+			if err != nil {
 				return hostOp{}, err
+			}
+			if restoring {
+				h.Version, err = w.bump(h.Name)
+				if err != nil {
+					return hostOp{}, err
+				}
 			}
 		}
 		stamp := s.stamp()

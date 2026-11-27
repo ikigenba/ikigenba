@@ -117,6 +117,9 @@ func (a *Access) Issue(ctx context.Context, host, hostPrefix string, accounts []
 	}
 
 	id := a.prepare(now, active)
+	if len(active) == 0 {
+		return protocol.Credentials{}, results, nil
+	}
 	defer a.release(active)
 	if id.partition == "" {
 		var err error

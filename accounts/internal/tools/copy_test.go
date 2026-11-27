@@ -22,7 +22,7 @@ func TestFirstLine(t *testing.T) {
 	}
 }
 
-// R-Y3NM-ABQI R-YH2I-HSW5 R-ZB0K-I008 R-ZC8G-VRQX R-CSDA-A2TO R-CPXH-IJCA R-0VXT-EZQU R-YFUM-415G R-0UPX-1805 R-HIWJ-5E6D R-HLCB-WXNR R-HHOM-RMFO
+// R-Y3NM-ABQI R-YH2I-HSW5 R-ZB0K-I008 R-ZC8G-VRQX R-CSDA-A2TO R-CPXH-IJCA R-0VXT-EZQU R-YFUM-415G R-0UPX-1805 R-HIWJ-5E6D R-HLCB-WXNR R-HHOM-RMFO R-4JHB-J3J5
 func TestCopyAndTimeout(t *testing.T) {
 	const (
 		_ = tools.NotConfigured
@@ -66,6 +66,7 @@ func TestCopyAndTimeout(t *testing.T) {
 		_ = tools.NoKeptVolume
 		_ = tools.VolumeDeleting
 		_ = tools.HostNotClosed
+		_ = tools.HostWithheld
 		_ = tools.NoDataVolume
 		_ = tools.KeepsVolumeSize
 		_ = tools.BadReplace
@@ -102,7 +103,7 @@ func TestCopyAndTimeout(t *testing.T) {
 		tools.HostGone, tools.AccountHasUsers, tools.AccountRemoving, tools.AccountFull,
 		tools.TooManyKeys, tools.GrowLimit, tools.UserNotLocked, tools.UserRemoving,
 		tools.NameHasRecord, tools.CloudFailed, tools.InvalidAddress, tools.PrefixTooWide, tools.TooManyUnbans, tools.AllowlistFull, tools.NoLink, tools.NoInvite, tools.TooManyInvites, tools.NoKeptVolume, tools.VolumeDeleting,
-		tools.HostNotClosed, tools.NoDataVolume, tools.KeepsVolumeSize, tools.BadReplace, tools.InvalidPath,
+		tools.HostNotClosed, tools.HostWithheld, tools.NoDataVolume, tools.KeepsVolumeSize, tools.BadReplace, tools.InvalidPath,
 		tools.BadTime, tools.AccountNotActive, tools.NoDatabase, tools.NotRestorable, tools.NoSnapshot,
 		tools.TooManyRestores, tools.AccountExists, tools.NameHasBackups, tools.BackupsDeleting, tools.NoAddress,
 	}

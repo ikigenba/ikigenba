@@ -2,10 +2,13 @@ package store_test
 
 import (
 	"encoding/json"
+	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	accounts "github.com/ikigenba/ikigenba/accounts"
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 	"github.com/ikigenba/ikigenba/accounts/internal/valid"
@@ -41,8 +44,8 @@ func replaceHost(t *testing.T, s *store.Store, host, mode string, target store.T
 	return h, op, cancelled
 }
 
-// R-5YUW-XHMC R-ZCEG-5W4O R-5NVT-HJY3 R-ZJPU-GIKU R-ZHA1-OZ3G
-// R-5RJI-MV66 R-GT8P-VIM1 R-6EPL-WI9D R-4UM8-B25F
+// R-5YUW-XHMC R-ZCEG-5W4O R-5NVT-HJY3 R-PMQ6-B5JS R-PU1K-LRZY
+// R-5RJI-MV66 R-GT8P-VIM1 R-6EPL-WI9D R-OVXY-HY6R
 func TestCloseRecordsStepsAndKeepsLockThroughFailureRetryAndFinish(t *testing.T) {
 	_, s, now := fixture(t)
 	h := readyHost(t, s)
@@ -82,6 +85,7 @@ func TestCloseRecordsStepsAndKeepsLockThroughFailureRetryAndFinish(t *testing.T)
 	eq(t, value(t, result(s.BackupSteps(ctx, placing.ID))), []store.BackupStep{})
 	observe(s.BackupSteps(ctx, "missing")).assertZero(t, store.ErrNotFound)
 	observe2(s.CloseHost(ctx, h.Name, caller)).assertZero(t, store.ErrBusy)
+	observe3(s.ReplaceHost(ctx, h.Name, store.ReplaceBackup, store.Target{}, caller)).assertZero(t, store.ErrBusy)
 	observe2(s.StartHostOp(ctx, h.Name, store.OpStop, store.Target{}, caller)).assertZero(t, store.ErrBusy)
 	observe2(s.StartHostOp(ctx, h.Name, store.OpDelete, store.Target{}, caller)).assertZero(t, store.ErrUnreachable)
 	observe2(s.DeleteHost(ctx, h.Name, false, false, caller)).assertZero(t, store.ErrBusy)
@@ -104,9 +108,8 @@ func TestCloseRecordsStepsAndKeepsLockThroughFailureRetryAndFinish(t *testing.T)
 	steps[1] = store.BackupStep{Account: "acme", State: protocol.StepFailed, At: failedAt.UTC().Truncate(time.Second), Code: failure.Code, Reason: "refused"}
 	eq(t, value(t, result(s.BackupSteps(ctx, op.ID))), steps)
 	checkErr(t, s.Fail(ctx, op.ID, "refused"), nil)
-	afterFail := value(t, result(s.Desired(ctx, h.Name)))
-	eq(t, afterFail.Backup.Close, "")
-	eq(t, afterFail.Users, overlay.Users)
+	overlay.Backup.Close = ""
+	eq(t, value(t, result(s.Desired(ctx, h.Name))), overlay)
 	observe2(s.CloseHost(ctx, h.Name, caller)).assertZero(t, store.ErrHostFailed)
 	observe2(s.RetryHost(ctx, "", identity.Caller{})).assertZero(t, store.ErrNotFound)
 	failedHost := value(t, result(s.Host(ctx, h.Name)))
@@ -211,7 +214,7 @@ func TestOpenCancelsRunningCloseOrClearsClosedTime(t *testing.T) {
 	checkErr(t, s.Finish(ctx, op.ID, store.Update{}), nil)
 }
 
-// R-ZDMC-JNVD R-ZHA1-OZ3G R-6BLI-POCE
+// R-ZDMC-JNVD R-PU1K-LRZY R-6BLI-POCE
 func TestReportSettlesOnlyEligibleBackupStepsAndBoundsTheReason(t *testing.T) {
 	_, s, now := fixture(t)
 	h := readyHost(t, s)
@@ -253,9 +256,9 @@ func TestReportSettlesOnlyEligibleBackupStepsAndBoundsTheReason(t *testing.T) {
 	eq(t, value(t, result(s.BackupSteps(ctx, closeOp.ID))), steps)
 }
 
-// R-666B-842I R-67E7-LVT7 R-68M3-ZNJW R-ZG25-B7CR R-5SRF-0MWV
+// R-666B-842I R-67E7-LVT7 R-68M3-ZNJW R-PHUK-S2L0 R-5SRF-0MWV
 // R-4VU4-OTW4 R-6B1W-R71A R-W1AE-Y0G9 R-W2IB-BS6Y R-VSR4-9M9E R-56T8-4RKD
-// R-4X21-2LMT R-4UM8-B25F R-5RJI-MV66
+// R-OYDR-9HO5 R-OVXY-HY6R R-5RJI-MV66 R-SWN0-F5KI R-PNY2-OXAH
 func TestReplacingKeepsOldResourcesAndWithholdsUntilAdmission(t *testing.T) {
 	_, s, now := fixture(t)
 	h := readyHost(t, s)
@@ -278,7 +281,9 @@ func TestReplacingKeepsOldResourcesAndWithholdsUntilAdmission(t *testing.T) {
 
 	observe3(s.ReplaceHost(ctx, "missing", store.ReplaceBackup, store.Target{}, caller)).assertZero(t, store.ErrNotFound)
 	observe3(s.ReplaceHost(ctx, h.Name, "unknown", store.Target{}, caller)).assertZero(t, store.ErrUnreachable)
-	observe3(s.ReplaceHost(ctx, h.Name, store.ReplaceBackup, store.Target{}, identity.Caller{})).assertZero(t, store.ErrUnreachable)
+	for _, invalid := range []identity.Caller{{}, {UserID: strings.Repeat("x", valid.MaxUserIDBytes+1)}} {
+		observe3(s.ReplaceHost(ctx, h.Name, store.ReplaceBackup, store.Target{}, invalid)).assertZero(t, store.ErrUnreachable)
+	}
 	observe3(s.ReplaceHost(ctx, h.Name, store.ReplaceVolume, store.Target{DataGB: 1}, caller)).assertZero(t, store.ErrUnreachable)
 	observe(s.Replacement(ctx, oldOperation)).assertZero(t, store.ErrNotFound)
 	checkErr(t, s.Retire(ctx, oldOperation), store.ErrNotFound)
@@ -347,7 +352,9 @@ func TestReplacingKeepsOldResourcesAndWithholdsUntilAdmission(t *testing.T) {
 	eq(t, failed.State, store.HostFailed)
 	eq(t, failed.Reason, "restore failed")
 	eq(t, failed.Replace, store.ReplaceBackup)
-	eq(t, value(t, result(s.Desired(ctx, h.Name))).Backup.Restore, restore)
+	restoringDesired := withheld
+	restoringDesired.Version, restoringDesired.DataVolume, restoringDesired.DataGB = restoring.Version, restoring.DataVolume, restoring.DataGB
+	eq(t, value(t, result(s.Desired(ctx, h.Name))), restoringDesired)
 	checkErr(t, s.Admit(ctx, op.ID), store.ErrConflict)
 	checkErr(t, s.Retire(ctx, op.ID), store.ErrConflict)
 	resumed, retry, err := s.RetryHost(ctx, h.Name, caller)
@@ -355,6 +362,8 @@ func TestReplacingKeepsOldResourcesAndWithholdsUntilAdmission(t *testing.T) {
 	eq(t, retry.Step, checkpoint.Step)
 	eq(t, retry.Generation, checkpoint.Generation)
 	eq(t, resumed.State, store.HostReplacing)
+	eq(t, resumed.Version, failed.Version)
+	eq(t, value(t, result(s.Desired(ctx, h.Name))), restoringDesired)
 	checkErr(t, s.Admit(ctx, op.ID), nil)
 	wantReplacement.Admitted = true
 	eq(t, value(t, result(s.Replacement(ctx, op.ID))), wantReplacement)
@@ -371,6 +380,7 @@ func TestReplacingKeepsOldResourcesAndWithholdsUntilAdmission(t *testing.T) {
 	eq(t, running.Replace, "")
 	eq(t, running.Closed, h.Closed)
 	eq(t, running.RunningSince, now.UTC().Truncate(time.Second))
+	eq(t, value(t, result(s.Desired(ctx, h.Name))), admitted)
 
 	_, volumeOp, _ := replaceHost(t, s, h.Name, store.ReplaceVolume, store.Target{})
 	checkErr(t, s.Retire(ctx, volumeOp.ID), nil)
@@ -383,9 +393,9 @@ func TestReplacingKeepsOldResourcesAndWithholdsUntilAdmission(t *testing.T) {
 	eq(t, value(t, result(s.LastKeptVolumes(ctx, 2))), []store.KeptVolume{kept})
 }
 
-// R-4S6F-JIO1
+// R-PNY2-OXAH R-4QYJ-5QXC R-PQDV-GGRV R-PSTO-8099
 func TestBackupHostGuardsForResourcesAndDestructiveDelete(t *testing.T) {
-	_, s, _ := fixture(t)
+	_, s, now := fixture(t)
 	unallocated, createOp := create(t, s)
 	checkErr(t, s.Fail(ctx, createOp.ID, "allocation failed"), nil)
 	observe3(s.ReplaceHost(ctx, unallocated.Name, store.ReplaceVolume, store.Target{}, caller)).assertZero(t, store.ErrNoDataVolume)
@@ -415,46 +425,226 @@ func TestBackupHostGuardsForResourcesAndDestructiveDelete(t *testing.T) {
 	observe3(s.ReplaceHost(ctx, h.Name, store.ReplaceBackup, store.Target{}, caller)).assertZero(t, store.ErrHostGone)
 	observe2(s.OpenHost(ctx, h.Name, caller)).assertZero(t, store.ErrHostGone)
 	observe2(s.CloseHost(ctx, h.Name, caller)).assertZero(t, store.ErrHostGone)
+
+	h = readyHost(t, s)
+	_, resize := start(t, s, h.Name, store.OpResize, store.Target{RootGB: h.RootGB + 1})
+	checkErr(t, s.Fail(ctx, resize.ID, "resize failed"), nil)
+	replacing, replacement, _ := replaceHost(t, s, h.Name, store.ReplaceVolume, store.Target{})
+	eq(t, replacement.ResumeState, store.HostFailed)
+	desired := value(t, result(s.Desired(ctx, h.Name)))
+	*now = now.Add(time.Minute)
+	stamp := now.UTC().Truncate(time.Second)
+	checkErr(t, s.Finish(ctx, replacement.ID, store.Update{}), nil)
+	replacing.State, replacing.Replace, replacing.RunningSince = store.HostRunning, "", stamp
+	eq(t, value(t, result(s.Host(ctx, h.Name))), replacing)
+	replacement.Status, replacement.Finished, replacement.StepStarted, replacement.NextTry = store.OpDone, stamp, stamp, stamp
+	eq(t, value(t, result(s.Operation(ctx, replacement.ID))), replacement)
+	eq(t, value(t, result(s.Desired(ctx, h.Name))), desired)
 }
 
-func TestRetiredBackupReplacementMustBeAdmittedBeforeItsRestoreDisappears(t *testing.T) {
+// R-PRLR-U8IK R-PSTO-8099 R-PHUK-S2L0 R-SWN0-F5KI R-50PQ-7WUW
+func TestFinishingRetiredBackupReplacementWithholdsWithoutRestore(t *testing.T) {
+	for _, volume := range []string{"", "replacement-volume"} {
+		t.Run(volume, func(t *testing.T) {
+			_, s, now := fixture(t)
+			h := readyHost(t, s)
+			place(t, s, "acme", h.Name)
+			value(t, result(s.AddUser(ctx, "acme", "staff", firstKey, caller)))
+			_, op, _ := replaceHost(t, s, h.Name, store.ReplaceBackup, store.Target{})
+			checkErr(t, s.Retire(ctx, op.ID), nil)
+			withheld := value(t, result(s.Desired(ctx, h.Name)))
+			eq(t, withheld.Backup.Restore.ID, op.ID)
+			before := value(t, result(s.Host(ctx, h.Name)))
+			watch, release := s.Watch(h.Name)
+			defer release()
+
+			checkErr(t, s.Finish(ctx, op.ID, store.Update{HostState: store.HostRunning}), store.ErrUnreachable)
+			eq(t, value(t, result(s.Host(ctx, h.Name))), before)
+			eq(t, value(t, result(s.Operation(ctx, op.ID))), op)
+			eq(t, value(t, result(s.Desired(ctx, h.Name))), withheld)
+			closed(t, watch, false)
+
+			*now = now.Add(time.Minute)
+			checkErr(t, s.Finish(ctx, op.ID, store.Update{DataVolume: volume}), nil)
+			closed(t, watch, true)
+			finished := value(t, result(s.Host(ctx, h.Name)))
+			want := before
+			want.Version++
+			if volume != "" {
+				want.DataVolume = volume
+			}
+			want.State, want.Replace, want.RunningSince = store.HostRunning, "", now.UTC().Truncate(time.Second)
+			eq(t, finished, want)
+			op.Status, op.Finished, op.StepStarted, op.NextTry = store.OpDone, want.RunningSince, want.RunningSince, want.RunningSince
+			eq(t, value(t, result(s.Operation(ctx, op.ID))), op)
+			withheld.Version, withheld.DataVolume, withheld.Backup.Restore = want.Version, want.DataVolume, nil
+			got := value(t, result(s.Desired(ctx, h.Name)))
+			eq(t, got, withheld)
+			eq(t, got.Accounts, []protocol.Account{})
+			eq(t, got.Users, []protocol.User{})
+			observe3(s.ReplaceHost(ctx, h.Name, store.ReplaceVolume, store.Target{}, caller)).assertZero(t, store.ErrWithheld)
+		})
+	}
+}
+
+// R-PNY2-OXAH R-PP5Z-2P16 R-PHUK-S2L0 R-SWN0-F5KI R-50PQ-7WUW
+func TestFailedReplacementCanBeReplacedFromBackupAgain(t *testing.T) {
 	_, s, _ := fixture(t)
 	h := readyHost(t, s)
+	a, _ := place(t, s, "acme", h.Name)
+	value(t, result(s.AddUser(ctx, a.Slug, "staff", firstKey, caller)))
+	live := value(t, result(s.Desired(ctx, h.Name)))
+	_, first, _ := replaceHost(t, s, h.Name, store.ReplaceBackup, store.Target{})
+	checkErr(t, s.Retire(ctx, first.ID), nil)
+	withheld := value(t, result(s.Desired(ctx, h.Name)))
+	eq(t, withheld.Backup.Restore, &protocol.HostRestore{ID: first.ID, Accounts: []protocol.RestoreAccount{
+		{Slug: a.Slug, GID: a.GID, Databases: []string{}},
+	}})
+	checkErr(t, s.Fail(ctx, first.ID, "restore failed"), nil)
+	failed := value(t, result(s.Host(ctx, h.Name)))
+	observe3(s.ReplaceHost(ctx, h.Name, store.ReplaceVolume, store.Target{}, caller)).assertZero(t, store.ErrWithheld)
+	eq(t, value(t, result(s.Host(ctx, h.Name))), failed)
+	eq(t, value(t, result(s.Desired(ctx, h.Name))), withheld)
+
+	replacing, second, _ := replaceHost(t, s, h.Name, store.ReplaceBackup, store.Target{})
+	eq(t, replacing.Version, failed.Version+1)
+	eq(t, second.ResumeState, store.HostFailed)
+	withheld.Version, withheld.Backup.Restore = replacing.Version, nil
+	eq(t, value(t, result(s.Desired(ctx, h.Name))), withheld)
+	checkErr(t, s.Retire(ctx, second.ID), nil)
+	next := value(t, result(s.Desired(ctx, h.Name)))
+	eq(t, next.Version, replacing.Version+1)
+	eq(t, next.Backup.Restore.ID, second.ID)
+	eq(t, next.Accounts, []protocol.Account{})
+	eq(t, next.Users, []protocol.User{})
+	checkErr(t, s.Admit(ctx, second.ID), nil)
+	live.Version = next.Version + 1
+	eq(t, value(t, result(s.Desired(ctx, h.Name))), live)
+}
+
+// R-PQDV-GGRV R-PHUK-S2L0 R-SWN0-F5KI R-50PQ-7WUW
+func TestDeleteClearsRestoreButKeepsWithholdingUntilNameReuse(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "record.db")
+	random := counterRandom(1 << 63)
+	cfg := store.Config{Now: func() time.Time { return baseTime }, Rand: &random}
+	_, s := open(t, path, accounts.Migrations(), cfg)
+	h := readyHost(t, s)
+	place(t, s, "acme", h.Name)
+	remove(t, s, "acme")
 	_, op, _ := replaceHost(t, s, h.Name, store.ReplaceBackup, store.Target{})
 	checkErr(t, s.Retire(ctx, op.ID), nil)
+	checkErr(t, s.Fail(ctx, op.ID, "restore failed"), nil)
+	_, s = open(t, path, accounts.Migrations(), cfg)
 	withheld := value(t, result(s.Desired(ctx, h.Name)))
 	eq(t, withheld.Backup.Restore, &protocol.HostRestore{ID: op.ID, Accounts: []protocol.RestoreAccount{}})
 	before := value(t, result(s.Host(ctx, h.Name)))
 	watch, release := s.Watch(h.Name)
 	defer release()
-	checkErr(t, s.Finish(ctx, op.ID, store.Update{HostState: store.HostRunning}), store.ErrUnreachable)
-	checkErr(t, s.Finish(ctx, op.ID, store.Update{DataVolume: "uncommitted-volume"}), store.ErrConflict)
-	eq(t, value(t, result(s.Host(ctx, h.Name))), before)
-	eq(t, value(t, result(s.Operation(ctx, op.ID))), op)
-	observe(s.KeptVolume(ctx, h.DataVolume)).assertZero(t, store.ErrNotFound)
-	eq(t, value(t, result(s.Desired(ctx, h.Name))), withheld)
-	closed(t, watch, false)
-
-	checkErr(t, s.Fail(ctx, op.ID, "restore failed"), nil)
-	failedHost := value(t, result(s.Host(ctx, h.Name)))
-	failedOperations := value(t, result(s.OperationsOf(ctx, h.Name, "", 10)))
-	for _, mode := range []string{store.ReplaceBackup, store.ReplaceVolume} {
-		observe3(s.ReplaceHost(ctx, h.Name, mode, store.Target{}, caller)).assertZero(t, store.ErrBusy)
-	}
-	observe2(s.DeleteHost(ctx, h.Name, true, false, caller)).assertZero(t, store.ErrBusy)
-	eq(t, value(t, result(s.Host(ctx, h.Name))), failedHost)
-	eq(t, value(t, result(s.OperationsOf(ctx, h.Name, "", 10))), failedOperations)
-	eq(t, value(t, result(s.Desired(ctx, h.Name))), withheld)
-	closed(t, watch, false)
-
-	_, retried, err := s.RetryHost(ctx, h.Name, caller)
-	checkErr(t, err, nil)
-	eq(t, retried.ID, op.ID)
-	checkErr(t, s.Admit(ctx, retried.ID), nil)
+	deleting, deletion := deleteHost(t, s, h.Name, false)
 	closed(t, watch, true)
-	admitted := value(t, result(s.Desired(ctx, h.Name)))
-	eq(t, admitted.Version, withheld.Version+1)
-	eq(t, admitted.Backup.Restore, (*protocol.HostRestore)(nil))
-	checkErr(t, s.Finish(ctx, retried.ID, store.Update{}), nil)
-	eq(t, value(t, result(s.Desired(ctx, h.Name))), admitted)
+	want := before
+	want.State, want.Reason, want.Operation, want.Replace, want.OnDelete = store.HostDeleting, "", deletion.ID, "", store.OnDeleteDelete
+	want.Version++
+	eq(t, deleting, want)
+	eq(t, value(t, result(s.Host(ctx, h.Name))), want)
+	withheld.Version, withheld.Backup.Restore = want.Version, nil
+	eq(t, value(t, result(s.Desired(ctx, h.Name))), withheld)
+	checkErr(t, s.Fail(ctx, deletion.ID, "delete failed"), nil)
+	eq(t, value(t, result(s.Desired(ctx, h.Name))), withheld)
+	_, deletion = deleteHost(t, s, h.Name, false)
+	eq(t, value(t, result(s.Desired(ctx, h.Name))), withheld)
+	checkErr(t, s.Finish(ctx, deletion.ID, store.Update{}), nil)
+	observe(s.Desired(ctx, h.Name)).assertZero(t, store.ErrNotFound)
+
+	reused := readyHost(t, s)
+	eq(t, reused.Name, h.Name)
+	if reused.Seq <= h.Seq {
+		t.Fatalf("reused host sequence = %d, earlier sequence = %d", reused.Seq, h.Seq)
+	}
+	a, _ := place(t, s, "new-account", reused.Name)
+	d := value(t, result(s.Desired(ctx, reused.Name)))
+	eq(t, d.Accounts, []protocol.Account{{Slug: a.Slug, GID: a.GID, State: protocol.AccountActive}})
+	eq(t, d.Backup.Restore, (*protocol.HostRestore)(nil))
+}
+
+// R-PP5Z-2P16 R-PU1K-LRZY R-SWN0-F5KI
+func TestReplacementCopiesBoundedDatabasePathsFromStoppedHost(t *testing.T) {
+	_, s, now := fixture(t)
+	h := readyHost(t, s)
+	acme := activeAccount(t, s, "acme", h.Name)
+	beta := activeAccount(t, s, "beta", h.Name)
+	place(t, s, "leaving", h.Name)
+	remove(t, s, "leaving")
+	first := protocol.AccountBackup{Account: acme.Slug}
+	second := protocol.AccountBackup{Account: beta.Slug}
+	var acmePaths, betaPaths []string
+	for i := 1; i <= protocol.MaxDatabases-20; i++ {
+		path := fmt.Sprintf("data/acme-%02d", i)
+		first.Databases = append(first.Databases, protocol.Database{Path: path})
+		acmePaths = append(acmePaths, path)
+	}
+	for i := 30; i > 0; i-- {
+		second.Databases = append(second.Databases, protocol.Database{Path: fmt.Sprintf("data/beta-%02d", i)})
+	}
+	for i := 1; i <= 20; i++ {
+		betaPaths = append(betaPaths, fmt.Sprintf("data/beta-%02d", i))
+	}
+	at := now.Add(-time.Minute)
+	first.Snapshots = []int64{at.Unix()}
+	recordBackup(t, s, h, *now, second, first, protocol.AccountBackup{
+		Account: "leaving", Databases: []protocol.Database{{Path: "data/exclude"}},
+	})
+	r, restoreOp := requestRestore(t, s, store.RestoreRequest{Account: acme.Slug, Kind: protocol.RestoreFiles, AsOf: at})
+	_, stop := start(t, s, h.Name, store.OpStop, store.Target{})
+	eq(t, value(t, result(s.BackupSteps(ctx, stop.ID))), []store.BackupStep{})
+	checkErr(t, s.Finish(ctx, stop.ID, store.Update{}), nil)
+	before := value(t, result(s.Desired(ctx, h.Name)))
+	replacing, op, cancelled := replaceHost(t, s, h.Name, store.ReplaceBackup, store.Target{DataGB: 30})
+	eq(t, op.Target, store.Target{Type: h.Type, RootGB: h.RootGB, DataGB: 30})
+	eq(t, op.ResumeState, store.HostStopped)
+	eq(t, replacing.Version, before.Version)
+	eq(t, cancelled, []string{restoreOp.ID})
+	r.State = protocol.StepFailed
+	eq(t, value(t, result(s.Restore(ctx, r.ID))), r)
+	stamp := now.UTC().Truncate(time.Second)
+	restoreOp.Status, restoreOp.Finished = store.OpCancelled, stamp
+	eq(t, value(t, result(s.Operation(ctx, restoreOp.ID))), restoreOp)
+	before.Backup.Restores = []protocol.RestoreRequest{}
+	eq(t, value(t, result(s.Desired(ctx, h.Name))), before)
+	eq(t, value(t, result(s.BackupSteps(ctx, op.ID))), []store.BackupStep{
+		{State: protocol.StepPending, At: stamp},
+		{Account: acme.Slug, State: protocol.StepPending, At: stamp},
+		{Account: beta.Slug, State: protocol.StepPending, At: stamp},
+	})
+	checkErr(t, s.Retire(ctx, op.ID), nil)
+	eq(t, value(t, result(s.Desired(ctx, h.Name))).Backup.Restore, &protocol.HostRestore{
+		ID: op.ID, Accounts: []protocol.RestoreAccount{
+			{Slug: acme.Slug, GID: acme.GID, Databases: acmePaths},
+			{Slug: beta.Slug, GID: beta.GID, Databases: betaPaths},
+		},
+	})
+}
+
+// R-PP5Z-2P16
+func TestReplacementOrdersDatabasePathsAcrossRepeatedAccountEntries(t *testing.T) {
+	_, s, now := fixture(t)
+	h := readyHost(t, s)
+	acme := activeAccount(t, s, "acme", h.Name)
+	first := protocol.AccountBackup{Account: acme.Slug}
+	want := []string{"data/a"}
+	for i := 1; i <= protocol.MaxDatabases; i++ {
+		path := fmt.Sprintf("data/b%02d", i)
+		first.Databases = append(first.Databases, protocol.Database{Path: path})
+		if i < protocol.MaxDatabases {
+			want = append(want, path)
+		}
+	}
+	recordBackup(t, s, h, *now, first, protocol.AccountBackup{
+		Account: acme.Slug, Databases: []protocol.Database{{Path: "data/a"}, first.Databases[0]},
+	})
+	_, op, _ := replaceHost(t, s, h.Name, store.ReplaceBackup, store.Target{})
+	checkErr(t, s.Retire(ctx, op.ID), nil)
+	eq(t, value(t, result(s.Desired(ctx, h.Name))).Backup.Restore, &protocol.HostRestore{
+		ID: op.ID, Accounts: []protocol.RestoreAccount{{Slug: acme.Slug, GID: acme.GID, Databases: want}},
+	})
 }

@@ -256,6 +256,131 @@ func TestEmptyHostPrefix(t *testing.T) {
 	}
 }
 
+// R-MMS7-DJET
+func TestIssueSkipsEmptyRequestsAndRetriesIdentity(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		first  cloud.Caller
+		stsErr error
+	}{
+		{name: "malformed ARN", first: cloud.Caller{Arn: "bogus"}},
+		{name: "wrong ARN scheme", first: cloud.Caller{Arn: "wrong:aws:sts"}},
+		{name: "empty partition", first: cloud.Caller{Arn: "arn::sts"}},
+		{name: "unterminated partition", first: cloud.Caller{Arn: "arn:aws"}},
+		{name: "STS error", first: caller, stsErr: errRefused},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			a, f, c := setup()
+			f.who = func(context.Context) (cloud.Caller, error) {
+				if len(f.snapshot()) == 1 {
+					return tt.first, tt.stsErr
+				}
+				return cloud.Caller{Account: accountID, Arn: "arn:" + partition + ":"}, nil
+			}
+			ctx := t.Context()
+			canceled, cancel := context.WithCancel(ctx)
+			cancel()
+			checkEmpty := func(ctx context.Context, slugs ...string) {
+				t.Helper()
+				before := len(f.snapshot())
+				got := issue(ctx, a, host, "", slugs...)
+				if got.host != (protocol.Credentials{}) || len(got.accounts) != 0 || got.err != nil {
+					t.Fatalf("empty Issue returned credentials, account entries, or an error (%v)", got.err)
+				}
+				if len(f.snapshot()) != before {
+					t.Fatal("empty Issue called STS")
+				}
+			}
+			checkEmpty(ctx)
+			checkEmpty(canceled, "", "")
+
+			got := issue(ctx, a, host, prefix, "acme")
+			if got.host != (protocol.Credentials{}) || !slices.Equal(got.accounts, []protocol.AccountCredentials{{Account: "acme"}}) || got.err == nil {
+				t.Fatalf("failed Identity did not yield zero credentials and an error (%v)", got.err)
+			}
+			if tt.stsErr != nil && !errors.Is(got.err, tt.stsErr) {
+				t.Fatal("Issue error does not wrap the Identity error")
+			}
+			if calls := f.snapshot(); len(calls) != 1 || calls[0].isAssume {
+				t.Fatal("Issue did not call only Identity once")
+			}
+			checkEmpty(ctx, "")
+			checkEmpty(canceled)
+
+			got = issue(ctx, a, host, prefix, "acme")
+			checkIssued(t, got)
+			if calls := f.snapshot(); len(calls) != 4 || calls[1].isAssume || len(sessions(calls)) != 2 {
+				t.Fatal("Issue did not retry Identity once and issue both credential sets")
+			}
+			checkEmpty(ctx, "")
+			c.advance(time.Hour)
+			checkEmpty(canceled)
+			if a.Cached() != 0 {
+				t.Fatal("empty Issue did not drop stale credentials")
+			}
+			checkIssued(t, issue(ctx, a, host, prefix, "zeta"))
+			if calls := f.snapshot()[4:]; len(calls) != 2 || len(sessions(calls)) != 2 {
+				t.Fatal("Issue called Identity again after a success")
+			}
+		})
+	}
+}
+
+// R-61BB-CBMJ
+func TestIssueErrorMatchesMissingSets(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		failed   string
+		stsErr   error
+		canceled bool
+		omitHost bool
+	}{
+		{name: "all issued"},
+		{name: "host set omitted", omitHost: true},
+		{name: "host set refused", failed: access.SessionName(host, ""), stsErr: errRefused},
+		{name: "account set refused", failed: access.SessionName(host, "acme"), stsErr: errRefused},
+		{name: "zero STS answer", failed: access.SessionName(host, "acme")},
+		{name: "context ends", canceled: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			a, f, _ := setup()
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			// Learn the identity with a different set so every set below is due.
+			checkIssued(t, issue(ctx, a, "host02", protocol.HostPrefix("host02", 1)))
+			f.assume = func(_ context.Context, r cloud.RoleRequest) (cloud.Credentials, error) {
+				if r.SessionName == tt.failed {
+					return cloud.Credentials{}, tt.stsErr
+				}
+				return credentials(r.SessionName, epoch.Add(time.Hour)), nil
+			}
+			if tt.canceled {
+				cancel()
+			}
+			hostPrefix := prefix
+			if tt.omitHost {
+				hostPrefix = ""
+			}
+			got := issue(ctx, a, host, hostPrefix, "acme")
+			wantHost := !tt.omitHost && !tt.canceled && tt.failed != access.SessionName(host, "")
+			wantAccount := !tt.canceled && tt.failed != access.SessionName(host, "acme")
+			if (got.host != (protocol.Credentials{})) != wantHost || len(got.accounts) != 1 ||
+				(got.accounts[0].Credentials != (protocol.Credentials{})) != wantAccount {
+				t.Fatal("Issue did not return the available sets")
+			}
+			if wantErr := tt.failed != "" || tt.canceled; (got.err != nil) != wantErr {
+				t.Fatalf("Issue error = %v, want non-nil = %t", got.err, wantErr)
+			}
+			if tt.stsErr != nil && !errors.Is(got.err, tt.stsErr) {
+				t.Fatal("Issue error does not wrap the STS error")
+			}
+			if tt.canceled && !errors.Is(got.err, context.Canceled) {
+				t.Fatal("Issue error does not wrap the context error")
+			}
+		})
+	}
+}
+
 // R-WVJ5-B4CB
 func TestCacheReuse(t *testing.T) {
 	a, f, c := setup()
@@ -345,7 +470,7 @@ func TestPartialFailureAndRetry(t *testing.T) {
 	}
 }
 
-// R-WWR1-OW30
+// R-WWR1-OW30 R-61BB-CBMJ
 func TestRenewalFailureUsesUnexpiredSet(t *testing.T) {
 	a, f, c := setup()
 	var fail atomic.Bool
@@ -355,18 +480,21 @@ func TestRenewalFailureUsesUnexpiredSet(t *testing.T) {
 		}
 		return credentials(r.SessionName, epoch.Add(time.Hour)), nil
 	}
-	first := issue(t.Context(), a, host, prefix)
+	first := issue(t.Context(), a, host, prefix, "acme")
 	checkIssued(t, first)
+	if len(first.accounts) != 1 {
+		t.Fatal("initial issue did not return the account set")
+	}
 	fail.Store(true)
 	c.advance(access.ReissueAfter)
 	for range 2 {
-		got := issue(t.Context(), a, host, prefix)
-		if got.host != first.host {
-			t.Fatal("reissue failure did not return the unexpired cached set")
+		got := issue(t.Context(), a, host, prefix, "acme")
+		if got.host != first.host || !slices.Equal(got.accounts, first.accounts) || got.err != nil {
+			t.Fatalf("failed renewal did not return both cached sets with a nil error (%v)", got.err)
 		}
 	}
-	if got := len(sessions(f.snapshot())); got != 3 {
-		t.Errorf("AssumeRole called %d times, want initial issue and two failed renewals", got)
+	if got := len(sessions(f.snapshot())); got != 6 {
+		t.Errorf("AssumeRole called %d times, want an initial issue and two failed renewals for each set", got)
 	}
 	c.advance(time.Hour - access.ReissueAfter)
 	if got := issue(t.Context(), a, host, prefix); got.host != (protocol.Credentials{}) {

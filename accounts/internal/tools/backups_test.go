@@ -149,6 +149,7 @@ func testCreateAccountBackupCheck(t *testing.T) {
 // R-GTAN-47LS R-32NF-1IPB R-ASE1-H9VM R-H31U-6DJC R-2U44-D4IG R-HWBF-CVC0
 func TestCloseOpenTools(t *testing.T) {
 	f := setup(t)
+	f.serveLoopback()
 	missing := tools.HostArgs{Host: "missing"}
 	refusal(t, f.call(tools.ToolCloseHost, missing), tools.NoHost)
 	refusal(t, f.call(tools.ToolOpenHost, missing), tools.NoHost)
@@ -220,8 +221,7 @@ func TestCloseOpenTools(t *testing.T) {
 	}
 	f.finish(open.Operation, store.Update{})
 	closure = answer[tools.HostChange](t, f.call(tools.ToolCloseHost, args))
-	f.fail(closure.Operation, "final backup failed")
-	retry := answer[tools.HostChange](t, f.call(tools.ToolRetryHost, args))
+	retry := checkRetryHost(t, f, closure.Operation, store.HostClosing)
 	if retry != closure {
 		t.Fatalf("retry %+v, want %+v", retry, closure)
 	}
@@ -252,14 +252,16 @@ func TestCloseOpenTools(t *testing.T) {
 	if got := readHost(t, f, h.Name); got.Closed != "" || got.Operation == nil || got.Operation.Operation != open.Operation {
 		t.Fatal(got)
 	}
+	checkRetryHost(t, f, open.Operation, store.HostOpening)
 	if len(f.cloud.lookups)+len(f.cloud.backupLookups) != 0 {
 		t.Fatal("unexpected cloud call")
 	}
 }
 
-// R-2YZP-W7H8 R-HYR8-4ETE R-HZZ4-I6K3 R-AR65-3I4X R-8OBJ-WZXT
+// R-MZTN-5NUP R-N11J-JFLE R-HYR8-4ETE R-HZZ4-I6K3 R-AR65-3I4X R-8OBJ-WZXT
 func TestReplaceHostTool(t *testing.T) {
 	f := setup(t)
+	f.serveLoopback()
 	h, _ := f.seedHost(true)
 	f.d.SetFailing(true)
 	for _, tc := range []callCase{
@@ -310,7 +312,9 @@ func TestReplaceHostTool(t *testing.T) {
 	if replaced.Host != h.Name || replaced.State != store.HostReplacing || replaced.OnDelete != "" ||
 		op.Kind != store.OpReplace || op.Status != store.OpRunning || op.Caller.UserID != f.caller.UserID ||
 		op.Target != (store.Target{Type: before.Type, RootGB: before.RootGB, DataGB: size}) ||
-		after.Version != before.Version || after.Replace != store.ReplaceBackup || after.Operation == nil || after.Operation.Operation != op.ID {
+		after.State != store.HostReplacing || after.Version != before.Version || after.Replace != store.ReplaceBackup ||
+		after.Operation == nil || after.Operation.Operation != op.ID || after.Operation.Kind != store.OpReplace ||
+		after.Operation.Status != store.OpRunning {
 		t.Fatalf("replace %+v, host %+v, operation %+v", replaced, after, op)
 	}
 	events := backupToolEvents(allEvents(t, f)[at:])
@@ -320,14 +324,18 @@ func TestReplaceHostTool(t *testing.T) {
 	}
 	assertChange(t, f, events[4], tools.ToolReplaceHost, h.Name, "", trail.ResultOK)
 	refusal(t, f.call(tools.ToolOpenHost, tools.HostArgs{Host: h.Name}), tools.HostBusy)
+	if err := f.st.RecordStep(t.Context(), replaced.Operation, "relaunch", 3, f.now); err != nil {
+		t.Fatal(err)
+	}
 	f.fail(replaced.Operation, "replace failed")
 	if failed := readHost(t, f, h.Name); failed.Replace != store.ReplaceBackup || failed.Operation == nil || failed.Operation.Status != store.OpFailed {
 		t.Fatal(failed)
 	}
 	refusal(t, f.call(tools.ToolOpenHost, tools.HostArgs{Host: h.Name}), tools.HostNotRunning)
 	retry := answer[tools.HostChange](t, f.call(tools.ToolRetryHost, tools.HostArgs{Host: h.Name}))
-	if retry != replaced {
-		t.Fatalf("retry %+v, want %+v", retry, replaced)
+	if op := f.operation(retry.Operation); retry != replaced || op.Step != "relaunch" || op.Generation != 3 ||
+		op.Kind != store.OpReplace || op.Status != store.OpRunning {
+		t.Fatalf("retry %+v, want %+v, operation %+v", retry, replaced, op)
 	}
 	f.now = f.now.Add(time.Minute)
 	f.finish(retry.Operation, store.Update{DataVolume: "fresh-volume"})
@@ -355,9 +363,62 @@ func TestReplaceHostTool(t *testing.T) {
 	}
 }
 
-// R-433G-YB9J R-45J9-PUQX R-IJHI-MIF7 R-IFTT-H774 R-AR65-3I4X R-32NF-1IPB R-ASE1-H9VM
+// R-MZTN-5NUP R-N11J-JFLE
+func TestReplaceWithheldHost(t *testing.T) {
+	f := setup(t)
+	f.serveLoopback()
+	h, _ := f.seedHost(true)
+	first := failRetiredReplacement(t, f, h.Name)
+	volume := tools.ReplaceHostArgs{Host: h.Name, From: store.ReplaceVolume}
+	refusal(t, f.call(tools.ToolReplaceHost, volume), tools.HostWithheld)
+
+	typ, root, data := "t4g.large", h.RootGB+1, h.DataGB+1
+	backup := tools.ReplaceHostArgs{Host: h.Name, From: store.ReplaceBackup, Type: &typ, RootGB: &root, DataGB: &data}
+	second := answer[tools.HostChange](t, f.call(tools.ToolReplaceHost, backup))
+	op := f.operation(second.Operation)
+	if got := readHost(t, f, h.Name); got.Version != first.Version+1 || second.Host != h.Name ||
+		second.State != store.HostReplacing || op.Kind != store.OpReplace || op.Status != store.OpRunning ||
+		op.Target != (store.Target{Type: typ, RootGB: root, DataGB: data}) || op.Caller.UserID != f.caller.UserID {
+		t.Fatalf("replace answer %+v, host %+v, operation %+v", second, got, op)
+	}
+	f.fail(second.Operation, "failed before retiring an instance")
+	refusal(t, f.call(tools.ToolReplaceHost, volume), tools.HostWithheld)
+	third := answer[tools.HostChange](t, f.call(tools.ToolReplaceHost, map[string]any{
+		"host": h.Name, "from": store.ReplaceBackup, "type": nil, "root_gb": nil, "data_gb": nil,
+	}))
+	op = f.operation(third.Operation)
+	if got := readHost(t, f, h.Name); got.Version != first.Version+1 ||
+		op.Target != (store.Target{Type: h.Type, RootGB: h.RootGB, DataGB: h.DataGB}) {
+		t.Fatalf("replacement after an early failure: host %+v, operation %+v", got, op)
+	}
+	f.fail(third.Operation, "failed before retiring an instance")
+	deleted := answer[tools.HostChange](t, f.call(tools.ToolDeleteHost, tools.DeleteHostArgs{Host: h.Name}))
+	f.fail(deleted.Operation, "delete failed")
+	refusal(t, f.call(tools.ToolReplaceHost, volume), tools.HostFailed)
+
+	bare, create := f.seedHost(false)
+	if err := f.st.Advance(t.Context(), create.ID, store.Update{AllocationID: "allocation-without-volume"}); err != nil {
+		t.Fatal(err)
+	}
+	f.fail(create.ID, "create failed before allocating the volume")
+	failRetiredReplacement(t, f, bare.Name)
+	refusal(t, f.call(tools.ToolReplaceHost, tools.ReplaceHostArgs{Host: bare.Name, From: store.ReplaceVolume}), tools.HostWithheld)
+}
+
+func failRetiredReplacement(t *testing.T, f *fixture, host string) tools.HostRead {
+	t.Helper()
+	started := answer[tools.HostChange](t, f.call(tools.ToolReplaceHost, tools.ReplaceHostArgs{Host: host, From: store.ReplaceBackup}))
+	if err := f.st.Retire(t.Context(), started.Operation); err != nil {
+		t.Fatal(err)
+	}
+	f.fail(started.Operation, "replacement failed after retirement")
+	return readHost(t, f, host)
+}
+
+// R-QWUX-5IGZ R-QY2T-JA7O R-QZAP-X1YD R-R0IM-ATP2 R-IFTT-H774 R-AR65-3I4X R-32NF-1IPB R-ASE1-H9VM
 func TestRestoreToolsAndRemoveCancellation(t *testing.T) {
 	f := setup(t)
+	f.serveLoopback()
 	h, _ := f.seedHost(true)
 	acme := createActiveAccount(f, "acme", h.Name)
 	createActiveAccount(f, "beta", h.Name)
@@ -382,6 +443,7 @@ func TestRestoreToolsAndRemoveCancellation(t *testing.T) {
 	f.d.SetFailing(false)
 	for _, tc := range []callCase{
 		{tools.ToolRestoreDatabase, map[string]any{"account": "missing", "path": db.Path, "as_of": asOf}, tools.NoAccount},
+		{tools.ToolRestoreFiles, map[string]any{"account": "missing", "snapshot": asOf}, tools.NoAccount},
 		{tools.ToolRestoreDatabase, map[string]any{"account": "pending", "path": db.Path, "as_of": asOf}, tools.AccountNotActive},
 		{tools.ToolRestoreDatabase, db, tools.NoDatabase},
 		{tools.ToolRestoreFiles, map[string]any{"account": "pending", "user": "missing", "snapshot": asOf}, tools.NoUser},
@@ -430,10 +492,18 @@ func TestRestoreToolsAndRemoveCancellation(t *testing.T) {
 		Kind: protocol.RestoreDatabase, Path: db.Path, AsOf: f.now.Format(time.RFC3339), State: protocol.StepPending}) {
 		t.Fatal(database)
 	}
-	file := answer[tools.RestoreMade](t, f.call(tools.ToolRestoreFiles, map[string]any{"account": acme.Account, "snapshot": asOf, "path": nil, "user": nil}))
+	if got := readHost(t, f, h.Name); got.Version != before.Version+1 || got.State != before.State {
+		t.Fatalf("database restore changed host to %+v", got)
+	}
+	file := answer[tools.RestoreMade](t, f.call(tools.ToolRestoreFiles, map[string]any{
+		"account": acme.Account, "snapshot": snapshot.Add(900 * time.Millisecond).Format(time.RFC3339Nano), "path": nil, "user": nil,
+	}))
 	if file != (tools.RestoreMade{Restore: file.Restore, Account: acme.Account, Host: h.Name,
 		Kind: protocol.RestoreFiles, AsOf: asOf, State: protocol.StepPending}) {
 		t.Fatal(file)
+	}
+	if got := readHost(t, f, h.Name); got.Version != before.Version+2 || got.State != before.State {
+		t.Fatalf("files restore changed host to %+v", got)
 	}
 	chosen := answer[tools.RestoreMade](t, f.call(tools.ToolRestoreFiles, map[string]any{"account": acme.Account, "snapshot": asOf, "path": "notes", "user": "daffy"}))
 	if chosen.User != "daffy" || chosen.Path != "notes" || chosen.AsOf != asOf {
@@ -451,7 +521,8 @@ func TestRestoreToolsAndRemoveCancellation(t *testing.T) {
 		stored, err := f.st.Restore(t.Context(), r.Restore)
 		op := f.operation(r.Restore)
 		if err != nil || r.Restore == "" || r.Account != stored.Account || r.Host != stored.Host || r.Kind != stored.Kind ||
-			r.Path != stored.Path || r.User != stored.User || r.State != stored.State || op.Kind != store.OpRestore ||
+			r.Path != stored.Path || r.User != stored.User || r.State != stored.State || r.State != protocol.StepPending ||
+			r.AsOf != stampRestoreTime(stored.AsOf) || op.Kind != store.OpRestore ||
 			op.Status != store.OpRunning || op.Caller.UserID != f.caller.UserID || op.Account != r.Account || op.Host != r.Host {
 			t.Fatalf("restore answer %+v, record %+v, operation %+v (%v)", r, stored, op, err)
 		}
@@ -508,6 +579,53 @@ func TestRestoreToolsAndRemoveCancellation(t *testing.T) {
 	if len(f.cloud.lookups)+len(f.cloud.backupLookups) != 0 {
 		t.Fatal("unexpected cloud calls")
 	}
+}
+
+func stampRestoreTime(when time.Time) string {
+	if when.IsZero() {
+		return ""
+	}
+	return when.UTC().Format(time.RFC3339)
+}
+
+// R-QWUX-5IGZ R-QZAP-X1YD
+func TestRestoreToolsCountReportedUnsettledRestores(t *testing.T) {
+	f := setup(t)
+	f.serveLoopback()
+	h, _ := f.seedHost(true)
+	account := createActiveAccount(f, "acme", h.Name).Account
+	snapshot := f.now.UTC().Truncate(time.Second)
+	entry := protocol.AccountBackup{
+		Account: account, Snapshots: []int64{snapshot.Unix()},
+		Databases: []protocol.Database{{Path: "data/app.db", Oldest: snapshot}},
+	}
+	backupReport(f, h.Name, entry)
+	db := tools.RestoreDatabaseArgs{Account: account, Path: entry.Databases[0].Path, AsOf: snapshot.Format(time.RFC3339)}
+	files := tools.RestoreFilesArgs{Account: account, Snapshot: db.AsOf}
+	results := make([]protocol.RestoreResult, 0, valid.MaxRestoresPerHost)
+	for i := range valid.MaxRestoresPerHost {
+		r := answer[tools.RestoreMade](t, f.call(tools.ToolRestoreFiles, files))
+		state := protocol.StepDone
+		if i%2 != 0 {
+			state = protocol.StepFailed
+		}
+		results = append(results, protocol.RestoreResult{ID: r.Restore, State: state})
+	}
+	current := f.host(h.Name)
+	if _, err := f.st.RecordReport(t.Context(), h.Name, protocol.Report{
+		Protocol: protocol.Version, InstanceID: current.InstanceID, Attempted: current.Version, Applied: current.Version,
+		Backups: []protocol.AccountBackup{entry}, Restores: results,
+	}, f.now); err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range results {
+		r, err := f.st.Restore(t.Context(), result.ID)
+		if err != nil || r.State != result.State || f.operation(result.ID).Status != store.OpRunning {
+			t.Fatalf("report did not leave restore %s unsettled: %+v (%v)", result.ID, r, err)
+		}
+	}
+	refusal(t, f.call(tools.ToolRestoreDatabase, db), tools.TooManyRestores)
+	refusal(t, f.call(tools.ToolRestoreFiles, files), tools.TooManyRestores)
 }
 
 // R-1XGJ-IPPB R-1YOF-WHG0 R-1ZWC-A96P R-I170-VYAS R-PQKT-Z939 R-I7AI-ST09 R-2U44-D4IG R-HWBF-CVC0

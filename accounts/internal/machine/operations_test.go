@@ -154,7 +154,7 @@ func TestMemoryCloseFinalRetryAfterConcurrentApply(t *testing.T) {
 }
 
 func TestMemoryWholeHostRestore(t *testing.T) {
-	// R-Z3RQ-LFOV R-YFDQ-Y0UZ R-YP4Y-06SJ
+	// R-Z3RQ-LFOV R-YFDQ-Y0UZ R-WYM8-ILND
 	s := backupState()
 	s.Accounts = nil
 	now := fixtureTime
@@ -220,6 +220,16 @@ func TestMemoryWholeHostRestore(t *testing.T) {
 		r.Backups[2].Account != "zebra" || r.Backups[2].Restored != pending {
 		t.Fatalf("completed restore: %+v, %+v", r.HostBackup, r.Backups)
 	}
+	scope := s
+	scope.Accounts = []protocol.Account{
+		{Slug: "alpine", State: protocol.AccountActive},
+		{Slug: "acme", State: protocol.AccountActive},
+		{Slug: "cedar", State: protocol.AccountRemoved},
+	}
+	wantBackups := slices.Insert(slices.Clone(r.Backups), 1, protocol.AccountBackup{Account: "alpine"})
+	if got := inspect(t, m, scope).Backups; !reflect.DeepEqual(got, wantBackups) {
+		t.Fatalf("active and restoring accounts: %+v, want %+v", got, wantBackups)
+	}
 	state := m.State()
 	if !slices.Equal(state.Restored, []string{"acme"}) || !slices.Equal(state.Folders, []string{"acme"}) ||
 		len(state.Seeds) != 0 || !reflect.DeepEqual(r.Backups[0].Databases, []protocol.Database{{Path: "data/current.db"}}) {
@@ -247,9 +257,11 @@ func TestMemoryWholeHostRestore(t *testing.T) {
 }
 
 func TestMemoryPartialRestores(t *testing.T) {
-	// R-YNX1-MF1U R-YQCU-DYJ8 R-YP4Y-06SJ
+	// R-VUDJ-W66G R-YQCU-DYJ8 R-WYM8-ILND
 	s := backupState()
-	now := fixtureTime
+	now := fixtureTime.Add(250 * time.Millisecond)
+	s.Accounts = append(s.Accounts, protocol.Account{Slug: "beta", State: protocol.AccountActive})
+	s.Backup.Accounts = append(s.Backup.Accounts, protocol.AccountCredentials{Account: "beta", Credentials: protocol.Credentials{AccessKeyID: "beta-key"}})
 	m := backupMachine(&now, nil, nil)
 	apply(t, m, s)
 	m.AddDatabase("acme", "data/app.db", true)
@@ -257,23 +269,47 @@ func TestMemoryPartialRestores(t *testing.T) {
 	database := protocol.RestoreRequest{ID: "database-one", Account: "acme", Kind: protocol.RestoreDatabase, Path: "data/app.db", AsOf: fixtureTime}
 	databaseAgain := database
 	databaseAgain.ID = "database-two"
-	files := protocol.RestoreRequest{ID: "files-one", Account: "acme", Kind: protocol.RestoreFiles, Path: "docs/a.txt", AsOf: fixtureTime}
+	files := protocol.RestoreRequest{ID: "files-one", Account: "acme", Kind: protocol.RestoreFiles, Path: "docs/a.txt", AsOf: now.In(time.FixedZone("test", -3600))}
 	filesAgain := files
-	filesAgain.ID = "files-two"
+	filesAgain.ID, filesAgain.Path = "files-two", "docs/b.txt"
+	folder := files
+	folder.ID, folder.Path = "folder", ""
 	home := files
 	home.ID, home.User = "home-one", "alice"
+	homeAgain := filesAgain
+	homeAgain.ID, homeAgain.User = "home-two", "alice"
+	otherHome := home
+	otherHome.ID, otherHome.User = "other-home", "bob"
+	otherAccount := files
+	otherAccount.ID, otherAccount.Account = "other-account", "beta"
 	missing := files
 	missing.ID, missing.AsOf = "missing-one", fixtureTime.Add(-time.Hour)
-	s.Backup.Restores = []protocol.RestoreRequest{files, database, home, missing}
+	s.Backup.Restores = []protocol.RestoreRequest{files, database, home, missing, otherHome, otherAccount}
 	runPass(t, m.Backup, s)
-	now = now.Add(backupDelay - time.Second)
+	now = now.Add(backupDelay - time.Nanosecond)
 	runPass(t, m.Backup, s)
 	if got := m.State(); len(got.Restores) != 0 || len(got.Backups[0].Snapshots) != 1 {
 		t.Fatalf("restore finished before delay: %+v", got)
 	}
-	now = now.Add(time.Second)
+	now = now.Add(time.Nanosecond)
 	runPass(t, m.Backup, s)
-	s.Backup.Restores = append(s.Backup.Restores, filesAgain, databaseAgain)
+	first := []protocol.RestoreResult{
+		{ID: "database-one", State: protocol.StepDone, Copy: "data/app.restored-20261118T120000Z-2.db"},
+		{ID: "files-one", State: protocol.StepDone, Copy: "restored/20261118T120000Z/docs/a.txt"},
+		{ID: "home-one", State: protocol.StepDone, Copy: "restored/20261118T120000Z/docs/a.txt"},
+		{ID: "missing-one", State: protocol.StepFailed},
+		{ID: "other-account", State: protocol.StepDone, Copy: "restored/20261118T120000Z/docs/a.txt"},
+		{ID: "other-home", State: protocol.StepDone, Copy: "restored/20261118T120000Z/docs/a.txt"},
+	}
+	results := inspect(t, m, s).Restores
+	if len(results) != len(first) || results[3].Error == "" {
+		t.Fatalf("expected a failure with a diagnostic for the missing snapshot: %+v", results)
+	}
+	first[3].Error = results[3].Error
+	if !slices.Equal(results, first) {
+		t.Fatalf("restore results at delay: %+v, want %+v", results, first)
+	}
+	s.Backup.Restores = append(s.Backup.Restores, filesAgain, folder, homeAgain, databaseAgain)
 	runPass(t, m.Backup, s)
 	now = now.Add(backupDelay)
 	runPass(t, m.Backup, s)
@@ -281,12 +317,28 @@ func TestMemoryPartialRestores(t *testing.T) {
 		{ID: "database-one", State: protocol.StepDone, Copy: "data/app.restored-20261118T120000Z-2.db"},
 		{ID: "database-two", State: protocol.StepDone, Copy: "data/app.restored-20261118T120000Z-3.db"},
 		{ID: "files-one", State: protocol.StepDone, Copy: "restored/20261118T120000Z/docs/a.txt"},
-		{ID: "files-two", State: protocol.StepDone, Copy: "restored/20261118T120000Z-2/docs/a.txt"},
+		{ID: "files-two", State: protocol.StepDone, Copy: "restored/20261118T120000Z-2/docs/b.txt"},
+		{ID: "folder", State: protocol.StepDone, Copy: "restored/20261118T120000Z-3"},
 		{ID: "home-one", State: protocol.StepDone, Copy: "restored/20261118T120000Z/docs/a.txt"},
-		{ID: "missing-one", State: protocol.StepFailed, Error: machine.ErrNoSnapshot.Error()},
+		{ID: "home-two", State: protocol.StepDone, Copy: "restored/20261118T120000Z-2/docs/b.txt"},
+		first[3],
+		{ID: "other-account", State: protocol.StepDone, Copy: "restored/20261118T120000Z/docs/a.txt"},
+		{ID: "other-home", State: protocol.StepDone, Copy: "restored/20261118T120000Z/docs/a.txt"},
 	}
 	if got := m.State().Restores; !reflect.DeepEqual(got, want) || !reflect.DeepEqual(got, inspect(t, m, s).Restores) {
 		t.Fatalf("restore results: %+v, want %+v", got, want)
+	}
+	scope := s
+	backup := *s.Backup
+	scope.Backup = &backup
+	scope.Backup.Restores = []protocol.RestoreRequest{homeAgain, files}
+	if got := inspect(t, m, scope).Restores; !reflect.DeepEqual(got, []protocol.RestoreResult{want[2], want[6]}) {
+		t.Fatalf("inspect request scope: %+v", got)
+	}
+	s.Backup.Restores[3].AsOf = files.AsOf
+	runPass(t, m.Backup, s)
+	if got := m.State().Restores; !reflect.DeepEqual(got, want) {
+		t.Fatalf("failed request ran again: %+v", got)
 	}
 	now = now.Add(backupDelay)
 	m.FailBackups("acme", true)
@@ -297,7 +349,7 @@ func TestMemoryPartialRestores(t *testing.T) {
 	s.Backup.Restores = nil
 	runPass(t, m.Backup, s)
 	oldScope := s
-	backup := *s.Backup
+	backup = *s.Backup
 	oldScope.Backup = &backup
 	oldScope.Backup.Restores = []protocol.RestoreRequest{database}
 	if got := m.State().Restores; len(got) != 0 || len(inspect(t, m, oldScope).Restores) != 0 {
@@ -305,16 +357,29 @@ func TestMemoryPartialRestores(t *testing.T) {
 	}
 	s = oldScope
 	runPass(t, m.Backup, s)
+	if got := m.State().Restores; len(got) != 0 {
+		t.Fatalf("reintroduced request did not wait: %+v", got)
+	}
 	now = now.Add(backupDelay)
 	runPass(t, m.Backup, s)
 	if got := m.State().Restores; len(got) != 1 || got[0].ID != database.ID || got[0].State != protocol.StepFailed ||
 		got[0].Copy != "" || got[0].Error == "" {
 		t.Fatalf("request for failing account: %+v", got)
 	}
+	m.FailBackups("acme", false)
+	s.Backup.Restores = []protocol.RestoreRequest{files}
+	runPass(t, m.Backup, s)
+	now = now.Add(backupDelay)
+	runPass(t, m.Backup, s)
+	if got := m.State().Restores; !slices.Equal(got, []protocol.RestoreResult{
+		{ID: files.ID, State: protocol.StepDone, Copy: "restored/20261118T120000Z-4/docs/a.txt"},
+	}) {
+		t.Fatalf("restore after request removal lost disk copies: %+v", got)
+	}
 }
 
 func TestMemoryPartialRestoreWaitsForEligibleAccount(t *testing.T) {
-	// R-YNX1-MF1U
+	// R-VUDJ-W66G
 	s := backupState()
 	now := fixtureTime
 	m := backupMachine(&now, nil, nil)
@@ -323,7 +388,9 @@ func TestMemoryPartialRestoreWaitsForEligibleAccount(t *testing.T) {
 	available := protocol.RestoreRequest{ID: "available", Account: "acme", Kind: protocol.RestoreDatabase, Path: "data/app.db", AsOf: fixtureTime}
 	missing := available
 	missing.ID, missing.Path = "missing", "data/missing.db"
-	s.Backup.Restores = []protocol.RestoreRequest{available, missing}
+	unknown := available
+	unknown.ID, unknown.Kind = "unknown", "other-kind"
+	s.Backup.Restores = []protocol.RestoreRequest{available, missing, unknown}
 	active, credentials := s.Accounts, s.Backup.Accounts
 	s.Accounts = nil
 	runPass(t, m.Backup, s)
@@ -338,11 +405,62 @@ func TestMemoryPartialRestoreWaitsForEligibleAccount(t *testing.T) {
 		t.Fatalf("account without credentials produced a result: %+v", got)
 	}
 	s.Backup.Accounts = credentials
+	s.Backup.Restore = &protocol.HostRestore{ID: "whole-host"}
+	runPass(t, m.Backup, s)
+	if got := m.State().Restores; len(got) != 0 {
+		t.Fatalf("partial requests ran during a whole-host restore: %+v", got)
+	}
+	s.Backup.Restore = nil
 	runPass(t, m.Backup, s)
 	got := m.State().Restores
 	want := protocol.RestoreResult{ID: available.ID, State: protocol.StepDone, Copy: "data/app.restored-20261118T120000Z.db"}
-	if len(got) != 2 || got[0] != want || got[1].ID != missing.ID || got[1].State != protocol.StepFailed ||
-		got[1].Copy != "" || got[1].Error == "" {
+	if len(got) != 3 || got[0] != want {
 		t.Fatalf("eligible requests: %+v", got)
+	}
+	for i, q := range []protocol.RestoreRequest{missing, unknown} {
+		r := got[i+1]
+		if r.ID != q.ID || r.State != protocol.StepFailed || r.Copy != "" || r.Error == "" {
+			t.Fatalf("failed request %q: %+v", q.ID, r)
+		}
+	}
+}
+
+func TestMemoryRestoreCopyPathsStayOnSharedDisk(t *testing.T) {
+	// R-VUDJ-W66G
+	s := backupState()
+	disks := machine.NewDisks()
+	firstNow, secondNow := fixtureTime, fixtureTime
+	first, second := backupMachine(&firstNow, disks, nil), backupMachine(&secondNow, disks, nil)
+	apply(t, first, s)
+	files := protocol.RestoreRequest{
+		ID: "files", Account: "acme", Kind: protocol.RestoreFiles,
+		Path: "docs/app.restored-20261118T120000Z.db", AsOf: fixtureTime,
+	}
+	s.Backup.Restores = []protocol.RestoreRequest{files}
+	runPass(t, first.Backup, s)
+	firstNow = firstNow.Add(backupDelay)
+	runPass(t, first.Backup, s)
+	if got := first.State().Restores; !slices.Equal(got, []protocol.RestoreResult{
+		{ID: files.ID, State: protocol.StepDone, Copy: "restored/20261118T120000Z/docs/app.restored-20261118T120000Z.db"},
+	}) {
+		t.Fatalf("file copy result: %+v", got)
+	}
+	apply(t, second, s)
+	database := protocol.RestoreRequest{
+		ID: "database", Account: "acme", Kind: protocol.RestoreDatabase,
+		Path: "restored/20261118T120000Z/docs/app.db", AsOf: fixtureTime,
+	}
+	second.AddDatabase(database.Account, database.Path, true)
+	otherFiles := files
+	otherFiles.ID, otherFiles.Path = "other-files", "docs/notes.txt"
+	s.Backup.Restores = []protocol.RestoreRequest{database, otherFiles}
+	runPass(t, second.Backup, s)
+	secondNow = secondNow.Add(backupDelay)
+	runPass(t, second.Backup, s)
+	if got := second.State().Restores; !slices.Equal(got, []protocol.RestoreResult{
+		{ID: database.ID, State: protocol.StepDone, Copy: "restored/20261118T120000Z/docs/app.restored-20261118T120000Z-2.db"},
+		{ID: otherFiles.ID, State: protocol.StepDone, Copy: "restored/20261118T120000Z-2/docs/notes.txt"},
+	}) {
+		t.Fatalf("restore copies on the shared disk: %+v", got)
 	}
 }

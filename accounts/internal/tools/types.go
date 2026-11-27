@@ -183,6 +183,7 @@ const (
 	VolumeDeleting  string = "the kept data volume is already being deleted"
 
 	HostNotClosed    string = "the host is not closed"
+	HostWithheld     string = "the host must finish restoring from backups"
 	NoDataVolume     string = "the host has no data volume to keep"
 	KeepsVolumeSize  string = "replacing from the existing volume keeps its size"
 	BadReplace       string = "the replacement source must be volume or backup"

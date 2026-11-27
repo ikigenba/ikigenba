@@ -2,7 +2,9 @@ package ops_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http/httptest"
 	"reflect"
 	"slices"
 	"testing"
@@ -12,8 +14,11 @@ import (
 	"github.com/ikigenba/ikigenba/accounts/internal/ops"
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
+	"github.com/ikigenba/ikigenba/accounts/internal/tools"
 	"github.com/ikigenba/ikigenba/accounts/internal/trail"
 	"github.com/ikigenba/ikigenba/appkit/identity"
+	"github.com/ikigenba/ikigenba/appkit/mcp"
+	"github.com/ikigenba/ikigenba/appkit/services"
 	"github.com/ikigenba/ikigenba/appkit/telemetry"
 )
 
@@ -197,7 +202,7 @@ func stepsTo(f *fixture, e *ops.Engine, opID, step string) {
 	f.t.Fatalf("operation %s never reached %s", opID, step)
 }
 
-// R-CK3G-GRCI R-COZ1-ZUBA R-CQ6Y-DM1Z R-CXIC-O8I5 R-CYQ9-208U R-CZY5-FRZJ R-D161-TJQ8 R-D3LU-L37M R-D4TQ-YUYB R-D61N-CMP0 R-D8HG-466E R-D9PC-HXX3 R-DAX8-VPNS R-HIMJ-PXDT R-DFSU-ESMK R-DH0Q-SKD9
+// R-CK3G-GRCI R-COZ1-ZUBA R-CQ6Y-DM1Z R-CXIC-O8I5 R-CYQ9-208U R-CZY5-FRZJ R-D161-TJQ8 R-D3LU-L37M R-D4TQ-YUYB R-D61N-CMP0 R-D8HG-466E R-D9PC-HXX3 R-DAX8-VPNS R-C30K-ZK86 R-DFSU-ESMK R-DH0Q-SKD9
 func TestReplaceCheckpointsKeepAddressAndData(t *testing.T) {
 	type stepName string
 	for _, pair := range []struct{ got, want stepName }{
@@ -264,11 +269,17 @@ func TestReplaceCheckpointsKeepAddressAndData(t *testing.T) {
 			if mode == store.ReplaceBackup {
 				stepsTo(f, e, c.op.ID, ops.StepRestore)
 				equal(t, f.host(h.Name).State, store.HostRestoring)
+				reportOperation(f, h.Name, protocol.Step{ID: c.op.ID, State: protocol.StepDone}, nil, false)
+				equal(t, f.step(e, c.op.ID).Step, ops.StepRestore)
 				reportOperation(f, h.Name, protocol.Step{ID: c.op.ID, State: protocol.StepDone}, []protocol.AccountBackup{
 					{Account: "tenant", Restored: protocol.Step{ID: c.op.ID, State: protocol.StepDone, At: f.now}},
 				}, false)
+				equal(t, f.step(e, c.op.ID).Step, ops.StepAdmit)
 			}
 			stepsTo(f, e, c.op.ID, ops.StepWaitAdmitted)
+			replacement, err := f.st.Replacement(f.ctx, c.op.ID)
+			ok(t, err)
+			equal(t, replacement.Admitted, true)
 			equal(t, c.association != "", true)
 			equal(t, f.host(h.Name).AssociationID, c.association)
 			d, err = f.st.Desired(f.ctx, h.Name)
@@ -381,7 +392,7 @@ func TestReplacementAbsentOldInstanceAndConcurrentOperationEnd(t *testing.T) {
 	}
 }
 
-// R-HHEN-C5N4 R-DEKY-10VV R-3T6L-SNWX
+// R-C1SO-LSHH R-C0KS-80QS R-DEKY-10VV R-3T6L-SNWX
 func TestReplacementRestoreChecksLivenessAndReportsStateAfterCommit(t *testing.T) {
 	f := setup(t)
 	h := f.ready()
@@ -394,7 +405,13 @@ func TestReplacementRestoreChecksLivenessAndReportsStateAfterCommit(t *testing.T
 	stepsTo(f, e, c.op.ID, ops.StepRestore)
 	equal(t, slices.Equal(formed, []string{store.HostRestoring}), true)
 	restoring := f.host(h.Name)
-	f.now = f.now.Add(2 * ops.StepTimeout)
+	f.now = f.now.Add(4 * ops.StepTimeout)
+	ok(t, e.Scan(f.ctx))
+	c.Cloud = nil
+	c.onDescribe = func(id string) (cloud.Instance, error) {
+		equal(t, id, restoring.InstanceID)
+		return f.memory.DescribeInstance(f.ctx, id)
+	}
 	f.report(h.Name, restoring.Version, restoring.Version)
 	equal(t, f.step(e, c.op.ID).Status, store.OpRunning)
 	reportOperation(f, h.Name, protocol.Step{ID: c.op.ID, State: protocol.StepFailed, Code: protocol.CodeNotEmpty}, nil, false)
@@ -430,36 +447,104 @@ func TestReplacementRestoreChecksLivenessAndReportsStateAfterCommit(t *testing.T
 	}
 }
 
+// R-C0KS-80QS
 func TestReplacementHostLossAtBothDaemonWaits(t *testing.T) {
+	t.Setenv(services.Variable, "")
 	for _, wait := range []string{ops.StepRestore, ops.StepWaitAdmitted} {
-		for _, outcome := range []string{ops.ReasonMissing, ops.ReasonTerminated, ops.ReasonTimedOut} {
-			t.Run(wait+"/"+outcome, func(t *testing.T) {
+		for _, tc := range []struct {
+			name, state, reason string
+			notFound            bool
+		}{
+			{name: "missing", reason: ops.ReasonMissing, notFound: true},
+			{name: "terminated", state: cloud.InstanceTerminated, reason: ops.ReasonTerminated},
+			{name: "stopped", state: cloud.InstanceStopped, reason: ops.ReasonTerminated},
+			{name: "silent", state: cloud.InstanceRunning, reason: ops.ReasonTimedOut},
+		} {
+			t.Run(wait+"/"+tc.name, func(t *testing.T) {
 				f := setup(t)
 				h := f.ready()
-				mode := store.ReplaceBackup
-				if wait == ops.StepWaitAdmitted {
-					mode = store.ReplaceVolume
-				}
-				c := startReplacement(f, h, mode, store.Target{})
+				c := startReplacement(f, h, store.ReplaceBackup, store.Target{})
 				e := ops.New(f.cfg)
-				stepsTo(f, e, c.op.ID, wait)
-				mutations := len(c.calls)
-				switch outcome {
-				case ops.ReasonMissing:
-					c.onDescribe = func(string) (cloud.Instance, error) { return cloud.Instance{}, cloudErr(cloud.ClassNotFound) }
-				case ops.ReasonTerminated:
-					c.onDescribe = func(string) (cloud.Instance, error) { return cloud.Instance{State: cloud.InstanceStopped}, nil }
-				case ops.ReasonTimedOut:
-					f.now = f.now.Add(ops.StepTimeout + time.Second)
+				stepsTo(f, e, c.op.ID, ops.StepRestore)
+				if wait == ops.StepWaitAdmitted {
+					reportOperation(f, h.Name, protocol.Step{ID: c.op.ID, State: protocol.StepDone}, nil, false)
+					stepsTo(f, e, c.op.ID, wait)
+				}
+				current := f.host(h.Name)
+				mutations, reads := len(c.calls), 0
+				c.Cloud = nil
+				c.onDescribe = func(id string) (cloud.Instance, error) {
+					equal(t, id, current.InstanceID)
+					reads++
+					if tc.notFound {
+						return cloud.Instance{}, cloudErr(cloud.ClassNotFound)
+					}
+					return cloud.Instance{ID: id, State: tc.state}, nil
+				}
+				if tc.reason == ops.ReasonTimedOut {
+					start := f.operation(c.op.ID).StepStarted
+					f.now = start.Add(time.Minute)
+					f.report(h.Name, current.Version, current.Applied)
+					reported := f.host(h.Name).Reported
+					f.now = reported.Add(ops.StepTimeout - ReconcileAdvance)
+					equal(t, f.step(e, c.op.ID).Status, store.OpRunning)
+					equal(t, reads, 1)
+					reads = 0
 				}
 				o := f.step(e, c.op.ID)
 				equal(t, o.Status, store.OpFailed)
-				equal(t, o.Error, outcome)
+				equal(t, o.Error, tc.reason)
 				equal(t, f.host(h.Name).State, store.HostFailed)
+				equal(t, reads, 1)
 				equal(t, len(c.calls), mutations)
+				if tc.reason == ops.ReasonTimedOut {
+					assertReplacementRecovery(f, o, wait == ops.StepRestore)
+				}
 			})
 		}
 	}
+}
+
+func assertReplacementRecovery(f *fixture, op store.Operation, withheld bool) {
+	t := f.t
+	t.Helper()
+	server := mcp.NewServer(mcp.ServerConfig{Name: "accounts", Telemetry: f.cfg.Telemetry})
+	tools.Register(server, tools.Config{
+		Store: f.st, Configured: true, Telemetry: f.cfg.Telemetry, Wake: func() {},
+	})
+	srv := httptest.NewServer(identity.Require(server))
+	t.Cleanup(srv.Close)
+	client := mcp.NewClient(mcp.ClientConfig{Endpoint: srv.URL + "/mcp", HTTPClient: srv.Client()})
+	call := func(tool string, args any) mcp.Result {
+		t.Helper()
+		raw, err := json.Marshal(args)
+		ok(t, err)
+		result, err := client.CallTool(t.Context(), author, tool, raw)
+		ok(t, err)
+		return result
+	}
+	host := tools.HostArgs{Host: op.Host}
+	equal(t, call(tools.ToolRetryHost, host).IsError(), false)
+	ok(t, f.st.Fail(f.ctx, op.ID, ops.ReasonTimedOut))
+	volume := tools.ReplaceHostArgs{Host: op.Host, From: store.ReplaceVolume}
+	result := call(tools.ToolReplaceHost, volume)
+	equal(t, result.IsError(), withheld)
+	if withheld {
+		raw, err := json.Marshal(result)
+		ok(t, err)
+		var refusal struct {
+			Content []struct{ Text string }
+		}
+		ok(t, json.Unmarshal(raw, &refusal))
+		equal(t, len(refusal.Content), 1)
+		equal(t, refusal.Content[0].Text, tools.HostWithheld)
+	} else {
+		ok(t, f.st.Fail(f.ctx, f.host(op.Host).Operation, ops.ReasonTimedOut))
+	}
+	backup := tools.ReplaceHostArgs{Host: op.Host, From: store.ReplaceBackup}
+	equal(t, call(tools.ToolReplaceHost, backup).IsError(), false)
+	ok(t, f.st.Fail(f.ctx, f.host(op.Host).Operation, ops.ReasonTimedOut))
+	equal(t, call(tools.ToolDeleteHost, tools.DeleteHostArgs{Host: op.Host}).IsError(), false)
 }
 
 // R-D161-TJQ8 R-D4TQ-YUYB
@@ -608,7 +693,7 @@ func TestReplacementTagOldHandlesMissingAndEmptyVolume(t *testing.T) {
 	}
 }
 
-// R-HHEN-C5N4
+// R-C1SO-LSHH
 func TestReplacementRestoreFailurePrefersNotEmptyAcrossStepSet(t *testing.T) {
 	for _, code := range []string{protocol.CodeFailed, protocol.CodeNotEmpty} {
 		t.Run(code, func(t *testing.T) {

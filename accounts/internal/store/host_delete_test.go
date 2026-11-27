@@ -41,7 +41,7 @@ func TestHostNumberCanBeReusedOnlyAfterDeleteFinishes(t *testing.T) {
 	eq(t, reused.Seq, fifth.Seq+1)
 }
 
-// R-77P4-H0B7
+// R-77P4-H0B7 R-4QYJ-5QXC R-PQDV-GGRV
 func TestHostDeleteGuardsAndChoice(t *testing.T) {
 	_, s, now := fixture(t)
 	running, creation := create(t, s)

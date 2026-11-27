@@ -42,30 +42,30 @@ func (s step) runBackupWait() error {
 }
 
 func (s step) waitWholeRestore() error {
-	reason, cloudErr := s.checkReplacementHost()
-	if reason == "" && cloudErr == nil {
-		done, backupReason, err := s.backupSteps(ReasonRestoreFailed)
-		if err != nil {
-			return err
-		}
-		if done {
-			return s.advance(store.Update{Step: StepAdmit, HostState: store.HostRestoring})
-		}
-		reason = backupReason
-	}
 	if s.h.State != store.HostRestoring {
 		if err := s.advance(store.Update{HostState: store.HostRestoring}); err != nil {
 			return err
 		}
 		s.h.State = store.HostRestoring
 	}
+	reason, err := s.checkReplacementHost()
+	if err != nil {
+		return s.cloudError(err)
+	}
 	if reason != "" {
 		return s.fail(reason)
 	}
-	if cloudErr != nil {
-		return s.cloudError(cloudErr)
+	done, reason, err := s.backupSteps(ReasonRestoreFailed)
+	switch {
+	case err != nil:
+		return err
+	case reason != "":
+		return s.fail(reason)
+	case done:
+		return s.next(StepAdmit)
+	default:
+		return s.wait()
 	}
-	return s.wait()
 }
 
 func (s step) backupSteps(failure string) (done bool, reason string, err error) {

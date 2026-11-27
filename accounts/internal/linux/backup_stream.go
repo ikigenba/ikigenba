@@ -106,6 +106,7 @@ func (h *Host) Stream(ctx context.Context, s protocol.DesiredState) error {
 		_ = h.cleanStreamAccounts(ctx, nil)
 		return nil
 	}
+	ctx = withBackupDiagnosticRedactor(ctx, b)
 	installErr := h.ensureLitestream(ctx)
 	passErr := errors.Join(installErr, h.privateBackupDir(BackupDir))
 	passErr = firstBackupError(passErr, h.updateHostBackup(func(facts *backupHostFacts) {

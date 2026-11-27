@@ -8,8 +8,8 @@ import (
 )
 
 // R-H7NS-RJ2U R-H214-5FQN R-HCJE-AM1M
-// R-HSE3-9MON R-HTLZ-NEFC R-HUTW-1661 R-HX9O-SPNF R-HYHL-6HE4
-// R-HIMW-7GR3 R-I4L3-3C3L
+// R-HSE3-9MON R-HTLZ-NEFC R-HUTW-1661 R-PRLR-U8IK R-HYHL-6HE4
+// R-HIMW-7GR3 R-I4L3-3C3L R-OVXY-HY6R
 func TestOperationCheckpoints(t *testing.T) {
 	_, s, now := fixture(t)
 	h, op := create(t, s)
@@ -45,6 +45,9 @@ func TestOperationCheckpoints(t *testing.T) {
 	eq(t, value(t, result(s.Host(ctx, other.Name))), other)
 	eq(t, value(t, result(s.Operation(ctx, otherOp.ID))), otherOp)
 
+	nextTry := stepTime.Add(time.Minute)
+	checkErr(t, s.Defer(ctx, op.ID, nextTry, 3), nil)
+	op.Attempts, op.NextTry = 3, nextTry
 	checkErr(t, s.Fail(ctx, op.ID, "launch failed"), nil)
 	h.State, h.Reason = store.HostFailed, "launch failed"
 	eq(t, value(t, result(s.Host(ctx, h.Name))), h)
@@ -59,7 +62,7 @@ func TestOperationCheckpoints(t *testing.T) {
 	h.State, h.Reason = store.HostProvisioning, ""
 	eq(t, got, h)
 	finishTime := now.UTC().Truncate(time.Second)
-	op.Caller, op.StepStarted, op.NextTry = retrier, finishTime, finishTime
+	op.Caller, op.Attempts, op.StepStarted, op.NextTry = retrier, 0, finishTime, finishTime
 	eq(t, retried, op)
 
 	checkErr(t, s.Finish(ctx, op.ID, store.Update{RootGB: 30}), nil)

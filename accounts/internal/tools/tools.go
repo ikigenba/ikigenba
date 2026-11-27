@@ -197,6 +197,7 @@ var storeRefusals = []struct {
 	{store.ErrAllowlistFull, AllowlistFull},
 	{store.ErrVolumeDeleting, VolumeDeleting},
 	{store.ErrNotClosed, HostNotClosed},
+	{store.ErrWithheld, HostWithheld},
 	{store.ErrNoDataVolume, NoDataVolume},
 	{store.ErrNoAddress, NoAddress},
 	{store.ErrAccountNotActive, AccountNotActive},

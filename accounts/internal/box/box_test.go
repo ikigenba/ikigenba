@@ -347,7 +347,7 @@ func TestBoxRefusalConstants(t *testing.T) {
 		tools.NoHost, tools.NoAccount, tools.NoUser, tools.NotInAccount, tools.InvalidKey, tools.KeyNotHeld,
 		tools.TypeNotAllowed, tools.SizeOutOfRange, tools.SizeShrinks, tools.NothingToChange,
 		tools.HostBusy, tools.HostFailed, tools.HostNotFailed, tools.HostNotRunning, tools.HostNotStopped,
-		tools.HostHasAccounts, tools.HostFull, tools.HostGone, tools.AccountHasUsers, tools.AccountRemoving,
+		tools.HostHasAccounts, tools.HostFull, tools.HostGone, tools.HostWithheld, tools.AccountHasUsers, tools.AccountRemoving,
 		tools.AccountFull, tools.TooManyKeys, tools.GrowLimit, tools.UserNotLocked, tools.UserRemoving,
 		tools.NameHasRecord, tools.CloudFailed, tools.InvalidAddress, tools.PrefixTooWide, tools.TooManyUnbans,
 		tools.AllowlistFull, tools.TooManyInvites, tools.NoInvite, tools.NoLink,

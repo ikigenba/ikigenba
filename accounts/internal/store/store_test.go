@@ -195,7 +195,7 @@ func TestOperationIDCollisionsRollBack(t *testing.T) {
 	eq(t, h.Seq, int64(3))
 }
 
-// R-1WCG-1391 R-BYG6-N24Z R-RJ2D-W3MH R-6Z5T-SM4C R-5HSB-KP8M R-GWWF-0TU4
+// R-1WCG-1391 R-BYG6-N24Z R-RJ2D-W3MH R-6Z5T-SM4C R-5HSB-KP8M R-GWWF-0TU4 R-PJ2H-5UBP
 func TestErrorClasses(t *testing.T) {
 	base := []error{store.ErrUnreachable, store.ErrNotFound, store.ErrTaken, store.ErrConflict}
 	groups := [][]error{base, {store.ErrNotInAccount, store.ErrKeyNotHeld, store.ErrNoDatabase, store.ErrNoSnapshot, store.ErrNoUser}, {store.ErrBusy, store.ErrHostFailed,
@@ -204,7 +204,7 @@ func TestErrorClasses(t *testing.T) {
 		store.ErrAccountRemoving, store.ErrAccountFull, store.ErrTooManyKeys, store.ErrNotLocked, store.ErrUserRemoving,
 		store.ErrTooManyUnbans, store.ErrAllowlistFull, store.ErrTooManyInvites, store.ErrLastKey, store.ErrNotActive, store.ErrNotAdmin, store.ErrSelf, store.ErrVolumeDeleting,
 		store.ErrNotClosed, store.ErrNoDataVolume, store.ErrAccountNotActive, store.ErrTooManyRestores,
-		store.ErrAccountExists, store.ErrBackupsDeleting, store.ErrNoAddress, store.ErrNotRestorable}}
+		store.ErrAccountExists, store.ErrBackupsDeleting, store.ErrNoAddress, store.ErrNotRestorable, store.ErrWithheld}}
 	seen := map[error]bool{}
 	for i, group := range groups {
 		for pos, e := range group {

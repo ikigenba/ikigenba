@@ -106,9 +106,10 @@ func toolEvents(t *testing.T, f *fixture) []telemetry.Event {
 	return events
 }
 
-// R-ZCRW-FU67 R-GTAN-47LS R-1OF3-PKX6 R-1PN0-3CNV
+// R-ZCRW-FU67 R-GTAN-47LS R-GUIJ-HZCH R-1OF3-PKX6 R-1PN0-3CNV
 func TestHostOperations(t *testing.T) {
 	f := setup(t)
+	f.serveLoopback()
 	ctx := context.Background()
 	missing := tools.HostArgs{Host: "missing"}
 	for _, name := range []string{tools.ToolStopHost, tools.ToolStartHost, tools.ToolRetryHost, tools.ToolDeleteHost} {
@@ -177,6 +178,7 @@ func TestHostOperations(t *testing.T) {
 	if op := f.operation(resized.Operation); op.Kind != store.OpResize || op.Status != store.OpRunning || op.Target != wantTarget || op.Caller.UserID != f.caller.UserID {
 		t.Fatalf("resize operation %+v", op)
 	}
+	checkRetryHost(t, f, resized.Operation, store.HostResizing)
 	f.finish(resized.Operation, store.Update{Type: instance, DataGB: dataSize, RootGB: rootSize})
 	dataSize++
 	resizeOnlyData := answer[tools.HostResize](t, f.call(tools.ToolResizeHost, tools.ResizeHostArgs{Host: h.Name, Type: &instance, DataGB: &dataSize}))
@@ -186,6 +188,7 @@ func TestHostOperations(t *testing.T) {
 	}
 	f.finish(resizeOnlyData.Operation, store.Update{DataGB: dataSize})
 	stopped := checkHostOperation(t, f, tools.ToolStopHost, host.Host, store.OpStop, store.HostStopping)
+	checkRetryHost(t, f, stopped, store.HostStopping)
 	f.finish(stopped, store.Update{})
 	refusal(t, f.call(tools.ToolStopHost, host), tools.HostNotRunning)
 	newType := "t4g.xlarge"
@@ -195,11 +198,13 @@ func TestHostOperations(t *testing.T) {
 	}
 	f.finish(stoppedResize.Operation, store.Update{Type: newType})
 	started := checkHostOperation(t, f, tools.ToolStartHost, host.Host, store.OpStart, store.HostStarting)
+	checkRetryHost(t, f, started, store.HostStarting)
 	f.finish(started, store.Update{})
 	f.seedAccount("acme", h.Name)
 	refusal(t, f.call(tools.ToolDeleteHost, tools.DeleteHostArgs{Host: host.Host}), tools.HostHasAccounts)
 	answer[tools.Account](t, f.call(tools.ToolRemoveAccount, tools.AccountArgs{Account: "acme"}))
-	checkHostOperation(t, f, tools.ToolDeleteHost, host.Host, store.OpDelete, store.HostDeleting)
+	deleted := checkHostOperation(t, f, tools.ToolDeleteHost, host.Host, store.OpDelete, store.HostDeleting)
+	checkRetryHost(t, f, deleted, store.HostDeleting)
 
 	custom := answer[tools.HostChange](t, f.call(tools.ToolCreateHost, tools.CreateHostArgs{Type: &instance, RootGB: &rootSize, DataGB: &dataSize}))
 	if actual := f.host(custom.Host); actual.Type != instance || actual.RootGB != rootSize || actual.DataGB != dataSize {
@@ -220,6 +225,23 @@ func checkHostOperation(t *testing.T, f *fixture, name, host, kind, state string
 		t.Fatalf("host operation answer %+v, stored %+v", out, op)
 	}
 	return op.ID
+}
+
+func checkRetryHost(t *testing.T, f *fixture, id, state string) tools.HostChange {
+	t.Helper()
+	if err := f.st.RecordStep(t.Context(), id, "recorded-step", 3, f.now); err != nil {
+		t.Fatal(err)
+	}
+	before := f.operation(id)
+	f.fail(id, "operation failed")
+	got := answer[tools.HostChange](t, f.call(tools.ToolRetryHost, tools.HostArgs{Host: before.Host}))
+	after := f.operation(id)
+	if got.Host != before.Host || got.State != state || got.Operation != id || f.host(before.Host).State != state ||
+		after.Status != store.OpRunning || after.ID != before.ID || after.Kind != before.Kind ||
+		after.Step != before.Step || after.Generation != before.Generation {
+		t.Fatalf("retry answer %+v, prior operation %+v, resumed operation %+v", got, before, after)
+	}
+	return got
 }
 
 // R-2O0M-G9SZ R-2P8I-U1JO R-2LKT-OQBL
@@ -327,6 +349,7 @@ func testCreateAccountDNS(t *testing.T) {
 	}
 }
 
+// R-0XON-ENBG
 func TestRemoveAccount(t *testing.T) {
 	t.Run("missing", func(t *testing.T) {
 		f := setup(t)

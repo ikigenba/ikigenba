@@ -425,7 +425,7 @@ func (a *installAttempt) ensure(ctx context.Context, env Env, version, digest st
 	if retry {
 		return lastErr
 	}
-	err := install(ctx, env, version, digest)
+	err := redactBackupDiagnostic(backupDiagnosticRedactor(ctx), install(ctx, env, version, digest))
 	now = env.Now()
 	a.mu.Lock()
 	a.at, a.err = now, err

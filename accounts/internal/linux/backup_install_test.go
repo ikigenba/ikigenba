@@ -446,8 +446,10 @@ func installTestState() protocol.DesiredState {
 }
 
 func TestBackupPassResticInstallRetry(t *testing.T) {
-	// R-U8D5-LEU3
+	// R-WF3U-E9S9
 	f := newHardeningFixture(t)
+	f.put(dataPrivateKey, "host private", 0o600)
+	f.put(dataPublicKey, "host public", 0o644)
 	start := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
 	now := start
 	f.env.Now = func() time.Time { return now }
@@ -488,7 +490,7 @@ func TestBackupPassResticInstallRetry(t *testing.T) {
 }
 
 func TestStreamPassLitestreamInstallRetry(t *testing.T) {
-	// R-U8D5-LEU3
+	// R-WF3U-E9S9
 	f := newHardeningFixture(t)
 	start := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
 	now := start
@@ -613,7 +615,7 @@ func TestHostBackupConcurrentCalls(t *testing.T) {
 }
 
 func TestHostBackupCredentialsStayInEnvironment(t *testing.T) {
-	// R-U759-7N3E
+	// R-WXEC-4TWO
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	f.put(dataPrivateKey, "host private", 0o600)
@@ -621,7 +623,7 @@ func TestHostBackupCredentialsStayInEnvironment(t *testing.T) {
 	f.put("/srv/acme/data/test.db", "SQLite format 3\x00\x00\x00\x02\x02", 0o600)
 	s := installTestState()
 	account := protocol.Credentials{
-		AccessKeyID:     "AccountKey12",
+		AccessKeyID:     "XQ",
 		SecretAccessKey: "redacted",
 		SessionToken:    "AccountToken34",
 	}
@@ -665,7 +667,7 @@ func TestHostBackupCredentialsStayInEnvironment(t *testing.T) {
 			}
 		}
 		check(label+" arguments", strings.Join(c.Args, " "))
-		leak := strings.Join(secretsOf(credentials), " ")
+		leak := strings.Join(secrets, " ")
 		return linux.Result{Stderr: []byte(leak), ExitCode: 7}, errors.New(leak)
 	}
 	f.host = linux.New(f.env)
@@ -693,6 +695,29 @@ func TestHostBackupCredentialsStayInEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 	check("report", string(body))
+	for _, path := range []string{linux.ResticPath, linux.LitestreamPath} {
+		if err := os.Remove(f.path(path)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f.env.Fetch = func(context.Context, string) (io.ReadCloser, error) {
+		return nil, fmt.Errorf("installer offline: %s", strings.Join(secrets, " "))
+	}
+	f.host = linux.New(f.env)
+	for label, pass := range map[string]func(context.Context, protocol.DesiredState) error{"Stream": f.host.Stream, "Backup": f.host.Backup} {
+		err := pass(t.Context(), s)
+		if err == nil || !strings.Contains(err.Error(), "installer offline") {
+			t.Fatalf("%s did not report the install failure", label)
+		}
+		check(label+" install error", err.Error())
+	}
+	report, err = f.host.Inspect(t.Context(), s)
+	if err != nil || len(report.Backups) != 1 || len(report.Backups[0].Databases) != 1 ||
+		!strings.Contains(report.Backups[0].Error, "installer offline") || !strings.Contains(report.Backups[0].Databases[0].Error, "installer offline") {
+		t.Fatalf("Inspect did not carry the installer errors, err = %v", err)
+	}
+	check("restic install report error", report.Backups[0].Error)
+	check("Litestream install report error", report.Backups[0].Databases[0].Error)
 	check("stderr", stderr.String())
 	for name, file := range snapshotHost(t, f.root) {
 		if name != linux.BackupDir+"/acme.env" {

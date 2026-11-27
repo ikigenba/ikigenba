@@ -160,7 +160,7 @@ func putCounts(puts []putCall) map[putCall]int {
 }
 
 func TestMemoryStream(t *testing.T) {
-	// R-YJ1G-3C32 R-YGLN-BSLO R-YP4Y-06SJ R-YQCU-DYJ8
+	// R-YJ1G-3C32 R-YGLN-BSLO R-WYM8-ILND R-YQCU-DYJ8
 	s := backupState()
 	now := fixtureTime.Add(250 * time.Millisecond).In(time.FixedZone("test", -3600))
 	var puts []putCall
@@ -236,7 +236,7 @@ func TestMemoryStream(t *testing.T) {
 }
 
 func TestMemorySnapshotSchedule(t *testing.T) {
-	// R-YK9C-H3TR R-YE5U-K94A
+	// R-YK9C-H3TR R-YE5U-K94A R-WYM8-ILND
 	s := backupState()
 	now := fixtureTime.Add(time.Millisecond)
 	var puts []putCall
@@ -290,7 +290,7 @@ func TestMemorySnapshotSchedule(t *testing.T) {
 		t.Fatalf("scheduled put counts = %v, want %v", got, wantCounts)
 	}
 	snap := m.State()
-	got := snap.Backups[0]
+	got := inspect(t, m, s).Backups[0]
 	at := now.Add(-time.Hour).UTC().Truncate(time.Second)
 	if got.Snapshot != at || len(got.Snapshots) != protocol.MaxSnapshots || got.Checked != fixtureTime || got.Error != "" {
 		t.Fatalf("scheduled backup: %+v", got)
@@ -312,7 +312,7 @@ func TestMemorySnapshotSchedule(t *testing.T) {
 }
 
 func TestMemoryInspectDatabaseAggregate(t *testing.T) {
-	// R-YP4Y-06SJ
+	// R-WYM8-ILND
 	s := backupState()
 	disks := machine.NewDisks()
 	early, late := fixtureTime, fixtureTime.Add(time.Minute)
