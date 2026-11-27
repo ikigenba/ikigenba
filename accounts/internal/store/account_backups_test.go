@@ -26,7 +26,7 @@ func recordBackup(t *testing.T, s *store.Store, h store.Host, received time.Time
 	value(t, result(s.RecordReport(ctx, h.Name, protocol.Report{Backups: backups}, received)))
 }
 
-// R-6JL7-FL85 R-6KT3-TCYU R-6BLI-POCE R-NJYD-DNNV R-6X03-N2DS
+// R-6JL7-FL85 R-6KT3-TCYU R-6BLI-POCE R-AOH7-FU0Q R-6X03-N2DS
 func TestBackupFactsTrackTheLatestEntryForEachAccount(t *testing.T) {
 	d, s, now := fixture(t)
 	host, other := readyHost(t, s), readyHost(t, s)
@@ -91,8 +91,120 @@ func TestBackupFactsTrackTheLatestEntryForEachAccount(t *testing.T) {
 	d.SetFailing(false)
 }
 
+// R-AOH7-FU0Q R-6X03-N2DS R-NL69-RFEK R-PU1K-LRZY
+func TestAccountBackupFinalFollowsPlacementOnTheSameHost(t *testing.T) {
+	_, s, now := fixture(t)
+	h := readyHost(t, s)
+	a := activeAccount(t, s, "acme", h.Name)
+	*now = now.Add(time.Minute)
+	_, closed := closeHost(t, s, h.Name)
+	finalAt := now.UTC().Truncate(time.Second)
+	recordBackup(t, s, h, *now, protocol.AccountBackup{Account: a.Slug, Final: protocol.Step{
+		ID: closed.ID, State: protocol.StepDone, At: finalAt,
+	}})
+	checkErr(t, s.Finish(ctx, closed.ID, store.Update{}), nil)
+	got := value(t, result(s.BackupOf(ctx, a.Slug)))
+	eq(t, got.Final, protocol.StepDone)
+	eq(t, got.FinalAt, finalAt)
+
+	*now = now.Add(time.Minute)
+	_, removed := remove(t, s, a.Slug)
+	checkErr(t, s.Finish(ctx, removed.ID, store.Update{}), nil)
+	fresh := activeAccount(t, s, a.Slug, h.Name)
+	want := store.AccountBackup{Account: fresh.Slug, Host: fresh.Host, State: fresh.State}
+	eq(t, value(t, result(s.BackupOf(ctx, fresh.Slug))), want)
+	eq(t, value(t, result(s.BackupsOn(ctx, h.Name))), []store.AccountBackup{want})
+	for _, host := range []string{"", h.Name} {
+		eq(t, value(t, result(s.ListBackups(ctx, host, "", 1))), []store.AccountBackup{want})
+	}
+	eq(t, value(t, result(s.BackupSteps(ctx, closed.ID))), []store.BackupStep{
+		{State: protocol.StepPending, At: closed.Started},
+		{Account: fresh.Slug, State: protocol.StepDone, At: finalAt},
+	})
+
+	_, opening := openHost(t, s, h.Name)
+	checkErr(t, s.Finish(ctx, opening.ID, store.Update{}), nil)
+	_, later := closeHost(t, s, h.Name)
+	want.Final, want.FinalAt = protocol.StepPending, later.Started
+	eq(t, value(t, result(s.BackupOf(ctx, fresh.Slug))), want)
+}
+
+// R-AOH7-FU0Q R-PU1K-LRZY
+func TestAccountBackupStepsUseReportTimeWhenTheOperationStartedBeforePlacement(t *testing.T) {
+	for _, kind := range []string{store.OpClose, store.OpReplace} {
+		t.Run(kind, func(t *testing.T) {
+			_, s, now := fixture(t)
+			h := readyHost(t, s)
+			a := activeAccount(t, s, "acme", h.Name)
+			var op store.Operation
+			if kind == store.OpClose {
+				_, op = closeHost(t, s, h.Name)
+			} else {
+				_, op, _ = replaceHost(t, s, h.Name, store.ReplaceBackup, store.Target{})
+			}
+			reportStep := func(a store.Account, at time.Time) {
+				t.Helper()
+				entry := protocol.AccountBackup{Account: a.Slug}
+				step := protocol.Step{ID: op.ID, State: protocol.StepDone, At: at}
+				if kind == store.OpClose {
+					entry.Final = step
+				} else {
+					entry.Restored = step
+				}
+				recordBackup(t, s, h, *now, entry)
+			}
+			checkStep := func(slug, state string, at time.Time) {
+				t.Helper()
+				got := value(t, result(s.BackupOf(ctx, slug)))
+				if kind == store.OpClose {
+					eq(t, got.Final, state)
+					eq(t, got.FinalAt, at)
+				} else {
+					eq(t, got.Restore, state)
+				}
+			}
+			eq(t, op.Started, a.Created)
+			reportStep(a, a.Created.Add(-time.Second))
+			checkStep(a.Slug, protocol.StepDone, a.Created.Add(-time.Second))
+
+			*now = now.Add(time.Minute)
+			_, removed := remove(t, s, a.Slug)
+			checkErr(t, s.Finish(ctx, removed.ID, store.Update{}), nil)
+			a = activeAccount(t, s, a.Slug, h.Name)
+			checkStep(a.Slug, "", time.Time{})
+			eq(t, value(t, result(s.BackupSteps(ctx, op.ID))), []store.BackupStep{
+				{State: protocol.StepPending, At: op.Started},
+				{Account: a.Slug, State: protocol.StepDone, At: op.Started.Add(-time.Second)},
+			})
+
+			for _, tc := range []struct {
+				slug   string
+				offset time.Duration
+				state  string
+			}{
+				{"early", -time.Second, ""},
+				{"equal", 0, protocol.StepDone},
+				{"later", time.Second, protocol.StepDone},
+			} {
+				placed := activeAccount(t, s, tc.slug, h.Name)
+				checkStep(placed.Slug, "", time.Time{})
+				at := placed.Created.Add(tc.offset)
+				reportStep(placed, at)
+				if tc.state == "" {
+					at = time.Time{}
+				}
+				checkStep(placed.Slug, tc.state, at)
+			}
+			if kind == store.OpReplace {
+				checkErr(t, s.Finish(ctx, op.ID, store.Update{}), nil)
+				checkStep("equal", "", time.Time{})
+			}
+		})
+	}
+}
+
 // R-6ZFW-ELV6 R-NL69-RFEK R-70NS-SDLV R-71VP-65CK R-733L-JX39 R-GS0T-HQVC
-// R-NJYD-DNNV R-74BH-XOTY R-535I-ZGCA
+// R-AOH7-FU0Q R-74BH-XOTY R-535I-ZGCA
 func TestRemovedBackupsPageAndDeleteLifecycle(t *testing.T) {
 	rand := new(counterRandom)
 	now := baseTime

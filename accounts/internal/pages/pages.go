@@ -159,6 +159,10 @@ func hostDetail(w http.ResponseWriter, r *http.Request, cfg Config, banner page.
 		if err != nil {
 			return err
 		}
+		accounts, err := snapshot.AccountsOn(ctx, name)
+		if err != nil {
+			return err
+		}
 		restores, total, err := snapshot.RestoresOn(ctx, name, MaxRestoreRows)
 		if err != nil {
 			return err
@@ -167,7 +171,7 @@ func hostDetail(w http.ResponseWriter, r *http.Request, cfg Config, banner page.
 		data.Banner.Trail = []page.Level{HostLevel(h.Name)}
 		data.Host = hostView(h, cfg.Domain, now, flaggedBackups(facts, settings, now))
 		data.Report = reportView(report, h.Version)
-		data.Backups, data.DatabaseCount = backupRows(facts, report, settings, now)
+		data.Backups, data.DatabaseCount = backupRows(facts, accounts, report, settings, now)
 		data.Restores, data.RestoreTotal = restoreRows(restores), total
 		return nil
 	})

@@ -249,7 +249,7 @@ func TestLandingBackupHealthUsesThePageClockAndHostCloseSurvivesStop(t *testing.
 	checkLandingBackupData()
 }
 
-// R-CTBF-JTQQ
+// R-PL5K-0229
 func TestHostBackupRowsUseFoldedFactsAndFirstReportEntry(t *testing.T) {
 	f := setup(t)
 	writePageBackupSettings(t, f, otherBackupSettings)
@@ -308,7 +308,50 @@ func TestHostBackupRowsUseFoldedFactsAndFirstReportEntry(t *testing.T) {
 	checkBackupHostPage(t, f, h, view, now, pages.HostData{Backups: want, DatabaseCount: len(wantDBs) + 1})
 }
 
-// R-CUJB-XLHF R-CVR8-BD84
+// R-PL5K-0229 R-PMDG-DTSY
+func TestHostDatabasesUseReportsFromTheCurrentPlacement(t *testing.T) {
+	f := setup(t)
+	st, ctx := f.cfg.Store, t.Context()
+	h := backupPageHost(t, f, "")
+	const replaced, unchanged = "acme", "zulu"
+	placeBackupPageAccount(t, f, h.Name, replaced)
+	placeBackupPageAccount(t, f, h.Name, unchanged)
+
+	f.advance(time.Second)
+	received := f.cfg.Now().UTC()
+	backups := []protocol.AccountBackup{
+		{Account: replaced, Databases: []protocol.Database{{Path: "data/old.db"}}, DatabaseTotal: 4},
+		{Account: unchanged, Databases: []protocol.Database{{Path: "data/retained.db"}}, DatabaseTotal: 1},
+	}
+	writePageReport(t, f, h.Name, backups)
+	view := viewOfBackupHost(h, f.cfg.Domain)
+	view.AccountCount, view.Health = 2, store.HealthPending
+	view.Reported, view.ReportedText = received.Format(time.RFC3339), received.Format(pages.MinuteLayout)
+	data := pages.HostData{Backups: []pages.BackupRow{
+		{Account: replaced, Health: store.BackupNone, Databases: []pages.DatabaseRow{{Path: "data/old.db", Health: store.BackupNone}}, DatabaseTotal: 4},
+		{Account: unchanged, Health: store.BackupNone, Databases: []pages.DatabaseRow{{Path: "data/retained.db", Health: store.BackupNone}}, DatabaseTotal: 1},
+	}, DatabaseCount: 2}
+	checkBackupHostPage(t, f, h, view, received, data)
+
+	f.advance(time.Second)
+	_, removal, _, err := st.RemoveAccount(ctx, replaced, caller)
+	checkPageStore(t, err)
+	checkPageStore(t, st.Finish(ctx, removal.ID, store.Update{}))
+	placeBackupPageAccount(t, f, h.Name, replaced)
+	data.Backups[0].Databases, data.Backups[0].DatabaseTotal, data.DatabaseCount = []pages.DatabaseRow{}, 0, 1
+	checkBackupHostPage(t, f, h, view, received, data)
+
+	// Keep the clock at the new placement's creation time for this report.
+	received = f.cfg.Now().UTC()
+	backups[0].Databases[0].Path, backups[0].DatabaseTotal = "data/current.db", 5
+	writePageReport(t, f, h.Name, backups)
+	view.Reported, view.ReportedText = received.Format(time.RFC3339), received.Format(pages.MinuteLayout)
+	data.Backups[0].Databases = []pages.DatabaseRow{{Path: "data/current.db", Health: store.BackupNone}}
+	data.Backups[0].DatabaseTotal, data.DatabaseCount = 5, 2
+	checkBackupHostPage(t, f, h, view, received, data)
+}
+
+// R-CUJB-XLHF R-PMDG-DTSY
 func TestHostRestoresShowNewestRowsAndTheirResultsUntilNameReuse(t *testing.T) {
 	f := setup(t)
 	st, ctx := f.cfg.Store, t.Context()

@@ -48,7 +48,7 @@ func CapturePageData[T any](t *testing.T, cfg Config, r *http.Request, name stri
 	return got
 }
 
-// R-MIW1-2B77 R-CS3J-6201 R-CVR8-BD84 distinguish empty slices from nil at the template input.
+// R-MIW1-2B77 R-CS3J-6201 R-PMDG-DTSY distinguish empty slices from nil at the template input.
 func TestEmptyPageLists(t *testing.T) {
 	t.Setenv(services.Variable, "")
 	now := func() time.Time { return time.Date(2026, 11, 18, 14, 5, 9, 0, time.UTC) }

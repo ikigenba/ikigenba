@@ -628,7 +628,7 @@ func TestRestoreToolsCountReportedUnsettledRestores(t *testing.T) {
 	refusal(t, f.call(tools.ToolRestoreFiles, files), tools.TooManyRestores)
 }
 
-// R-1XGJ-IPPB R-1YOF-WHG0 R-1ZWC-A96P R-I170-VYAS R-PQKT-Z939 R-I7AI-ST09 R-2U44-D4IG R-HWBF-CVC0
+// R-1XGJ-IPPB R-1YOF-WHG0 R-1ZWC-A96P R-I170-VYAS R-PQKT-Z939 R-PJXN-MABK R-2U44-D4IG R-HWBF-CVC0
 func TestBackupReadTools(t *testing.T) {
 	f := setup(t)
 	h, _ := f.seedHost(true)
@@ -700,8 +700,10 @@ func TestBackupReadTools(t *testing.T) {
 			t.Fatalf("database %d = %+v, want %+v", i, got, want)
 		}
 	}
-	if got := answer[tools.RestorePoints](t, f.call(tools.ToolRestorePoints, beta)); got.Reported != now || len(got.Snapshots)+len(got.Databases) != 0 {
-		t.Fatal(got)
+	if got, want := answer[tools.RestorePoints](t, f.call(tools.ToolRestorePoints, beta)), (tools.RestorePoints{
+		Account: beta.Account, Host: h.Name, Reported: now, Snapshots: []string{}, Databases: []tools.DatabasePoint{},
+	}); !reflect.DeepEqual(got, want) {
+		t.Fatalf("report without an entry: %+v, want %+v", got, want)
 	}
 
 	list := func(args any) tools.BackupStatusList {
@@ -779,6 +781,55 @@ func TestBackupReadTools(t *testing.T) {
 	}
 	if got := slugs(list(tools.BackupStatusArgs{}).Accounts); !slices.Equal(got, []string{"acme", "beta", "gamma"}) {
 		t.Fatalf("accounts after backup deletion %v", got)
+	}
+}
+
+// R-PJXN-MABK
+func TestRestorePointsUseReportsFromCurrentPlacement(t *testing.T) {
+	f := setup(t)
+	f.serveLoopback()
+	h, _ := f.seedHost(true)
+	acme := createActiveAccount(f, "acme", h.Name)
+	f.now = f.now.UTC().Truncate(time.Second).Add(time.Minute)
+	received := f.now
+	snapshot := received.Add(-time.Minute)
+	entry := protocol.AccountBackup{
+		Account: acme.Account, Snapshots: []int64{snapshot.Unix()}, DatabaseTotal: 1,
+		Databases: []protocol.Database{{Path: "data/old.db", Error: "sync failed"}},
+	}
+	backupReport(f, h.Name, entry)
+	readPoints := func() tools.RestorePoints {
+		return answer[tools.RestorePoints](t, f.call(tools.ToolRestorePoints, acme))
+	}
+	want := tools.RestorePoints{
+		Account: acme.Account, Host: h.Name, Reported: stampRestoreTime(received),
+		Snapshots: []string{stampRestoreTime(snapshot)}, DatabaseTotal: 1,
+		Databases: []tools.DatabasePoint{{Path: "data/old.db", Health: store.BackupError, Error: "sync failed"}},
+	}
+	if got := readPoints(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("original placement: %+v, want %+v", got, want)
+	}
+
+	answer[tools.Account](t, f.call(tools.ToolRemoveAccount, acme))
+	f.finish(readAccount(t, f, acme.Account).Operation.Operation, store.Update{})
+	f.now = received.Add(time.Second)
+	create := tools.CreateAccountArgs{Account: acme.Account, Host: h.Name}
+	placed := answer[tools.Account](t, f.call(tools.ToolCreateAccount, create))
+	if placed.Created != stampRestoreTime(f.now) {
+		t.Fatalf("new placement created at %q, want %q", placed.Created, stampRestoreTime(f.now))
+	}
+	want.Snapshots, want.Databases, want.DatabaseTotal = []string{}, []tools.DatabasePoint{}, 0
+	if got := readPoints(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("before the new placement reports: %+v, want %+v", got, want)
+	}
+
+	backupReport(f, h.Name, protocol.AccountBackup{
+		Account: acme.Account, Snapshots: []int64{received.Unix()},
+	}, entry)
+	want.Reported = placed.Created
+	want.Snapshots = []string{stampRestoreTime(received)}
+	if got := readPoints(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("report received at placement time: %+v, want %+v", got, want)
 	}
 }
 

@@ -117,6 +117,9 @@ func (cfg Config) restorePoints(ctx context.Context, args AccountArgs) (RestoreP
 		return out, nil
 	}
 	out.Reported = stamp(report.Received)
+	if report.Received.Before(a.Created) {
+		return out, nil
+	}
 	for _, entry := range report.Body.Backups {
 		if entry.Account != a.Slug {
 			continue

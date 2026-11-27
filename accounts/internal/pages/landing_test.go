@@ -250,7 +250,7 @@ func createKeptVolume(t *testing.T, f *fixture, volume string) pages.KeptVolumeR
 	return completeKeptHost(t, f, createRunningHost(t, f, volume), volume)
 }
 
-// R-MBKM-ROR1 R-31QS-98MR R-MHO4-OJGI R-CS3J-6201 R-CVR8-BD84 R-MK3X-G2XW
+// R-MBKM-ROR1 R-31QS-98MR R-MHO4-OJGI R-CS3J-6201 R-PMDG-DTSY R-MK3X-G2XW
 func TestLandingChoicesAndKeptVolumeRows(t *testing.T) {
 	f := setup(t)
 	st := f.cfg.Store
@@ -654,7 +654,7 @@ func TestKeptVolumeDeletionRangeThroughPagesAndTool(t *testing.T) {
 	}
 }
 
-// R-CS3J-6201 R-CVR8-BD84 R-SWJU-KDAB R-K8CH-7HG3
+// R-CS3J-6201 R-PMDG-DTSY R-SWJU-KDAB R-K8CH-7HG3
 func TestHostDetailsAndLatestReport(t *testing.T) {
 	f := setup(t)
 	st := f.cfg.Store

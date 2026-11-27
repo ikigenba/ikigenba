@@ -41,12 +41,17 @@ func flaggedBackups(facts []store.AccountBackup, settings store.BackupSettings, 
 	return count
 }
 
-func backupRows(facts []store.AccountBackup, report *store.Report, settings store.BackupSettings, now time.Time) ([]BackupRow, int) {
+func backupRows(facts []store.AccountBackup, accounts []store.Account, report *store.Report, settings store.BackupSettings, now time.Time) ([]BackupRow, int) {
 	entries := make(map[string]protocol.AccountBackup)
 	if report != nil {
 		for _, entry := range report.Body.Backups {
 			if _, exists := entries[entry.Account]; !exists {
 				entries[entry.Account] = entry
+			}
+		}
+		for _, account := range accounts {
+			if report.Received.Before(account.Created) {
+				delete(entries, account.Slug)
 			}
 		}
 	}

@@ -477,7 +477,7 @@ func statusWithHeader(status int, name, value string) *httptest.ResponseRecorder
 	return w
 }
 
-// R-ADGT-KWGW R-CQYO-ZTKZ R-AY74-302P R-RSB5-XXTE R-RZMK-8K9K R-SFH9-7KWL R-RX6R-H0S6 R-SGP5-LCNA R-SHX1-Z4DZ R-MNRM-LE5Z R-SQGC-NIKU R-CVR8-BD84
+// R-ADGT-KWGW R-CQYO-ZTKZ R-AY74-302P R-RSB5-XXTE R-RZMK-8K9K R-SFH9-7KWL R-RX6R-H0S6 R-SGP5-LCNA R-SHX1-Z4DZ R-MNRM-LE5Z R-SQGC-NIKU R-PMDG-DTSY
 func TestPageDecisionOrder(t *testing.T) {
 	f := setup(t)
 	f.cfg.ServicesPath = servicesFile(t, "https://chosen-auth.test/")

@@ -70,14 +70,18 @@ func accountBackup(q query, a Account, h Host) (AccountBackup, error) {
 	if err := ignoreNoRows(err); err != nil {
 		return AccountBackup{}, err
 	}
+	created := a.Created.Unix()
 	err = q.row(`SELECT s.state, s.at FROM backup_steps s JOIN backup_operations o ON o.id = s.operation_id
-		WHERE o.kind = 'close' AND o.host_seq = ? AND o.supersedes = 'latest' AND s.account = ?`, h.Seq, a.Slug).
+		WHERE o.kind = 'close' AND o.host_seq = ? AND o.supersedes = 'latest' AND s.account = ?
+		AND (o.started >= ? OR s.at >= ?)`, h.Seq, a.Slug, created, created).
 		Scan(&b.Final, storedTime{&b.FinalAt})
 	if err := ignoreNoRows(err); err != nil {
 		return AccountBackup{}, err
 	}
 	if h.Replace == ReplaceBackup {
-		err = q.row("SELECT state FROM backup_steps WHERE operation_id = ? AND account = ?", h.Operation, a.Slug).Scan(&b.Restore)
+		err = q.row(`SELECT s.state FROM backup_steps s JOIN backup_operations o ON o.id = s.operation_id
+			WHERE o.id = ? AND o.kind = 'replace' AND s.account = ? AND (o.started >= ? OR s.at >= ?)`,
+			h.Operation, a.Slug, created, created).Scan(&b.Restore)
 	}
 	return b, ignoreNoRows(err)
 }
