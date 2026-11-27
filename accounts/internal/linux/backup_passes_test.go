@@ -2,6 +2,7 @@ package linux_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -187,9 +188,15 @@ func TestBackupsPreserveUncredentialedAccounts(t *testing.T) {
 }
 
 func TestAccountResticWaitsForItsWalk(t *testing.T) {
-	// R-WMF8-OW8F
+	// R-NT4A-NPEI
 	f := newBackupPassFixture(t)
+	f.stream()
+	f.host = linux.New(f.env)
+	f.backupCommands = nil
 	f.backup()
+	if got := f.commandsFor(f.path(linux.ResticPath)); len(got) != 0 {
+		t.Fatalf("restic reused an earlier host's walk: %v", got)
+	}
 	configured := f.state.Backup
 	f.state.Backup = nil
 	f.stream()
@@ -300,6 +307,143 @@ func TestDatabaseWalkBoundsKeepPriorCompletedFacts(t *testing.T) {
 	if !reflect.DeepEqual(before, after) {
 		t.Fatalf("depth overflow report changed the retained facts: %+v", after)
 	}
+}
+
+func TestDepthLimitedWalkRejectsStaleFallback(t *testing.T) {
+	// R-NT4A-NPEI R-WNN5-2NZ4
+	f := newBackupPassFixture(t)
+	const status = linux.BackupDir + "/status/acme.json"
+	f.put("/srv/acme/data/old.db", walSQLite, 0o660)
+	f.stream()
+	older, err := os.ReadFile(f.path(status))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.put("/srv/acme/data/old.db", plainSQLite, 0o660)
+	f.put("/srv/acme/data/new.db", walSQLite, 0o660)
+	f.stream()
+	f.put(status, string(older), 0o600)
+	if err := os.MkdirAll(f.path("/srv/acme/data/"+strings.Repeat("deep/", linux.MaxDepth+1)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	f.stream()
+	f.backupCommands = nil
+	f.backup()
+	f.requireResticConfig("acme")
+	f.expectFile(linux.BackupDir+"/manifest/acme", fmt.Sprintf("%d %d 0660 data/new.db\n", os.Getuid(), os.Getgid()), 0o600)
+	if got := f.report().Backups[0]; got.Error != machine.DataTooLarge || len(got.Databases) != 2 || got.Databases[0].Path != "data/new.db" {
+		t.Fatalf("a limited walk did not retain the latest complete facts: %+v", got)
+	}
+}
+
+func TestDepthLimitedWalkDoesNotSkipUnkeptCompleteWalk(t *testing.T) {
+	// R-NT4A-NPEI
+	f := newBackupPassFixture(t)
+	f.put("/srv/acme/data/old.db", walSQLite, 0o600)
+	f.stream()
+	restore := f.obstructBackupDirectory(linux.BackupDir)
+	f.put("/srv/acme/data/new.db", walSQLite, 0o600)
+	if err := f.host.Stream(t.Context(), f.state); err == nil {
+		t.Fatal("Stream accepted an unwriteable walk directory")
+	}
+	restore()
+	if err := os.MkdirAll(f.path("/srv/acme/data/"+strings.Repeat("deep/", linux.MaxDepth+1)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	f.at = f.at.Add(linux.InstallRetry)
+	f.stream()
+	f.backupCommands = nil
+	f.backup()
+	if got := f.commandsFor(f.path(linux.ResticPath)); len(got) != 0 {
+		t.Fatalf("a limited walk skipped an unkept complete walk: %v", got)
+	}
+	if got := f.report().Backups[0]; got.Error != machine.DataTooLarge || len(got.Databases) != 0 || got.DatabaseTotal != 0 {
+		t.Fatalf("limited walk reported stale facts instead of the depth error: %+v", got)
+	}
+	f.host = linux.New(f.env)
+	f.stream()
+	f.backup()
+	if got := f.commandsFor(f.path(linux.ResticPath)); len(got) != 0 {
+		t.Fatalf("restarted host treated missing fallback as an empty kept walk: %v", got)
+	}
+	// A later complete walk can persist recovery even if its primary
+	// status write fails. Its paths can match the rejected publication.
+	if err := os.Remove(f.path("/srv/acme/data/new.db")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(f.path("/srv/acme/data/deep")); err != nil {
+		t.Fatal(err)
+	}
+	restoreStatus := f.obstructBackupDirectory(linux.BackupDir + "/status")
+	if err := f.host.Stream(t.Context(), f.state); err == nil {
+		t.Fatal("Stream accepted an unwriteable status directory")
+	}
+	restoreStatus()
+	f.host = linux.New(f.env)
+	if err := os.MkdirAll(f.path("/srv/acme/data/"+strings.Repeat("deep/", linux.MaxDepth+1)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	f.stream()
+	f.backup()
+	f.requireResticConfig("acme")
+	f.expectFile(linux.BackupDir+"/manifest/acme", fmt.Sprintf("%d %d 0600 data/old.db\n", os.Getuid(), os.Getgid()), 0o600)
+}
+
+func TestDepthLimitedWalkCanKeepRecoveredObservation(t *testing.T) {
+	// R-NT4A-NPEI R-WNN5-2NZ4
+	for _, tc := range []struct {
+		name      string
+		restarted bool
+	}{{"same host", false}, {"restarted host", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newBackupPassFixture(t)
+			f.put("/srv/acme/data/old.db", walSQLite, 0o660)
+			f.stream()
+			restore := f.obstructBackupDirectory(linux.BackupDir + "/status")
+			f.put("/srv/acme/data/old.db", plainSQLite, 0o660)
+			f.put("/srv/acme/data/new.db", walSQLite, 0o660)
+			if err := f.host.Stream(t.Context(), f.state); err == nil {
+				t.Fatal("Stream accepted an unwriteable status directory")
+			}
+			restore()
+			if tc.restarted {
+				f.host = linux.New(f.env)
+			}
+			f.backupCommands = nil
+			f.backup()
+			if got := f.commandsFor(f.path(linux.ResticPath)); len(got) != 0 {
+				t.Fatalf("restic used a walk from a failed status write: %v", got)
+			}
+			if err := os.MkdirAll(f.path("/srv/acme/data/"+strings.Repeat("deep/", linux.MaxDepth+1)), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			f.stream()
+			f.backup()
+			f.requireResticConfig("acme")
+			f.expectFile(linux.BackupDir+"/manifest/acme", fmt.Sprintf("%d %d 0660 data/new.db\n", os.Getuid(), os.Getgid()), 0o600)
+			if got := f.report().Backups[0]; got.Error != machine.DataTooLarge || len(got.Databases) != 2 || got.Databases[0].Path != "data/new.db" {
+				t.Fatalf("a limited walk did not retain the backed observation: %+v", got)
+			}
+		})
+	}
+}
+
+func TestDepthLimitedWalkStartsWithPreviousProcessFacts(t *testing.T) {
+	// R-WNN5-2NZ4
+	f := newBackupPassFixture(t)
+	f.put("/srv/acme/data/app.db", walSQLite, 0o660)
+	f.stream()
+	if err := os.Remove(f.path(linux.BackupDir + "/walk/acme.json")); err != nil {
+		t.Fatal(err)
+	}
+	f.host = linux.New(f.env)
+	if err := os.MkdirAll(f.path("/srv/acme/data/"+strings.Repeat("deep/", linux.MaxDepth+1)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	f.stream()
+	f.backup()
+	f.requireResticConfig("acme")
+	f.expectFile(linux.BackupDir+"/manifest/acme", fmt.Sprintf("%d %d 0660 data/app.db\n", os.Getuid(), os.Getgid()), 0o600)
 }
 
 func TestDatabaseWalkStopsAtVisitLimit(t *testing.T) {
@@ -1009,27 +1153,318 @@ func TestStreamModeCorrectionLeavesUnrelatedHardLinkUntouched(t *testing.T) {
 	}
 }
 
-func TestStreamCompletesWalkWhenBackupDirectoryIsUnavailable(t *testing.T) {
-	// R-WMF8-OW8F
-	f := newBackupPassFixture(t)
-	const saved = "/saved-backup"
-	if err := os.Rename(f.path(linux.BackupDir), f.path(saved)); err != nil {
-		t.Fatal(err)
+func (f *backupPassFixture) obstructBackupDirectory(path string) func() {
+	f.t.Helper()
+	const saved = "/saved-backup-directory"
+	if err := os.Rename(f.path(path), f.path(saved)); err != nil {
+		f.t.Fatal(err)
 	}
-	f.put(linux.BackupDir, "not a directory", 0o600)
-	f.put("/srv/acme/data/app.db", plainSQLite, 0o660)
-	_ = f.host.Stream(t.Context(), f.state)
-	if err := os.Remove(f.path(linux.BackupDir)); err != nil {
-		t.Fatal(err)
+	f.put(path, "not a directory", 0o600)
+	return func() {
+		if err := os.Remove(f.path(path)); err != nil {
+			f.t.Fatal(err)
+		}
+		if err := os.Rename(f.path(saved), f.path(path)); err != nil {
+			f.t.Fatal(err)
+		}
 	}
-	if err := os.Rename(f.path(saved), f.path(linux.BackupDir)); err != nil {
-		t.Fatal(err)
-	}
-	_ = f.host.Backup(t.Context(), f.state)
+}
+
+func (f *backupPassFixture) requireResticConfig(slug string) {
+	f.t.Helper()
 	commands := f.commandsFor(f.path(linux.ResticPath))
-	if len(commands) == 0 || !slices.Equal(commands[0].Args[3:], []string{"cat", "config"}) {
-		t.Fatalf("Backup did not recognize the completed account walk: %v", commands)
+	repo := protocol.FilesPrefix(slug)
+	if slug == f.state.Host {
+		repo = strings.TrimRight(f.state.Backup.HostPrefix, "/")
 	}
+	for _, c := range commands {
+		if strings.HasSuffix(c.Args[1], "/"+repo) {
+			if !slices.Equal(c.Args[3:], []string{"cat", "config"}) {
+				f.t.Fatalf("first command for %s = %v", slug, c.Args)
+			}
+			return
+		}
+	}
+	f.t.Fatalf("restic did not open %s: %v", slug, commands)
+}
+
+func TestBackupWithholdsUnkeptWalkAndRetries(t *testing.T) {
+	// R-NT4A-NPEI R-NWRZ-T0ML
+	for _, tc := range []struct {
+		name  string
+		dir   string
+		prior bool
+	}{
+		{"first walk", linux.BackupDir, false},
+		{"previous walk in restored directory", linux.BackupDir, true},
+		{"failed status write", linux.BackupDir + "/status", true},
+		{"failed recovery write", linux.BackupDir + "/walk", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newBackupPassFixture(t)
+			f.put(dataPrivateKey, "private", 0o600)
+			f.put(dataPublicKey, "public", 0o644)
+			if tc.prior {
+				f.put("/srv/acme/data/old.db", walSQLite, 0o660)
+				f.stream()
+				f.put("/srv/acme/data/old.db", plainSQLite, 0o660)
+			}
+			restore := f.obstructBackupDirectory(tc.dir)
+			const db = "data/app.db"
+			f.put("/srv/acme/"+db, walSQLite, 0o660)
+			if err := f.host.Stream(t.Context(), f.state); err == nil {
+				t.Fatal("Stream accepted a path that cannot hold its walk")
+			}
+			restore()
+			f.backupCommands = nil
+			f.backup()
+			f.requireResticConfig(f.state.Host)
+			for _, c := range f.commandsFor(f.path(linux.ResticPath)) {
+				if strings.HasSuffix(c.Args[1], "/"+protocol.FilesPrefix("acme")) {
+					t.Fatalf("restic used an unkept walk: %v", c.Args)
+				}
+			}
+			if got := f.report().Backups[0].Error; got != machine.WalkUnrecorded {
+				t.Fatalf("account error = %q, want %q", got, machine.WalkUnrecorded)
+			}
+
+			f.at = f.at.Add(linux.InstallRetry)
+			f.stream()
+			// Backup uses this walk's WAL paths even when the live files
+			// change before that pass.
+			f.put("/srv/acme/"+db, plainSQLite, 0o660)
+			f.put("/srv/acme/data/late.db", walSQLite, 0o660)
+			f.backupCommands = nil
+			f.backup()
+			f.requireResticConfig("acme")
+			f.expectFile(linux.BackupDir+"/manifest/acme", fmt.Sprintf("%d %d 0660 %s\n", os.Getuid(), os.Getgid(), db), 0o600)
+			for _, c := range f.commandsFor(f.path(linux.ResticPath)) {
+				if c.Args[3] != "backup" || c.Args[6] != "acme" {
+					continue
+				}
+				var want []string
+				for _, suffix := range []string{"", "-wal", "-shm", "-journal"} {
+					want = append(want, "--exclude", f.path("/srv/acme/"+db)+suffix)
+				}
+				want = append(want, f.path("/srv/acme"), f.path(linux.BackupDir+"/manifest/acme"))
+				if !slices.Equal(c.Args[7:], want) {
+					t.Fatalf("restic exclusions after recovery = %v, want %v", c.Args[7:], want)
+				}
+			}
+			if got := f.report().Backups[0]; got.Error != "" || got.Snapshot.IsZero() {
+				t.Fatalf("account did not recover after a kept walk: %+v", got)
+			}
+		})
+	}
+}
+
+func TestAccountResticRechecksWalkAfterCommand(t *testing.T) {
+	// R-NT4A-NPEI R-NWRZ-T0ML
+	for _, kept := range []bool{true, false} {
+		name := "kept"
+		if !kept {
+			name = "unkept"
+		}
+		t.Run(name, func(t *testing.T) {
+			f := newBackupPassFixture(t)
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			started, release := make(chan struct{}), make(chan struct{})
+			var commands []linux.Command
+			base := f.env.Execute
+			f.env.Execute = func(ctx context.Context, c linux.Command) (linux.Result, error) {
+				if c.Name != f.path(linux.ResticPath) {
+					return base(ctx, c)
+				}
+				commands = append(commands, c)
+				switch c.Args[3] {
+				case "cat":
+					close(started)
+					select {
+					case <-release:
+					case <-ctx.Done():
+						return linux.Result{}, ctx.Err()
+					}
+				case "backup":
+					f.summary(c)
+				}
+				return linux.Result{}, nil
+			}
+			f.host = linux.New(f.env)
+			f.put("/srv/acme/data/old.db", walSQLite, 0o660)
+			f.stream()
+			backupDone := make(chan error, 1)
+			go func() { backupDone <- f.host.Backup(ctx, f.state) }()
+			select {
+			case <-started:
+			case <-ctx.Done():
+				t.Fatal("Backup never reached the account's cat config")
+			}
+
+			restore := func() {}
+			if !kept {
+				restore = f.obstructBackupDirectory(linux.BackupDir + "/status")
+			}
+			f.put("/srv/acme/data/old.db", plainSQLite, 0o660)
+			f.put("/srv/acme/data/new.db", walSQLite, 0o660)
+			streamDone := make(chan error, 1)
+			go func() { streamDone <- f.host.Stream(ctx, f.state) }()
+			select {
+			case err := <-streamDone:
+				if (err == nil) != kept {
+					t.Fatalf("Stream error = %v, kept walk = %t", err, kept)
+				}
+			case <-ctx.Done():
+				t.Fatal("Stream waited for restic")
+			}
+			restore()
+			close(release)
+			select {
+			case err := <-backupDone:
+				if err != nil {
+					t.Fatal(err)
+				}
+			case <-ctx.Done():
+				t.Fatal("Backup did not finish")
+			}
+			if !kept {
+				if len(commands) != 1 || f.report().Backups[0].Error != machine.WalkUnrecorded {
+					t.Fatalf("restic continued after the failed walk write: %v", commands)
+				}
+				return
+			}
+			if len(commands) < 2 || commands[1].Args[3] != "backup" ||
+				!slices.Contains(commands[1].Args, f.path("/srv/acme/data/new.db")) ||
+				slices.Contains(commands[1].Args, f.path("/srv/acme/data/old.db")) {
+				t.Fatalf("snapshot did not use the new kept walk: %v", commands)
+			}
+			f.expectFile(linux.BackupDir+"/manifest/acme", fmt.Sprintf("%d %d 0660 data/new.db\n", os.Getuid(), os.Getgid()), 0o600)
+		})
+	}
+}
+
+func TestBackupReadsBackLatestKeptWalk(t *testing.T) {
+	// R-NT4A-NPEI R-NWRZ-T0ML
+	f := newBackupPassFixture(t)
+	const status = linux.BackupDir + "/status"
+	f.put("/srv/acme/data/old.db", walSQLite, 0o660)
+	f.stream()
+	if err := os.Rename(f.path(status), f.path("/older-status")); err != nil {
+		t.Fatal(err)
+	}
+	f.put("/srv/acme/data/app.db", walSQLite, 0o660)
+	f.stream()
+	if err := os.Rename(f.path(status), f.path("/newer-status")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(f.path("/older-status"), f.path(status)); err != nil {
+		t.Fatal(err)
+	}
+	f.backupCommands = nil
+	f.backup()
+	if got := f.commandsFor(f.path(linux.ResticPath)); len(got) != 0 {
+		t.Fatalf("restic used an older kept walk: %v", got)
+	}
+	if got := f.report().Backups[0].Error; got != machine.WalkUnrecorded {
+		t.Fatalf("account error for older walk = %q", got)
+	}
+	if err := os.Rename(f.path(status), f.path("/older-status")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(f.path("/newer-status"), f.path(status)); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(f.path(status))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		path := status + "/" + entry.Name()
+		data, err := os.ReadFile(f.path(path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		// The JSON prefix still decodes if a reader truncates instead of
+		// rejecting an oversized file.
+		f.put(path, string(data)+strings.Repeat(" ", linux.MaxCapture), 0o600)
+	}
+	f.backup()
+	if got := f.commandsFor(f.path(linux.ResticPath)); len(got) != 0 {
+		t.Fatalf("restic used a walk from an oversized file: %v", got)
+	}
+	if got := f.report().Backups[0].Error; got != machine.WalkUnrecorded {
+		t.Fatalf("account error for oversized walk = %q", got)
+	}
+}
+
+func TestBackupRejectsWalkKeptByAnotherHost(t *testing.T) {
+	// R-NT4A-NPEI
+	f := newBackupPassFixture(t)
+	const status = linux.BackupDir + "/status"
+	f.put("/srv/acme/data/new.db", walSQLite, 0o660)
+	f.stream()
+	if err := os.Rename(f.path(status), f.path("/first-host-status")); err != nil {
+		t.Fatal(err)
+	}
+
+	f.host = linux.New(f.env)
+	f.stream()
+	if err := os.Rename(f.path(status), f.path("/second-host-status")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(f.path("/first-host-status"), f.path(status)); err != nil {
+		t.Fatal(err)
+	}
+	f.backupCommands = nil
+	f.backup()
+	if got := f.commandsFor(f.path(linux.ResticPath)); len(got) != 0 {
+		t.Fatalf("restic reused the other host's saved walk: %v", got)
+	}
+
+	if err := os.Rename(f.path(status), f.path("/first-host-status")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(f.path("/second-host-status"), f.path(status)); err != nil {
+		t.Fatal(err)
+	}
+	file := status + "/acme.json"
+	raw, err := os.ReadFile(f.path(file))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "data/new.db") {
+		t.Fatal("account status did not store the new path")
+	}
+	// A pre-provenance record can contain exactly the same walk. It is
+	// readable for reporting and cannot stand in for the kept publication.
+	var legacy map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &legacy); err != nil {
+		t.Fatal(err)
+	}
+	delete(legacy, "WalkToken")
+	legacyData, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.put(file, string(legacyData), 0o600)
+	if got := f.report().Backups[0].Databases; len(got) != 1 || got[0].Path != "data/new.db" {
+		t.Fatalf("legacy walk facts were unreadable: %+v", got)
+	}
+	f.backup()
+	if got := f.commandsFor(f.path(linux.ResticPath)); len(got) != 0 {
+		t.Fatalf("restic used a legacy walk without provenance: %v", got)
+	}
+	// Change the stored paths without changing the publication token.
+	f.put(file, strings.ReplaceAll(string(raw), "data/new.db", "data/alt.db"), 0o600)
+	f.backup()
+	if got := f.commandsFor(f.path(linux.ResticPath)); len(got) != 0 {
+		t.Fatalf("restic used a walk with altered saved paths: %v", got)
+	}
+
+	f.put(file, string(raw), 0o600)
+	f.backup()
+	f.requireResticConfig("acme")
+	f.expectFile(linux.BackupDir+"/manifest/acme", fmt.Sprintf("%d %d 0660 data/new.db\n", os.Getuid(), os.Getgid()), 0o600)
 }
 
 func withoutBackupTrees(entries map[string]applyHostFile, trees ...string) map[string]applyHostFile {
@@ -1082,6 +1517,59 @@ func TestBackupRunsDueCheckIndependentlyOfSnapshot(t *testing.T) {
 	row := f.report().Backups[0]
 	if row.Snapshot != previous.Snapshot || row.Checked != f.at.UTC().Truncate(time.Second) {
 		t.Fatalf("check-only report = %+v, snapshot was %s", row, previous.Snapshot)
+	}
+}
+
+func TestBackupWithholdsDueCheckAndContinuesWithNextAccount(t *testing.T) {
+	// R-NWRZ-T0ML
+	f := newBackupPassFixture(t)
+	f.state.Backup.Settings.EveryMinutes = 7 * 24 * 60
+	f.state.Backup.Settings.CheckDays = 1
+	f.state.Accounts = append(f.state.Accounts, protocol.Account{Slug: "bravo", State: protocol.AccountActive})
+	f.state.Backup.Accounts = append(f.state.Backup.Accounts, protocol.AccountCredentials{Account: "bravo", Credentials: f.state.Backup.Host})
+	f.stream()
+	f.backup()
+	previous := f.report().Backups[0]
+	f.at = f.at.Add(24 * time.Hour)
+
+	// Fail publication for acme alone, then restore its previous status
+	// including the schedule that makes its check due and snapshot early.
+	status := f.path(linux.BackupDir + "/status/acme.json")
+	saved := f.path("/saved-account-status")
+	if err := os.Rename(status, saved); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(status, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.host.Stream(t.Context(), f.state); err == nil {
+		t.Fatal("Stream replaced a directory with its status file")
+	}
+	if err := os.Remove(status); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(saved, status); err != nil {
+		t.Fatal(err)
+	}
+	f.backupCommands = nil
+	f.backup()
+	f.requireResticConfig("bravo")
+	var verbs []string
+	for _, c := range f.commandsFor(f.path(linux.ResticPath)) {
+		if !strings.HasSuffix(c.Args[1], "/"+protocol.FilesPrefix("bravo")) {
+			t.Fatalf("unkept walk did not withhold commands: %v", c.Args)
+		}
+		verbs = append(verbs, c.Args[3])
+	}
+	if got := f.report(); got.Backups[0].Error != machine.WalkUnrecorded || got.Backups[0].Snapshot != previous.Snapshot ||
+		got.Backups[0].Checked != previous.Checked || !slices.Equal(verbs, []string{"cat", "check"}) {
+		t.Fatalf("error and continued checks = %+v, %v", got.Backups, verbs)
+	}
+	f.state.Backup.Settings.CheckDays = 0
+	f.backupCommands = nil
+	f.backup()
+	if got := f.report().Backups[0].Error; got != machine.WalkUnrecorded || len(f.commandsFor(f.path(linux.ResticPath))) != 0 {
+		t.Fatalf("idle backup cleared account error: %q, commands %v", got, f.backupCommands)
 	}
 }
 

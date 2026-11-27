@@ -2,6 +2,7 @@ package linux_test
 
 import (
 	"fmt"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -218,6 +219,275 @@ func TestCloseFinalRunsForAccountWithoutStreamedDatabases(t *testing.T) {
 	got := f.backupReport(state).Backups[0]
 	if got.Final != wantFinal || got.Snapshot != wantFinal.At || !slices.Equal(snapshots, []string{"acme", "acme"}) {
 		t.Fatalf("close with zero streamed databases: %+v, snapshots %v", got, snapshots)
+	}
+}
+
+func TestCloseFinalWithUnkeptWalkTimesOutFromLock(t *testing.T) {
+	// R-NWRZ-T0ML
+	f := newBackupPassFixture(t)
+	f.put(dataPrivateKey, "private", 0o600)
+	f.put(dataPublicKey, "public", 0o644)
+	f.stream()
+	f.backup()
+	f.state.Backup.Close = "close_unkept"
+	f.state.Version++
+	f.applyCloseLock(f.state)
+	lockTime := f.at.UTC().Truncate(time.Second)
+
+	// The saved empty walk would allow a final. A subsequent empty walk
+	// that failed to persist must withhold it.
+	restore := f.obstructBackupDirectory(linux.BackupDir)
+	if err := f.host.Stream(t.Context(), f.state); err == nil {
+		t.Fatal("Stream accepted a path that cannot hold its walk")
+	}
+	restore()
+	f.at = lockTime.Add(linux.FinalSyncTimeout - time.Nanosecond)
+	f.backupCommands = nil
+	f.backup()
+	pending := protocol.Step{ID: f.state.Backup.Close, State: protocol.StepPending}
+	if got := f.report(); got.Backups[0].Final != pending || got.Backups[0].Error != machine.WalkUnrecorded ||
+		got.HostBackup.Final != pending || len(f.commandsFor(f.path(linux.ResticPath))) != 0 {
+		t.Fatalf("before walk timeout: %+v, commands %v", got, f.backupCommands)
+	}
+
+	f.at = lockTime.Add(linux.FinalSyncTimeout)
+	f.backup()
+	failed := protocol.Step{ID: f.state.Backup.Close, State: protocol.StepFailed, At: f.at, Code: protocol.CodeFailed}
+	done := protocol.Step{ID: f.state.Backup.Close, State: protocol.StepDone, At: f.at}
+	if got := f.report(); got.Backups[0].Final != failed || got.Backups[0].Error != machine.WalkUnrecorded || got.HostBackup.Final != done {
+		t.Fatalf("at walk timeout: %+v", got)
+	}
+	f.requireResticConfig(f.state.Host)
+	for _, c := range f.commandsFor(f.path(linux.ResticPath)) {
+		if strings.HasSuffix(c.Args[1], "/"+protocol.FilesPrefix("acme")) {
+			t.Fatalf("final ran with an unkept walk: %v", c.Args)
+		}
+	}
+
+	f.state.Version++
+	f.at = f.at.Add(time.Minute)
+	f.applyCloseLock(f.state)
+	retryLockTime := f.at
+	f.backupCommands = nil
+	f.backup()
+	if got := f.report(); got.Backups[0].Final != pending || got.Backups[0].Error != machine.WalkUnrecorded ||
+		got.HostBackup.Final != done || len(f.commandsFor(f.path(linux.ResticPath))) != 0 {
+		t.Fatalf("higher lock version did not reopen withheld final: %+v, commands %v", got, f.backupCommands)
+	}
+	f.at = retryLockTime.Add(linux.FinalSyncTimeout)
+	f.backup()
+	failed.At = f.at
+	if got := f.report(); got.Backups[0].Final != failed || got.Backups[0].Error != machine.WalkUnrecorded ||
+		len(f.commandsFor(f.path(linux.ResticPath))) != 0 {
+		t.Fatalf("at retried walk timeout: %+v, commands %v", got, f.backupCommands)
+	}
+}
+
+func TestCloseFinalKeepsWaitingForKnownUnsyncedDatabase(t *testing.T) {
+	// R-NWRZ-T0ML
+	f := newBackupPassFixture(t)
+	f.state.Backup.Host = protocol.Credentials{}
+	f.put("/srv/acme/data/app.db", walSQLite, 0o660)
+	f.stream()
+	f.backup()
+	f.state.Backup.Close = "close_unsynced"
+	f.state.Version++
+	f.applyCloseLock(f.state)
+	lockTime := f.at.UTC().Truncate(time.Second)
+	restore := f.obstructBackupDirectory(linux.BackupDir)
+	if err := f.host.Stream(t.Context(), f.state); err == nil {
+		t.Fatal("Stream accepted a path that cannot hold its walk")
+	}
+	restore()
+	f.backupCommands = nil
+	f.at = lockTime.Add(linux.FinalSyncTimeout - time.Second)
+	f.backup()
+	pending := protocol.Step{ID: f.state.Backup.Close, State: protocol.StepPending}
+	if got := f.report().Backups[0]; got.Final != pending || got.Error != "" || len(f.commandsFor(f.path(linux.ResticPath))) != 0 {
+		t.Fatalf("unsynced final before timeout: %+v, commands %v", got, f.backupCommands)
+	}
+	f.at = lockTime.Add(linux.FinalSyncTimeout)
+	f.backup()
+	failed := protocol.Step{ID: f.state.Backup.Close, State: protocol.StepFailed, At: f.at, Code: protocol.CodeFailed}
+	if got := f.report().Backups[0]; got.Final != failed || got.Error != machine.ErrNotSynced.Error() ||
+		len(f.commandsFor(f.path(linux.ResticPath))) != 0 {
+		t.Fatalf("unsynced final at timeout: %+v, commands %v", got, f.backupCommands)
+	}
+}
+
+func TestCloseFinalUsesLatestWalkReadinessWhenReadbackFails(t *testing.T) {
+	// R-NWRZ-T0ML
+	for _, latestSynced := range []bool{true, false} {
+		t.Run(fmt.Sprintf("latest synced %t", latestSynced), func(t *testing.T) {
+			f := newBackupPassFixture(t)
+			f.state.Backup.Host = protocol.Credentials{}
+			f.put("/srv/acme/data/app.db", walSQLite, 0o660)
+			caughtUp := false
+			f.execute = func(c linux.Command) (linux.Result, error) {
+				switch c.Name {
+				case f.path(linux.LitestreamPath):
+					switch {
+					case caughtUp && c.Args[0] == "status":
+						f.output(c, `[{"database":"/srv/acme/data/app.db","status":"ok","local_txid":"2"}]`)
+					case caughtUp && c.Args[0] == "ltx" && c.Args[5] == "0":
+						f.output(c, `[{"timestamp":"2026-11-26T12:00:00Z","max_txid":"2"}]`)
+					default:
+						f.output(c, "[]")
+					}
+				case f.path(linux.ResticPath):
+					if c.Args[3] == "backup" {
+						f.summary(c)
+					}
+				}
+				return linux.Result{}, nil
+			}
+			f.stream()
+			f.backup()
+			f.state.Backup.Close = "close_readback"
+			f.state.Version++
+			f.at = f.at.Add(time.Second).UTC().Truncate(time.Second)
+			f.applyCloseLock(f.state)
+			lockTime := f.at
+			f.at = lockTime.Add(time.Second)
+			if !latestSynced {
+				caughtUp = true
+				f.stream()
+				if got := f.report().Backups[0].Synced; !got.After(lockTime) {
+					t.Fatalf("older walk was not synced after the lock: %s", got)
+				}
+			}
+			path := linux.BackupDir + "/status/acme.json"
+			stale, err := os.ReadFile(f.path(path))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			f.at = lockTime.Add(2 * time.Second)
+			caughtUp = latestSynced
+			if !latestSynced {
+				f.put("/srv/acme/data/app.db", plainSQLite, 0o660)
+				f.put("/srv/acme/data/new.db", walSQLite, 0o660)
+			}
+			f.stream()
+			if got := f.report().Backups[0].Synced.After(lockTime); got != latestSynced {
+				t.Fatalf("latest walk synced after the lock = %t, want %t", got, latestSynced)
+			}
+			f.put(path, string(stale), 0o600)
+			f.backupCommands = nil
+			f.backup()
+			pending := protocol.Step{ID: f.state.Backup.Close, State: protocol.StepPending}
+			before, after := "", machine.ErrNotSynced.Error()
+			if latestSynced {
+				before, after = machine.WalkUnrecorded, machine.WalkUnrecorded
+			}
+			if got := f.report().Backups[0]; got.Final != pending || got.Error != before || len(f.commandsFor(f.path(linux.ResticPath))) != 0 {
+				t.Fatalf("before timeout with older disk facts: %+v, commands %v", got, f.backupCommands)
+			}
+			f.at = lockTime.Add(linux.FinalSyncTimeout)
+			f.backup()
+			failed := protocol.Step{ID: f.state.Backup.Close, State: protocol.StepFailed, At: f.at, Code: protocol.CodeFailed}
+			if got := f.report().Backups[0]; got.Final != failed || got.Error != after || len(f.commandsFor(f.path(linux.ResticPath))) != 0 {
+				t.Fatalf("at timeout with older disk facts: %+v, commands %v", got, f.backupCommands)
+			}
+		})
+	}
+}
+
+func TestCloseFinalRechecksReadinessAfterCatConfig(t *testing.T) {
+	// R-NWRZ-T0ML
+	f := newBackupPassFixture(t)
+	f.state.Backup.Host = protocol.Credentials{}
+	f.stream()
+	f.backup()
+	f.state.Backup.Close = "close_recheck"
+	f.state.Version++
+	f.at = f.at.Add(time.Second).UTC().Truncate(time.Second)
+	f.applyCloseLock(f.state)
+	lockTime := f.at
+	f.at = lockTime.Add(time.Second)
+	f.backupCommands = nil
+	f.execute = func(c linux.Command) (linux.Result, error) {
+		if c.Name == f.path(linux.ResticPath) && slices.Equal(c.Args[3:], []string{"cat", "config"}) {
+			// Complete another walk while the repository probe is in
+			// progress. The new WAL database has never synced.
+			restore := f.obstructBackupDirectory(linux.BackupDir + "/status")
+			f.put("/srv/acme/data/app.db", walSQLite, 0o660)
+			if err := f.host.Stream(t.Context(), f.state); err == nil {
+				t.Fatal("Stream accepted an unwriteable status directory")
+			}
+			restore()
+		}
+		return linux.Result{}, nil
+	}
+	f.backup()
+	pending := protocol.Step{ID: f.state.Backup.Close, State: protocol.StepPending}
+	if got, commands := f.report().Backups[0], f.commandsFor(f.path(linux.ResticPath)); got.Final != pending || got.Error != "" || len(commands) != 1 {
+		t.Fatalf("final after probe and unrecorded unsynced walk: %+v, commands %v", got, commands)
+	}
+	f.at = lockTime.Add(linux.FinalSyncTimeout)
+	f.backupCommands = nil
+	f.backup()
+	failed := protocol.Step{ID: f.state.Backup.Close, State: protocol.StepFailed, At: f.at, Code: protocol.CodeFailed}
+	if got := f.report().Backups[0]; got.Final != failed || got.Error != machine.ErrNotSynced.Error() ||
+		len(f.commandsFor(f.path(linux.ResticPath))) != 0 {
+		t.Fatalf("unsynced final at timeout: %+v, commands %v", got, f.backupCommands)
+	}
+}
+
+func TestCloseFinalPreservesResticErrorWhenNoCommandRuns(t *testing.T) {
+	// R-NWRZ-T0ML
+	f := newBackupPassFixture(t)
+	f.state.Backup.Host = protocol.Credentials{}
+	f.state.Backup.Settings.CheckDays = 1
+	f.execute = func(c linux.Command) (linux.Result, error) {
+		if c.Name == f.path(linux.ResticPath) {
+			switch c.Args[3] {
+			case "backup":
+				f.summary(c)
+			case "check":
+				return linux.Result{ExitCode: 1, Stderr: []byte("fixture check failure")}, nil
+			}
+		}
+		return linux.Result{}, nil
+	}
+	var beforeFinalCommand int
+	f.env.Now = func() time.Time {
+		if beforeFinalCommand > 0 {
+			beforeFinalCommand--
+			if beforeFinalCommand == 0 {
+				restore := f.obstructBackupDirectory(linux.BackupDir + "/status")
+				f.put("/srv/acme/data/app.db", walSQLite, 0o660)
+				if err := f.host.Stream(t.Context(), f.state); err == nil {
+					t.Fatal("Stream accepted an unwriteable status directory")
+				}
+				restore()
+			}
+		}
+		return f.at
+	}
+	f.host = linux.New(f.env)
+	f.stream()
+	f.failedBackupPass(f.state)
+	if got := f.report().Backups[0]; got.Snapshot.IsZero() || got.Error == "" {
+		t.Fatalf("initial snapshot did not leave a failed check: %+v", got)
+	}
+	oldError := f.report().Backups[0].Error
+	f.state.Backup.Settings.CheckDays = 0
+	f.state.Backup.Close = "close_preserve_error"
+	f.state.Version++
+	f.at = f.at.Add(time.Second).UTC().Truncate(time.Second)
+	f.applyCloseLock(f.state)
+	f.at = f.at.Add(time.Second)
+	f.backupCommands = nil
+
+	// Installation takes two clock readings. The next one is final
+	// scheduling, after it has read the initially eligible empty walk.
+	beforeFinalCommand = 3
+	f.backup()
+	pending := protocol.Step{ID: f.state.Backup.Close, State: protocol.StepPending}
+	if got := f.report().Backups[0]; got.Final != pending || got.Error != oldError ||
+		len(f.commandsFor(f.path(linux.ResticPath))) != 0 {
+		t.Fatalf("withheld final lost its previous error: %+v, commands %v", got, f.backupCommands)
 	}
 }
 

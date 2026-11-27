@@ -124,6 +124,10 @@ func (h *Host) atomicFileMode(path string, mode fs.FileMode) error {
 }
 
 func (h *Host) stageFile(path string, data []byte, mode fs.FileMode) (string, error) {
+	return h.stageFileWithWriter(path, mode, func(file *os.File) error { return writeFileBytes(file, data) })
+}
+
+func (h *Host) stageFileWithWriter(path string, mode fs.FileMode, write func(*os.File) error) (string, error) {
 	if err := h.mkdir(filepath.Dir(path)); err != nil {
 		return "", err
 	}
@@ -131,7 +135,7 @@ func (h *Host) stageFile(path string, data []byte, mode fs.FileMode) (string, er
 	if err != nil {
 		return "", hostError(path, err)
 	}
-	if err := errors.Join(temp.Chmod(mode), writeFileBytes(temp, data), temp.Close()); err != nil {
+	if err := errors.Join(temp.Chmod(mode), write(temp), temp.Close()); err != nil {
 		_ = os.Remove(temp.Name())
 		return "", hostError(path, err)
 	}

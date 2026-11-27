@@ -82,13 +82,22 @@ func (h *Host) backupFinals(ctx context.Context, s protocol.DesiredState) (backu
 	allSettled := true
 	var passErr error
 	for _, slug := range backupAccountSlugs(s) {
-		facts := h.readAccountBackup(slug)
+		facts, walk, readiness := h.accountBackupForPass(slug)
 		if facts.Operation.finalSettled(id, lock) {
 			continue
 		}
-		settled, err := h.finalizeAccountBackup(ctx, s, slug, facts, lock)
+		synced := readiness.syncedAfter(lock.at)
+		if walk == walkNotAttempted {
+			synced = facts.syncedAfter(lock.at)
+		}
+		settled, err := h.finalizeAccountBackup(ctx, s, slug, facts, walk, synced, lock)
 		passErr = errors.Join(passErr, err)
-		runs.Accounts[slug] = settled
+		// An unavailable walk can also withhold an independent scheduled
+		// command when an unsynced final reaches its deadline.
+		if settled {
+			_, currentWalk, currentReadiness := h.accountBackupForPass(slug)
+			runs.Accounts[slug] = currentWalk != walkUnrecorded || currentReadiness.syncedAfter(lock.at)
+		}
 		allSettled = allSettled && settled
 	}
 	if !allSettled {
@@ -101,34 +110,66 @@ func (h *Host) backupFinals(ctx context.Context, s protocol.DesiredState) (backu
 	return runs, errors.Join(passErr, h.finalizeHostBackup(ctx, s, lock))
 }
 
-func (h *Host) finalizeAccountBackup(ctx context.Context, s protocol.DesiredState, slug string, facts backupAccountFacts, lock backupCloseLock) (bool, error) {
-	credentials, present := accountBackupCredentials(s.Backup, slug)
-	_, walked := h.backupWalked.Load(slug)
-	synced := facts.WalkRecorded && !slices.ContainsFunc(facts.Walk.Databases, func(db backupDatabase) bool {
-		return db.WAL && !db.Synced.After(lock.at)
+func (facts backupAccountFacts) syncedAfter(at time.Time) bool {
+	return facts.WalkRecorded && !slices.ContainsFunc(facts.Walk.Databases, func(db backupDatabase) bool {
+		return db.WAL && !db.Synced.After(at)
 	})
+}
+
+func (h *Host) finalizeAccountBackup(ctx context.Context, s protocol.DesiredState, slug string, facts backupAccountFacts, walk backupWalkState, synced bool, lock backupCloseLock) (bool, error) {
+	credentials, present := accountBackupCredentials(s.Backup, slug)
+	now := h.env.Now()
+	waiting := now.Before(lock.at.Add(FinalSyncTimeout))
 	var failure string
 	var backupErr error
 	switch {
-	case present && synced && !walked:
+	case present && walk == walkUnrecorded && synced:
+		return h.deferAccountFinal(slug, s.Backup.Close, lock, machine.WalkUnrecorded, nil)
+	case present && synced && walk == walkNotAttempted:
 		// A persisted walk can prove synchronization, while the snapshot
 		// still requires a walk by this process.
 		return false, nil
 	case present && synced:
-		check := backupCheckDue(facts, h.env.Now(), s.Backup.Settings)
-		backupErr = h.backupAccount(ctx, s, slug, credentials, true, check)
+		check := backupCheckDue(facts, now, s.Backup.Settings)
+		var interrupted error
+		interrupted, backupErr = h.backupAccount(ctx, s, slug, credentials, facts, true, check, &lock)
+		switch {
+		case errors.Is(interrupted, errResticWalkUnavailable):
+			return h.deferAccountFinal(slug, s.Backup.Close, lock, machine.WalkUnrecorded, backupErr)
+		case errors.Is(interrupted, errResticFinalNotSynced):
+			return h.deferAccountFinal(slug, s.Backup.Close, lock, machine.ErrNotSynced.Error(), backupErr)
+		}
 		failure = h.readAccountBackup(slug).Error
 		if failure == "" && backupErr != nil {
 			failure = boundBackupError(backupErr.Error())
 		}
-	case h.env.Now().Before(lock.at.Add(FinalSyncTimeout)):
+	case waiting:
 		return false, nil
 	case !present:
 		failure = machine.NoCredentials
 	default:
 		failure = machine.ErrNotSynced.Error()
 	}
-	step := h.backupOperationStep(s.Backup.Close, backupFailureCode(failure))
+	return h.finishAccountFinal(slug, s.Backup.Close, lock, failure, backupErr)
+}
+
+func (h *Host) deferAccountFinal(slug, id string, lock backupCloseLock, failure string, backupErr error) (bool, error) {
+	if !h.env.Now().Before(lock.at.Add(FinalSyncTimeout)) {
+		return h.finishAccountFinal(slug, id, lock, failure, backupErr)
+	}
+	if failure != machine.WalkUnrecorded {
+		return false, backupErr
+	}
+	err := h.updateAccountBackup(slug, func(facts *backupAccountFacts) {
+		facts.Operation.Final = protocol.Step{ID: id, State: protocol.StepPending}
+		facts.Operation.FinalVersion = lock.version
+		facts.Error = failure
+	})
+	return false, errors.Join(backupErr, err)
+}
+
+func (h *Host) finishAccountFinal(slug, id string, lock backupCloseLock, failure string, backupErr error) (bool, error) {
+	step := h.backupOperationStep(id, backupFailureCode(failure))
 	saveErr := h.updateAccountBackup(slug, func(facts *backupAccountFacts) {
 		facts.Operation.Final, facts.Operation.FinalVersion, facts.Error = step, lock.version, failure
 	})

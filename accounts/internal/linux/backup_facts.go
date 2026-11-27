@@ -1,6 +1,7 @@
 package linux
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -29,13 +30,15 @@ type backupWalk struct {
 }
 
 type backupAccountFacts struct {
-	Snapshot     time.Time
-	Snapshots    []int64
-	Checked      time.Time
-	Error        string
-	Walk         backupWalk
-	WalkRecorded bool
-	Operation    backupOperationFacts
+	Snapshot              time.Time
+	Snapshots             []int64
+	Checked               time.Time
+	Error                 string
+	Walk                  backupWalk
+	WalkRecorded          bool
+	WalkToken             string `json:",omitempty"`
+	RejectedRecoveryToken string `json:",omitempty"`
+	Operation             backupOperationFacts
 }
 
 type backupHostFacts struct {
@@ -140,13 +143,21 @@ func (h *Host) writeBackupFile(path string, value []byte) (bool, error) {
 }
 
 func readBackupFacts[T any](h *Host, path string) T {
+	facts, _ := loadBackupFacts[T](h, path)
+	return facts
+}
+
+func loadBackupFacts[T any](h *Host, path string) (T, error) {
 	var facts T
 	data, err := h.readBounded(path)
-	if err != nil || json.Unmarshal(data, &facts) != nil {
-		var zero T
-		return zero
+	if err != nil {
+		return facts, err
 	}
-	return facts
+	if err := json.Unmarshal(data, &facts); err != nil {
+		var zero T
+		return zero, hostError(path, err)
+	}
+	return facts, nil
 }
 
 func (h *Host) readAccountBackup(slug string) backupAccountFacts {
@@ -154,6 +165,111 @@ func (h *Host) readAccountBackup(slug string) backupAccountFacts {
 		return backupAccountFacts{}
 	}
 	return readBackupFacts[backupAccountFacts](h, backupStatusDir+"/"+slug+".json")
+}
+
+type backupWalkState uint8
+
+const (
+	walkNotAttempted backupWalkState = iota
+	walkUnrecorded
+	walkKept
+)
+
+type backupWalkIdentity struct {
+	token  string
+	digest backupWalkDigest
+}
+
+type backupWalkDigest [sha256.Size]byte
+
+type backupWalkPublication struct {
+	identity  backupWalkIdentity
+	readiness backupWalkReadiness
+	// A depth-limited walk can use the last complete set. A failed
+	// publication only preserves this source for subsequent depth limits.
+	fallback             backupWalkDigest
+	fallbackFromPrevious bool
+}
+
+// All WAL databases must be synced after the lock. Save only their oldest
+// sync time here so rejected status cannot supply paths or close readiness.
+type backupWalkReadiness struct {
+	known bool
+	wal   bool
+	sync  time.Time
+}
+
+func (walk backupWalk) readiness() backupWalkReadiness {
+	r := backupWalkReadiness{known: true}
+	for _, db := range walk.Databases {
+		if db.WAL && (!r.wal || db.Synced.Before(r.sync)) {
+			r.wal, r.sync = true, db.Synced
+		}
+	}
+	return r
+}
+
+func (r backupWalkReadiness) syncedAfter(at time.Time) bool {
+	return r.known && (!r.wal || r.sync.After(at))
+}
+
+func (facts backupAccountFacts) walkIdentity() (backupWalkIdentity, error) {
+	digest, err := facts.Walk.digest()
+	return backupWalkIdentity{token: facts.WalkToken, digest: digest}, err
+}
+
+func (walk backupWalk) digest() (backupWalkDigest, error) {
+	data, err := json.Marshal(walk)
+	if err != nil {
+		return backupWalkDigest{}, err
+	}
+	return sha256.Sum256(data), nil
+}
+
+// Read the walk and its publication state together. Only the current pass's
+// read of the saved walk may supply a manifest or exclusions.
+func (h *Host) accountBackupForPass(slug string) (backupAccountFacts, backupWalkState, backupWalkReadiness) {
+	h.backupFactsMu.Lock()
+	defer h.backupFactsMu.Unlock()
+	facts := h.readAccountBackup(slug)
+	kept, attempted := h.backupWalks[slug]
+	if !attempted {
+		return facts, walkNotAttempted, backupWalkReadiness{}
+	}
+	if !facts.matchesWalk(kept.identity) {
+		return facts, walkUnrecorded, kept.readiness
+	}
+	return facts, walkKept, kept.readiness
+}
+
+func (facts backupAccountFacts) matchesWalk(kept backupWalkIdentity) bool {
+	if kept.token == "" || !facts.WalkRecorded || facts.WalkToken != kept.token {
+		return false
+	}
+	identity, err := facts.walkIdentity()
+	return err == nil && identity == kept
+}
+
+// keepBackupWalkHealth updates the authenticated publication under backupFactsMu.
+func (h *Host) keepBackupWalkHealth(slug string, facts backupAccountFacts) error {
+	identity, err := facts.walkIdentity()
+	if err != nil {
+		return err
+	}
+	// Keep recovery current before committing primary facts, so a restart
+	// can prefer recovery even if the primary write failed.
+	fallback, err := h.saveBackupWalkFallback(slug, facts.Walk)
+	if err != nil {
+		return err
+	}
+	if err := saveBackupFacts(h, backupStatusDir+"/"+slug+".json", facts); err != nil {
+		publication := h.backupWalks[slug]
+		publication.fallback = fallback
+		h.backupWalks[slug] = publication
+		return err
+	}
+	h.backupWalks[slug] = backupWalkPublication{identity: identity, readiness: facts.Walk.readiness(), fallback: fallback}
+	return nil
 }
 
 func (h *Host) readHostBackup() backupHostFacts {

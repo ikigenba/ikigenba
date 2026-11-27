@@ -95,12 +95,7 @@ func walPaths(walk backupWalk) []string {
 // Stream discovers SQLite replicas, reconciles their units, and records replica health.
 func (h *Host) Stream(ctx context.Context, s protocol.DesiredState) error {
 	slugs := backupAccountSlugs(s)
-	h.backupWalked.Range(func(key, _ any) bool {
-		if _, active := slices.BinarySearch(slugs, key.(string)); !active {
-			h.backupWalked.Delete(key)
-		}
-		return true
-	})
+	h.pruneBackupWalks(slugs)
 	b := s.Backup
 	dirErr := h.privateBackupDir(BackupDir)
 	if !backupReady(b) {
@@ -121,17 +116,19 @@ func (h *Host) Stream(ctx context.Context, s protocol.DesiredState) error {
 	var unitWritten bool
 	var unitErr error
 	for _, slug := range slugs {
-		walk, err := h.walkBackupDatabases(slug)
-		if dirErr == nil {
-			err = firstBackupError(err, h.saveBackupWalk(slug, walk))
-		}
-		passErr = firstBackupError(passErr, err)
-		h.backupWalked.Store(slug, struct{}{})
+		walk, walkErr := h.walkBackupDatabases(slug)
+		saveErr := h.recordBackupWalk(slug, walk, dirErr == nil)
+		passErr = firstBackupError(passErr, firstBackupError(walkErr, saveErr))
 		if dirErr != nil {
 			continue
 		}
 		if walk.Error == machine.DataTooLarge {
-			walk = h.readAccountBackup(slug).Walk
+			facts, state, _ := h.accountBackupForPass(slug)
+			if state != walkKept {
+				retain[slug] = true
+				continue
+			}
+			walk = facts.Walk
 		}
 		creds, ok := accountBackupCredentials(b, slug)
 		paths := walPaths(walk)
@@ -199,6 +196,10 @@ func (h *Host) streamAccount(ctx context.Context, b *protocol.Backup, slug strin
 		return nil
 	}
 	facts := h.readAccountBackup(slug)
+	identity, err := facts.walkIdentity()
+	if err != nil {
+		return err
+	}
 	var passErr error
 	for i := range facts.Walk.Databases {
 		db := &facts.Walk.Databases[i]
@@ -206,7 +207,7 @@ func (h *Host) streamAccount(ctx context.Context, b *protocol.Backup, slug strin
 			passErr = firstBackupError(passErr, h.streamDatabase(ctx, b, slug, c, config, db))
 		}
 	}
-	return firstBackupError(passErr, h.saveStreamHealth(slug, facts.Walk))
+	return firstBackupError(passErr, h.saveStreamHealth(slug, facts.Walk, identity))
 }
 
 func (h *Host) cleanStreamAccounts(ctx context.Context, retain map[string]bool) error {
@@ -306,13 +307,18 @@ func backupTxID(s string) (uint64, bool) {
 	return id, err == nil
 }
 
-func (h *Host) saveStreamHealth(slug string, walk backupWalk) error {
-	return h.updateAccountBackup(slug, func(facts *backupAccountFacts) {
-		for _, updated := range walk.Databases {
-			i, ok := slices.BinarySearchFunc(facts.Walk.Databases, updated.Path, func(d backupDatabase, path string) int { return cmp.Compare(d.Path, path) })
-			if ok && facts.Walk.Databases[i].WAL {
-				facts.Walk.Databases[i] = updated
-			}
+func (h *Host) saveStreamHealth(slug string, walk backupWalk, identity backupWalkIdentity) error {
+	h.backupFactsMu.Lock()
+	defer h.backupFactsMu.Unlock()
+	facts := h.readAccountBackup(slug)
+	if identity != h.backupWalks[slug].identity || !facts.matchesWalk(identity) {
+		return nil
+	}
+	for _, updated := range walk.Databases {
+		i, ok := slices.BinarySearchFunc(facts.Walk.Databases, updated.Path, func(d backupDatabase, path string) int { return cmp.Compare(d.Path, path) })
+		if ok && facts.Walk.Databases[i].WAL {
+			facts.Walk.Databases[i] = updated
 		}
-	})
+	}
+	return h.keepBackupWalkHealth(slug, facts)
 }

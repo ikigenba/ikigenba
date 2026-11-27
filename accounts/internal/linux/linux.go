@@ -170,7 +170,7 @@ type Host struct {
 	resticInstall     installAttempt
 	litestreamInstall installAttempt
 	backupFactsMu     sync.Mutex
-	backupWalked      sync.Map
+	backupWalks       map[string]backupWalkPublication
 	lockedBackupRepos map[string]error
 
 	previousCPU     cpuTimes
@@ -187,7 +187,10 @@ type Host struct {
 
 // New builds a host using the injected environment.
 func New(env Env) *Host {
-	return &Host{env: env, written: make(map[string]struct{}), signIns: make(map[string]time.Time)}
+	return &Host{
+		env: env, written: make(map[string]struct{}), signIns: make(map[string]time.Time),
+		backupWalks: make(map[string]backupWalkPublication),
+	}
 }
 
 // Apply brings the host to the desired state in fail-fast order.

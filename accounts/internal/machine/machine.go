@@ -29,6 +29,7 @@ const (
 	NoCredentials        = noBackupSettingsText
 	TooManyDatabases     = "account has too many databases to stream"
 	DataTooLarge         = "account data directory exceeds discovery limits"
+	WalkUnrecorded       = "account database walk was not recorded"
 	noBackupSettingsText = "backup credentials or settings are unavailable"
 )
 

@@ -101,6 +101,19 @@ func TestBackupCopy(t *testing.T) {
 	}
 }
 
+func TestWalkUnrecordedCopy(t *testing.T) {
+	// R-NZ7S-KK3Z
+	const text string = machine.WalkUnrecorded
+	if text == "" || strings.ContainsAny(text, "\r\n") {
+		t.Fatalf("invalid walk diagnostic %q", text)
+	}
+	for _, other := range []string{machine.NotWAL, machine.NoCredentials, machine.TooManyDatabases, machine.DataTooLarge} {
+		if text == other {
+			t.Fatalf("walk diagnostic repeats %q", other)
+		}
+	}
+}
+
 func TestSharedDisks(t *testing.T) {
 	// R-YAI5-EXW7 R-YCXY-6HDL R-YGLN-BSLO R-YFDQ-Y0UZ R-YE5U-K94A R-Y9A9-165I
 	disks := machine.NewDisks()
