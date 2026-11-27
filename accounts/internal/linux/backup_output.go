@@ -3,14 +3,157 @@ package linux
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/ikigenba/ikigenba/accounts/internal/machine"
+	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
 )
+
+type backupCredentials [3]string
+
+func backupCommandCredentials(env []string) backupCredentials {
+	var credentials backupCredentials
+	for _, entry := range env {
+		key, value, _ := strings.Cut(entry, "=")
+		switch key {
+		case "AWS_ACCESS_KEY_ID":
+			credentials[0] = value
+		case "AWS_SECRET_ACCESS_KEY":
+			credentials[1] = value
+		case "AWS_SESSION_TOKEN":
+			credentials[2] = value
+		}
+	}
+	return credentials
+}
+
+type backupCaptureKey struct{}
+
+type backupCaptureBounds struct {
+	known, stdoutCut, stderrCut bool
+}
+
+type backupDiagnosticKey struct{}
+
+// An external error can include a credential other than the one the command
+// received. Group the pass's credentials by first byte for diagnostic matching.
+type backupDiagnostics [256][]string
+
+func withBackupDiagnosticRedactor(ctx context.Context, backup *protocol.Backup) context.Context {
+	if backup == nil {
+		return ctx
+	}
+	redact := new(backupDiagnostics)
+	add := func(c protocol.Credentials) {
+		for _, value := range []string{c.AccessKeyID, c.SecretAccessKey, c.SessionToken} {
+			if value != "" {
+				redact[value[0]] = append(redact[value[0]], value)
+			}
+		}
+	}
+	add(backup.Host)
+	for _, account := range backup.Accounts {
+		add(account.Credentials)
+	}
+	for _, group := range redact {
+		slices.SortFunc(group, func(a, b string) int { return len(b) - len(a) })
+	}
+	return context.WithValue(ctx, backupDiagnosticKey{}, redact)
+}
+
+func backupDiagnosticRedactor(ctx context.Context) *backupDiagnostics {
+	redact, _ := ctx.Value(backupDiagnosticKey{}).(*backupDiagnostics)
+	return redact
+}
+
+func redactBackupDiagnostic(redact *backupDiagnostics, err error) error {
+	if redact != nil && err != nil {
+		message := err.Error()
+		if cleaned := redact.replace([]byte(message), len(message), backupCredentials{}); cleaned != nil {
+			return errors.New(string(cleaned))
+		}
+	}
+	return err
+}
+
+func (d *backupDiagnostics) capture(output []byte, credentials backupCredentials, known, cut bool) []byte {
+	// An injected result of exactly MaxCapture bytes has no cut information.
+	if !known && credentials != (backupCredentials{}) && len(output) > MaxCapture {
+		output = output[:MaxCapture]
+		cut = true
+	}
+	cutStart := len(output)
+	if cut {
+		for _, value := range credentials {
+			for n := min(len(value)-1, len(output)); n > len(output)-cutStart; n-- {
+				if bytes.HasSuffix(output, []byte(value[:n])) {
+					cutStart = len(output) - n
+					break
+				}
+			}
+		}
+	}
+	if cleaned := d.replace(output, cutStart, credentials); cleaned != nil {
+		return cleaned
+	}
+	return output
+}
+
+// replace scans the original bytes from left to right. It returns nil when
+// no edit is needed, and allocates a single bounded copy at the first match.
+func (d *backupDiagnostics) replace(output []byte, cutStart int, credentials backupCredentials) []byte {
+	var cleaned []byte
+	for i := 0; i < len(output); {
+		length := 0
+		if i >= cutStart {
+			length = len(output) - i
+		} else {
+			length = d.match(output[i:], credentials)
+		}
+		if length != 0 {
+			if cleaned == nil {
+				cleaned = make([]byte, 0, len(machine.Redacted)*len(output))
+				cleaned = append(cleaned, output[:i]...)
+			}
+			cleaned = append(cleaned, machine.Redacted...)
+			i += length
+			continue
+		}
+		if cleaned != nil {
+			cleaned = append(cleaned, output[i])
+		}
+		i++
+	}
+	return cleaned
+}
+
+func (d *backupDiagnostics) match(output []byte, credentials backupCredentials) int {
+	longest := 0
+	for _, value := range credentials {
+		if len(value) > longest && bytes.HasPrefix(output, []byte(value)) {
+			longest = len(value)
+		}
+	}
+	if longest != 0 {
+		return longest
+	}
+	for _, value := range d[output[0]] {
+		if bytes.HasPrefix(output, []byte(value)) {
+			return len(value)
+		}
+	}
+	return 0
+}
 
 type backupJSONArray struct {
 	*io.PipeWriter

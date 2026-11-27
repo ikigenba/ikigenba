@@ -101,7 +101,7 @@ func (f *hardeningFixture) prepareWholeRestore(state protocol.DesiredState) {
 }
 
 func TestWholeRestoreWaitsForApplyAndChecksInputs(t *testing.T) {
-	// R-B89Z-QEE5 R-Z2JU-7NY6
+	// R-NARK-19NS R-Z2JU-7NY6
 	for _, tc := range []struct {
 		name string
 		edit func(*hardeningFixture, *protocol.DesiredState)
@@ -115,6 +115,12 @@ func TestWholeRestoreWaitsForApplyAndChecksInputs(t *testing.T) {
 		}, protocol.CodeNotEmpty, ""},
 		{"wrong marker", func(f *hardeningFixture, _ *protocol.DesiredState) {
 			f.put(linux.RestoreMarker, "restore an_earlier_replace\n", 0o600)
+		}, protocol.CodeNotEmpty, ""},
+		{"directory marker", func(f *hardeningFixture, _ *protocol.DesiredState) {
+			if err := os.Remove(f.path(linux.RestoreMarker)); err != nil {
+				f.t.Fatal(err)
+			}
+			f.put(linux.RestoreMarker+"/existing", "retain", 0o600)
 		}, protocol.CodeNotEmpty, ""},
 		{"overlong marker", func(f *hardeningFixture, s *protocol.DesiredState) {
 			f.put(linux.RestoreMarker, "restore "+s.Backup.Restore.ID+"\n"+strings.Repeat("x", linux.MaxCapture), 0o600)
@@ -160,6 +166,9 @@ func TestWholeRestoreWaitsForApplyAndChecksInputs(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newHardeningFixture(t)
 			f.putBackupProgramStamps()
+			f.env.Now = func() time.Time {
+				return time.Date(2026, 11, 18, 6, 0, 0, 750000000, time.FixedZone("CST", -6*60*60))
+			}
 			state := wholeRestoreState()
 			f.executeBackupFixtures(func(c linux.Command) (linux.Result, error) {
 				t.Fatalf("rejected restore executed %v", c.Args)
@@ -192,10 +201,16 @@ func TestWholeRestoreWaitsForApplyAndChecksInputs(t *testing.T) {
 			const keptWork = "/srv/.accountsd-restore-acme/kept"
 			f.put(keptWork, "existing work", 0o600)
 			tc.edit(f, &state)
+			beforeRejected := snapshotRestoreTree(t, f.root)
+			priorCommands := slices.Clone(f.commands)
 			markerPath := f.path(linux.RestoreMarker)
 			marker, markerErr := os.Lstat(markerPath)
 			f.backup(state)
-			want := protocol.Step{ID: state.Backup.Restore.ID, State: protocol.StepFailed, Code: tc.code, At: f.env.Now().UTC()}
+			assertHostChanges(t, beforeRejected, snapshotRestoreTree(t, f.root), nil)
+			if !slices.Equal(f.commands, priorCommands) {
+				t.Fatalf("rejected restore executed extra commands: %v", f.commands[len(priorCommands):])
+			}
+			want := protocol.Step{ID: state.Backup.Restore.ID, State: protocol.StepFailed, Code: tc.code, At: restoreAsOf}
 			if got := f.backupReport(state).HostBackup; got.Restored != want || got.Error != tc.text {
 				t.Fatalf("restore failure = %+v, want %+v and %q", got, want, tc.text)
 			}
@@ -212,7 +227,7 @@ func TestWholeRestoreWaitsForApplyAndChecksInputs(t *testing.T) {
 }
 
 func TestBackupClearsRestoreMarkerWithoutFollowingLinks(t *testing.T) {
-	// R-ZKUB-Y82L R-B3EE-7BFD
+	// R-ZKUB-Y82L R-N4O2-4EYB
 	t.Run("linked data directory", func(t *testing.T) {
 		f := newBackupPassFixture(t)
 		unrelated := "/unrelated-restore/" + filepath.Base(linux.RestoreMarker)
@@ -245,7 +260,7 @@ func TestBackupClearsRestoreMarkerWithoutFollowingLinks(t *testing.T) {
 }
 
 func TestWholeRestoreSelectsNewestTargetsAndRecoversAfterRestart(t *testing.T) {
-	// R-B9HW-464U R-BAPS-HXVJ R-BD5L-9HCX R-BGTA-ESL0 R-BJ93-6C2E R-ZJMF-KGBW R-ZKUB-Y82L
+	// R-NBZG-F1EH R-ND7C-ST56 R-NEF9-6KVV R-NI2Y-BW3Y R-NKIR-3FLC R-ZJMF-KGBW R-ZKUB-Y82L
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := wholeRestoreState()
@@ -406,7 +421,7 @@ func TestWholeRestoreSelectsNewestTargetsAndRecoversAfterRestart(t *testing.T) {
 }
 
 func TestWholeRestoreRemovesLitestreamConfigOnFailure(t *testing.T) {
-	// R-BJ93-6C2E
+	// R-NKIR-3FLC
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := wholeRestoreState()
@@ -460,7 +475,7 @@ func TestWholeRestoreRemovesLitestreamConfigOnFailure(t *testing.T) {
 }
 
 func TestWholeRestoreWithNoSnapshots(t *testing.T) {
-	// R-B89Z-QEE5 R-B9HW-464U R-BAPS-HXVJ R-BD5L-9HCX
+	// R-NARK-19NS R-NBZG-F1EH R-ND7C-ST56 R-NEF9-6KVV R-N4O2-4EYB
 	for _, status := range []int{0, 10} {
 		t.Run(fmt.Sprintf("exit %d", status), func(t *testing.T) {
 			f := newHardeningFixture(t)
@@ -496,8 +511,15 @@ func TestWholeRestoreWithNoSnapshots(t *testing.T) {
 			if err := f.host.Stream(t.Context(), state); err != nil {
 				t.Fatal(err)
 			}
+			f.backupDirs(filepath.Dir(linux.ResticCache))
+			before := snapshotRestoreTree(t, f.root)
+			priorCommands := slices.Clone(f.commands)
 			f.backup(state)
 			f.backup(state)
+			assertHostChanges(t, before, snapshotRestoreTree(t, f.root), nil)
+			if !slices.Equal(f.commands, priorCommands) {
+				t.Fatalf("restore with no snapshots executed extra commands: %v", f.commands[len(priorCommands):])
+			}
 			report := f.backupReport(state)
 			want := protocol.Step{ID: state.Backup.Restore.ID, State: protocol.StepDone, At: f.env.Now().UTC()}
 			if report.HostBackup.Restored != want || report.Backups[0].Restored != want || len(report.Restores) != 0 ||
@@ -510,6 +532,18 @@ func TestWholeRestoreWithNoSnapshots(t *testing.T) {
 			f.forbidRestoreWork()
 		})
 	}
+}
+
+func snapshotRestoreTree(t *testing.T, root string) map[string]applyHostFile {
+	t.Helper()
+	tree := snapshotApplyHost(t, root)
+	for path := range tree {
+		if path == linux.BackupDir || strings.HasPrefix(path, linux.BackupDir+"/") ||
+			path == linux.ResticCache || strings.HasPrefix(path, linux.ResticCache+"/") {
+			delete(tree, path)
+		}
+	}
+	return tree
 }
 
 func (f *hardeningFixture) checkRestoreRestic(c linux.Command, state protocol.DesiredState, account string) {
@@ -571,10 +605,12 @@ func (f *hardeningFixture) checkRestoreLitestream(c linux.Command, state protoco
 }
 
 func TestWholeRestoreRetriesUnexpectedExitThreeTimes(t *testing.T) {
-	// R-BEDH-N93M
+	// R-NFN5-KCMK
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := wholeRestoreState()
+	secret := state.Backup.Accounts[0].Credentials.SecretAccessKey
+	wantFailure := "restic restore: exit status 11: failed restore " + machine.Redacted
 	calls := 0
 	f.executeBackupFixtures(func(c linux.Command) (linux.Result, error) {
 		args := c.Args[3:]
@@ -585,7 +621,7 @@ func TestWholeRestoreRetriesUnexpectedExitThreeTimes(t *testing.T) {
 			restoreStdout(t, c, `[{"id":"copy","time":"2026-11-18T12:00:00Z"}]`)
 		case args[0] == "restore":
 			calls++
-			return linux.Result{ExitCode: 11, Stderr: []byte("failed restore\n")}, nil
+			return linux.Result{ExitCode: 11, Stderr: []byte("failed restore " + secret + "\n")}, nil
 		default:
 			t.Fatalf("unexpected command %v", args)
 		}
@@ -606,13 +642,15 @@ func TestWholeRestoreRetriesUnexpectedExitThreeTimes(t *testing.T) {
 		f.host = linux.New(f.env)
 		f.apply(state)
 		if pass <= linux.RestoreAttempts {
-			f.failedBackupPass(state)
+			if err := f.host.Backup(t.Context(), state); err == nil || err.Error() != wantFailure {
+				t.Fatalf("pass %d did not return the redacted restore failure", pass)
+			}
 		} else {
 			f.backup(state)
 		}
 		got := f.backupReport(state).Backups[0]
-		if calls != min(pass, linux.RestoreAttempts) || !strings.Contains(got.Error, "failed restore") {
-			t.Fatalf("pass %d gave %d failed commands and %+v", pass, calls, got)
+		if calls != min(pass, linux.RestoreAttempts) || got.Error != wantFailure {
+			t.Fatalf("pass %d gave %d failed commands and did not report the redacted restore failure", pass, calls)
 		}
 		wantStep := protocol.Step{ID: state.Backup.Restore.ID, State: protocol.StepPending}
 		if pass >= linux.RestoreAttempts {
@@ -625,7 +663,7 @@ func TestWholeRestoreRetriesUnexpectedExitThreeTimes(t *testing.T) {
 }
 
 func TestWholeRestoreBoundsManifest(t *testing.T) {
-	// R-BFLE-10UB
+	// R-NGV1-Y4D9
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := wholeRestoreState()
@@ -713,7 +751,7 @@ func writeOlderRestoreSnapshots(f *hardeningFixture, c linux.Command) {
 }
 
 func TestWholeRestoreRefusesOccupiedTargetsAndRetriesRemainingMoves(t *testing.T) {
-	// R-BAPS-HXVJ R-BD5L-9HCX
+	// R-ND7C-ST56 R-NEF9-6KVV
 	for _, occupiedInitially := range []bool{true, false} {
 		t.Run(fmt.Sprintf("occupied initially %t", occupiedInitially), func(t *testing.T) {
 			f := newHardeningFixture(t)
@@ -790,7 +828,7 @@ func partialRestoreState() protocol.DesiredState {
 }
 
 func TestPartialDatabaseRestoreNamesCopiesAndKeepsResults(t *testing.T) {
-	// R-BI16-SKBP R-ZB34-W251 R-BKGZ-K3T3 R-BJ93-6C2E R-ZIEJ-6OL7
+	// R-NJAU-PNUN R-ZB34-W251 R-NLQN-H7C1 R-NKIR-3FLC R-ZIEJ-6OL7
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := partialRestoreState()
@@ -923,7 +961,7 @@ func (f *hardeningFixture) forbidRestoreWork() {
 }
 
 func TestPartialDatabaseRestoreRefusesSymlinkAndCollision(t *testing.T) {
-	// R-BKGZ-K3T3 R-7VGU-VQLI
+	// R-NLQN-H7C1 R-7VGU-VQLI
 	for _, linked := range []bool{true, false} {
 		t.Run(fmt.Sprintf("linked data directory %t", linked), func(t *testing.T) {
 			f := newHardeningFixture(t)
@@ -976,7 +1014,7 @@ func TestPartialDatabaseRestoreRefusesSymlinkAndCollision(t *testing.T) {
 }
 
 func TestPartialRestoresRemoveWorkResidue(t *testing.T) {
-	// R-BKGZ-K3T3 R-BLOV-XVJS
+	// R-NLQN-H7C1 R-NMYJ-UZ2Q
 	for _, tc := range []struct {
 		kind   string
 		path   string
@@ -1072,7 +1110,7 @@ func TestPartialRestoresRemoveWorkResidue(t *testing.T) {
 }
 
 func TestPartialFilesRestoreEscapesPatternAndCopiesIntoHome(t *testing.T) {
-	// R-BLOV-XVJS R-BJ93-6C2E R-BGTA-ESL0 R-ZB34-W251
+	// R-NMYJ-UZ2Q R-NKIR-3FLC R-NI2Y-BW3Y R-ZB34-W251
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := partialRestoreState()
@@ -1123,7 +1161,7 @@ func TestPartialFilesRestoreEscapesPatternAndCopiesIntoHome(t *testing.T) {
 }
 
 func TestPartialFilesRestoreSkipsOccupiedTimestampDirectory(t *testing.T) {
-	// R-BLOV-XVJS
+	// R-NMYJ-UZ2Q
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := partialRestoreState()
@@ -1236,7 +1274,7 @@ func TestWholeRestoreStatePrunesAbsentPartialRequest(t *testing.T) {
 }
 
 func TestWholeRestoreRetriesTargetThatWasNeverMoved(t *testing.T) {
-	// R-BD5L-9HCX
+	// R-NEF9-6KVV
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := wholeRestoreState()

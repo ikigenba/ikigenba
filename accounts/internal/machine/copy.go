@@ -7,6 +7,9 @@ import (
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
 )
 
+// Redacted stands for a credential value removed from backup output.
+const Redacted = "***"
+
 // CopyName returns the request's candidate path, starting at attempt 1.
 func CopyName(q protocol.RestoreRequest, attempt int) string {
 	suffix := q.AsOf.UTC().Format("20060102T150405Z")

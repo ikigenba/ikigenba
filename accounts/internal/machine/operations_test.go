@@ -14,7 +14,7 @@ import (
 )
 
 func TestMemoryCloseFinals(t *testing.T) {
-	// R-8T53-JW66
+	// R-8T53-JW66 R-NQM9-0AAT
 	s := backupState()
 	now := fixtureTime
 	var accountPuts int
@@ -154,7 +154,7 @@ func TestMemoryCloseFinalRetryAfterConcurrentApply(t *testing.T) {
 }
 
 func TestMemoryWholeHostRestore(t *testing.T) {
-	// R-Z3RQ-LFOV R-YFDQ-Y0UZ R-BPCL-36RV
+	// R-Z3RQ-LFOV R-YFDQ-Y0UZ R-NQM9-0AAT
 	s := backupState()
 	s.Accounts = nil
 	now := fixtureTime
@@ -257,7 +257,7 @@ func TestMemoryWholeHostRestore(t *testing.T) {
 }
 
 func TestMemoryPartialRestores(t *testing.T) {
-	// R-BO4O-PF16 R-YQCU-DYJ8 R-BPCL-36RV
+	// R-NPEC-MIK4 R-YQCU-DYJ8 R-NQM9-0AAT
 	s := backupState()
 	now := fixtureTime.Add(250 * time.Millisecond)
 	s.Accounts = append(s.Accounts, protocol.Account{Slug: "beta", State: protocol.AccountActive})
@@ -346,6 +346,15 @@ func TestMemoryPartialRestores(t *testing.T) {
 	if got := m.State().Restores; !reflect.DeepEqual(got, want) {
 		t.Fatalf("completed requests ran again: %+v", got)
 	}
+	priorScope := s
+	priorBackup := *s.Backup
+	priorScope.Backup = &priorBackup
+	s.Backup.Restores = []protocol.RestoreRequest{files}
+	runPass(t, m.Backup, s)
+	survivor := []protocol.RestoreResult{want[2]}
+	if got, prior := m.State().Restores, inspect(t, m, priorScope).Restores; !slices.Equal(got, survivor) || !slices.Equal(prior, survivor) {
+		t.Fatalf("pruning requests yielded %+v, previous scope yielded %+v, want %+v", got, prior, survivor)
+	}
 	s.Backup.Restores = nil
 	runPass(t, m.Backup, s)
 	oldScope := s
@@ -379,7 +388,7 @@ func TestMemoryPartialRestores(t *testing.T) {
 }
 
 func TestMemoryPartialRestoreWaitsForEligibleAccount(t *testing.T) {
-	// R-BO4O-PF16
+	// R-NPEC-MIK4
 	s := backupState()
 	now := fixtureTime
 	m := backupMachine(&now, nil, nil)
@@ -426,7 +435,7 @@ func TestMemoryPartialRestoreWaitsForEligibleAccount(t *testing.T) {
 }
 
 func TestMemoryRestoreCopyPathsStayOnSharedDisk(t *testing.T) {
-	// R-BO4O-PF16
+	// R-NPEC-MIK4
 	s := backupState()
 	disks := machine.NewDisks()
 	firstNow, secondNow := fixtureTime, fixtureTime

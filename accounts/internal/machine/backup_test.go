@@ -102,7 +102,7 @@ func TestBackupCopy(t *testing.T) {
 }
 
 func TestWalkUnrecordedCopy(t *testing.T) {
-	// R-BMWS-BNAH
+	// R-NO6G-8QTF
 	const text string = machine.WalkUnrecorded
 	if text == "" || strings.ContainsAny(text, "\r\n") {
 		t.Fatalf("invalid walk diagnostic %q", text)
@@ -173,7 +173,7 @@ func putCounts(puts []putCall) map[putCall]int {
 }
 
 func TestMemoryStream(t *testing.T) {
-	// R-YJ1G-3C32 R-YGLN-BSLO R-BPCL-36RV R-YQCU-DYJ8
+	// R-YJ1G-3C32 R-YGLN-BSLO R-NQM9-0AAT R-YQCU-DYJ8
 	s := backupState()
 	now := fixtureTime.Add(250 * time.Millisecond).In(time.FixedZone("test", -3600))
 	var puts []putCall
@@ -249,10 +249,10 @@ func TestMemoryStream(t *testing.T) {
 }
 
 func TestMemoryBackupFactsAfterRemovalOrGIDChange(t *testing.T) {
-	// R-AL3W-GRAY
+	// R-MMDK-DUTW
 	for _, variant := range []string{
 		"removed in stream", "removed in backup", "absent in stream", "absent in backup",
-		"removed without backup settings", "removed during restore", "changed gid",
+		"removed without backup settings", "removed during restore", "changed gid in backup", "changed gid in stream",
 	} {
 		t.Run(variant, func(t *testing.T) {
 			s := backupState()
@@ -260,12 +260,13 @@ func TestMemoryBackupFactsAfterRemovalOrGIDChange(t *testing.T) {
 			now := fixtureTime
 			const goodPath, legacyPath, failedPath = "data/current.db", "data/legacy.db", "data/retry.db"
 			var databasePuts, snapshotPuts int
+			replicaError := errors.New("injected replica error")
 			m := backupMachine(&now, nil, func(_ protocol.Credentials, key string) error {
 				switch key {
 				case protocol.AccountPrefix("acme") + goodPath:
 					databasePuts++
 				case protocol.AccountPrefix("acme") + failedPath:
-					return errors.New("injected replica error")
+					return replicaError
 				case protocol.FilesPrefix("acme") + "/config":
 					snapshotPuts++
 				}
@@ -305,7 +306,7 @@ func TestMemoryBackupFactsAfterRemovalOrGIDChange(t *testing.T) {
 			if variant == "removed in stream" || variant == "absent in stream" {
 				pass = m.Stream
 			}
-			if variant == "changed gid" {
+			if variant == "changed gid in backup" || variant == "changed gid in stream" {
 				s.Accounts[0].GID++
 				if got := inspect(t, m, s).Backups; !reflect.DeepEqual(got, []protocol.AccountBackup{clean}) {
 					t.Fatalf("report with a different gid: %+v", got)
@@ -320,18 +321,35 @@ func TestMemoryBackupFactsAfterRemovalOrGIDChange(t *testing.T) {
 				}
 			}
 
+			wantDatabasePuts := 1
+			oldest := fixtureTime.Add(time.Minute + time.Second)
+			if variant == "changed gid in stream" {
+				runPass(t, m.Stream, s)
+				oldest = now
+				wantDatabasePuts++
+				clean.Synced, clean.Written = now, now
+				clean.DatabaseErrors = 2
+				clean.Databases[0] = protocol.Database{Path: goodPath, Oldest: now, Synced: now, Written: now}
+				clean.Databases[1].Error = machine.NotWAL
+				clean.Databases[2].Error = replicaError.Error()
+				if got := m.State().Backups; !reflect.DeepEqual(got, []protocol.AccountBackup{clean}) ||
+					!reflect.DeepEqual(got, inspect(t, m, s).Backups) || snapshotPuts != 1 || databasePuts != wantDatabasePuts {
+					t.Fatalf("first stream for new gid: %+v, puts %d/%d", got, databasePuts, snapshotPuts)
+				}
+			}
+
 			now = fixtureTime.Add(time.Minute)
 			runPass(t, m.Backup, s)
 			clean.Snapshot, clean.Checked, clean.Snapshots = now, now, []int64{now.Unix()}
 			if got := m.State().Backups; !reflect.DeepEqual(got, []protocol.AccountBackup{clean}) ||
-				!reflect.DeepEqual(got, inspect(t, m, s).Backups) || snapshotPuts != 2 || databasePuts != 1 {
+				!reflect.DeepEqual(got, inspect(t, m, s).Backups) || snapshotPuts != 2 || databasePuts != wantDatabasePuts {
 				t.Fatalf("first backup after retirement: %+v, puts %d/%d", got, databasePuts, snapshotPuts)
 			}
 			now = now.Add(time.Second)
 			runPass(t, m.Stream, s)
 			got := m.State().Backups[0]
 			if databasePuts != 2 || got.Databases[0] != (protocol.Database{
-				Path: goodPath, Oldest: now, Synced: now, Written: now,
+				Path: goodPath, Oldest: oldest, Synced: now, Written: now,
 			}) {
 				t.Fatalf("replica was not started again: %+v, %d puts", got.Databases, databasePuts)
 			}
@@ -340,7 +358,7 @@ func TestMemoryBackupFactsAfterRemovalOrGIDChange(t *testing.T) {
 }
 
 func TestMemoryStreamPutCannotRestoreRetiredFacts(t *testing.T) {
-	// R-AL3W-GRAY
+	// R-MMDK-DUTW
 	s := backupState()
 	s.Accounts[0].GID = 20001
 	removed := s
@@ -373,7 +391,7 @@ func TestMemoryStreamPutCannotRestoreRetiredFacts(t *testing.T) {
 }
 
 func TestMemoryRestoreKeepsFactsOnlyForItsAccountGID(t *testing.T) {
-	// R-AL3W-GRAY
+	// R-MMDK-DUTW
 	s := backupState()
 	const gid = 20001
 	s.Accounts[0].GID = gid
@@ -414,7 +432,7 @@ func TestMemoryRestoreKeepsFactsOnlyForItsAccountGID(t *testing.T) {
 }
 
 func TestMemorySnapshotSchedule(t *testing.T) {
-	// R-8RX7-64FH R-YE5U-K94A R-BPCL-36RV
+	// R-8RX7-64FH R-YE5U-K94A R-NQM9-0AAT
 	s := backupState()
 	now := fixtureTime.Add(time.Millisecond)
 	var puts []putCall
@@ -593,7 +611,7 @@ func TestMemoryRestoredAccountDropsSnapshotRetry(t *testing.T) {
 }
 
 func TestMemoryInspectDatabaseAggregate(t *testing.T) {
-	// R-BPCL-36RV
+	// R-NQM9-0AAT
 	s := backupState()
 	disks := machine.NewDisks()
 	early, late := fixtureTime, fixtureTime.Add(time.Minute)

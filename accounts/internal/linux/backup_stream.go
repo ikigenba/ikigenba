@@ -96,36 +96,51 @@ func walPaths(walk backupWalk) []string {
 func (h *Host) Stream(ctx context.Context, s protocol.DesiredState) error {
 	ctx, pruneErr := h.beginBackupFacts(ctx, s)
 	b := s.Backup
+	ctx = withBackupDiagnosticRedactor(ctx, b)
 	dirErr := h.privateBackupDir(BackupDir)
 	if !backupReady(b) {
 		if dirErr == nil {
-			_ = h.cleanStreamAccounts(ctx, nil)
+			dirErr = h.cleanStreamAccounts(ctx, nil, nil)
+		}
+		if err := firstBackupError(dirErr, pruneErr); err != nil && h.env.Stderr != nil {
+			_, _ = fmt.Fprintf(h.env.Stderr, "accountsd: %s\n", redactBackupDiagnostic(backupDiagnosticRedactor(ctx), err))
 		}
 		return nil
 	}
-	ctx = withBackupDiagnosticRedactor(ctx, b)
 	installErr := h.ensureLitestream(ctx)
 	passErr := errors.Join(pruneErr, dirErr, installErr)
 	if dirErr == nil {
 		passErr = firstBackupError(passErr, h.updateHostBackup(func(facts *backupHostFacts) {
-			facts.LitestreamInstallError = boundBackupError(h.litestreamInstall.errorText())
+			facts.LitestreamInstallError = h.litestreamInstall.reportError("")
 		}))
 	}
 	retain := make(map[string]bool, len(s.Accounts))
+	accountErrors := make(map[string]error, len(s.Accounts))
 	var unitWritten bool
 	var unitErr error
-	for _, account := range backupActiveAccounts(s) {
+	accounts := backupActiveAccounts(s)
+	for _, account := range accounts {
 		slug := account.Slug
 		walk, walkErr := h.walkBackupDatabases(slug)
 		walk, saveErr := h.recordBackupWalk(ctx, slug, walk, dirErr == nil)
 		passErr = firstBackupError(passErr, firstBackupError(walkErr, saveErr))
-		if dirErr != nil {
-			continue
-		}
 		creds, ok := accountBackupCredentials(b, slug)
 		paths := walPaths(walk)
 		retain[slug] = !ok || len(paths) != 0
-		if !ok || len(paths) == 0 || installErr != nil {
+		if !ok {
+			continue
+		}
+		accountErrors[slug] = walkErr
+		if len(paths) == 0 {
+			continue
+		}
+		config := BackupDir + "/" + slug + ".yml"
+		changed, configErr := h.writeBackupFile(config, backupLitestreamYAML(b, slug, paths))
+		if configErr != nil {
+			accountErrors[slug] = firstBackupError(walkErr, hostError(config, configErr))
+			continue
+		}
+		if installErr != nil {
 			continue
 		}
 		if !unitWritten {
@@ -134,13 +149,22 @@ func (h *Host) Stream(ctx context.Context, s protocol.DesiredState) error {
 			passErr = firstBackupError(passErr, unitErr)
 		}
 		if unitErr == nil {
-			passErr = firstBackupError(passErr, h.streamAccount(ctx, b, account, creds, paths, walk, saveErr == nil))
+			accountErr, otherErr := h.streamAccount(ctx, b, account, creds, config, changed, walk, saveErr == nil)
+			accountErrors[slug] = firstBackupError(walkErr, accountErr)
+			passErr = firstBackupError(passErr, otherErr)
 		}
 	}
-	if dirErr != nil {
-		return passErr
+	if dirErr == nil {
+		passErr = firstBackupError(passErr, h.cleanStreamAccounts(ctx, retain, accountErrors))
 	}
-	return firstBackupError(passErr, h.cleanStreamAccounts(ctx, retain))
+	for _, account := range accounts {
+		if accountErr, attempted := accountErrors[account.Slug]; attempted {
+			accountErr = redactBackupDiagnostic(backupDiagnosticRedactor(ctx), accountErr)
+			passErr = firstBackupError(passErr, accountErr)
+			passErr = firstBackupError(passErr, h.recordBackupPassError(ctx, account.Slug, true, accountErr))
+		}
+	}
+	return passErr
 }
 
 func (h *Host) prepareStreamUnit(ctx context.Context) error {
@@ -157,24 +181,19 @@ func (h *Host) prepareStreamUnit(ctx context.Context) error {
 
 func streamRestartPath(slug string) string { return BackupDir + "/" + slug + ".restart-gid" }
 
-func (h *Host) streamAccount(ctx context.Context, b *protocol.Backup, account protocol.Account, c protocol.Credentials, paths []string, walk backupWalk, kept bool) error {
+func (h *Host) streamAccount(ctx context.Context, b *protocol.Backup, account protocol.Account, c protocol.Credentials, config string, changed bool, walk backupWalk, kept bool) (accountErr, otherErr error) {
 	slug := account.Slug
 	restartPath := streamRestartPath(slug)
 	lastGID, _ := h.readBounded(restartPath)
 	previousGID, parseErr := strconv.ParseInt(strings.TrimSuffix(string(lastGID), "\n"), 10, 64)
 	gidChanged := parseErr == nil && previousGID != account.GID
-	config := BackupDir + "/" + slug + ".yml"
-	changed, err := h.writeBackupFile(config, backupLitestreamYAML(b, slug, paths))
-	if err != nil {
-		return err
-	}
 	active, err := h.query(ctx, Command{Name: "systemctl", Args: []string{"is-active", streamInstance(slug)}})
 	if err != nil {
-		return err
+		return streamCommandFailure("systemctl is-active", active, err), nil
 	}
 	stamp, err := h.readBounded(BackupDir + "/litestream.digest")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	digest, _, _ := strings.Cut(string(stamp), "\n")
 	newEnv := streamEnv(c, b.Region, digest)
@@ -182,40 +201,39 @@ func (h *Host) streamAccount(ctx context.Context, b *protocol.Backup, account pr
 	previous, readErr := h.readBounded(envPath)
 	if gidChanged {
 		if err := h.privateBackupDir(BackupDir + "/meta"); err != nil {
-			return err
+			return hostError(BackupDir+"/meta/"+slug, err), nil
 		}
 		if err := h.removeStreamMeta(slug); err != nil {
-			return err
+			return err, nil
 		}
 	} else if err := h.privateBackupDir(BackupDir + "/meta/" + slug); err != nil {
-		return err
+		return hostError(BackupDir+"/meta/"+slug, err), nil
 	}
-	var passErr error
 	if active.ExitCode != 0 || changed || readErr != nil || restartStreamEnv(string(previous), newEnv, h.env.Now()) || gidChanged {
 		if _, err := h.writeBackupFile(envPath, []byte(newEnv)); err != nil {
-			return err
+			return hostError(envPath, err), nil
 		}
-		if _, err := h.run(ctx, "systemctl", "restart", streamInstance(slug)); err != nil {
-			return err
+		if result, err := h.run(ctx, "systemctl", "restart", streamInstance(slug)); err != nil {
+			return streamCommandFailure("systemctl restart", result, err), nil
 		}
-		_, passErr = h.writeBackupFile(restartPath, []byte(strconv.FormatInt(account.GID, 10)+"\n"))
+		_, otherErr = h.writeBackupFile(restartPath, []byte(strconv.FormatInt(account.GID, 10)+"\n"))
 	}
 	if walk.Error == machine.DataTooLarge {
-		return passErr
+		return nil, otherErr
 	}
 	for i := range walk.Databases {
 		db := &walk.Databases[i]
 		if db.WAL {
-			passErr = firstBackupError(passErr, h.streamDatabase(ctx, b, slug, c, config, db))
+			accountErr = firstBackupError(accountErr, h.streamDatabase(ctx, b, slug, c, config, db))
 		}
 	}
 	if kept {
-		passErr = firstBackupError(passErr, h.saveStreamHealth(ctx, slug, walk))
+		otherErr = firstBackupError(otherErr, h.saveStreamHealth(ctx, slug, walk))
 	}
-	return passErr
+	return accountErr, otherErr
 }
 
-func (h *Host) cleanStreamAccounts(ctx context.Context, retain map[string]bool) error {
+func (h *Host) cleanStreamAccounts(ctx context.Context, retain map[string]bool, accountErrors map[string]error) error {
 	dir, err := openBackupDirectory(unix.AT_FDCWD, h.path(BackupDir))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
@@ -230,7 +248,11 @@ func (h *Host) cleanStreamAccounts(ctx context.Context, retain map[string]bool) 
 		for _, entry := range entries {
 			slug, ok := strings.CutSuffix(entry.Name(), ".yml")
 			if ok && !retain[slug] && valid.Slug(slug) == nil && !entry.IsDir() {
-				passErr = firstBackupError(passErr, h.removeStreamAccount(ctx, slug))
+				accountErr, otherErr := h.removeStreamAccount(ctx, slug)
+				if earlier, backedUp := accountErrors[slug]; backedUp {
+					accountErrors[slug] = firstBackupError(earlier, accountErr)
+				}
+				passErr = firstBackupError(passErr, firstBackupError(accountErr, otherErr))
 			}
 		}
 		if errors.Is(err, io.EOF) {
@@ -242,16 +264,30 @@ func (h *Host) cleanStreamAccounts(ctx context.Context, retain map[string]bool) 
 	}
 }
 
-func (h *Host) removeStreamAccount(ctx context.Context, slug string) error {
+func (h *Host) removeStreamAccount(ctx context.Context, slug string) (accountErr, otherErr error) {
 	active, err := h.query(ctx, Command{Name: "systemctl", Args: []string{"is-active", streamInstance(slug)}})
-	if err == nil && active.ExitCode == 0 {
-		_, err = h.run(ctx, "systemctl", "stop", streamInstance(slug))
+	if err != nil {
+		accountErr = streamCommandFailure("systemctl is-active", active, err)
+	} else if active.ExitCode == 0 {
+		result, err := h.run(ctx, "systemctl", "stop", streamInstance(slug))
+		accountErr = streamCommandFailure("systemctl stop", result, err)
 	}
 	_, ymlErr := h.remove(BackupDir + "/" + slug + ".yml")
 	_, envErr := h.remove(BackupDir + "/" + slug + ".env")
 	metaErr := h.removeStreamMeta(slug)
 	_, restartErr := h.remove(streamRestartPath(slug))
-	return errors.Join(err, ymlErr, envErr, metaErr, restartErr)
+	return firstBackupError(accountErr, firstBackupError(ymlErr, firstBackupError(envErr, metaErr))), restartErr
+}
+
+func streamCommandFailure(label string, result Result, err error) error {
+	if err == nil {
+		return nil
+	}
+	var failed *CommandError
+	if errors.As(err, &failed) {
+		err = failed.Err
+	}
+	return backupCommandFailure(label, result, err)
 }
 
 func (h *Host) removeStreamMeta(slug string) error {
@@ -284,7 +320,7 @@ func (h *Host) streamDatabase(ctx context.Context, b *protocol.Backup, slug stri
 			local, localOK = backupTxID(row["local_txid"])
 		}
 	})
-	_, statusErr := h.litestreamCommand(ctx, c, b.Region, []string{"status", "-config", configPath, "-no-expand-env", "-json", dbPath}, status)
+	statusResult, statusErr := h.litestreamCommand(ctx, c, b.Region, []string{"status", "-config", configPath, "-no-expand-env", "-json", dbPath}, status)
 	status.finish()
 
 	var written, oldest time.Time
@@ -298,17 +334,22 @@ func (h *Host) streamDatabase(ctx context.Context, b *protocol.Backup, slug stri
 			newestTX, hasTX = max(newestTX, tx), true
 		}
 	})
-	_, level0Err := h.litestreamCommand(ctx, c, b.Region, []string{"ltx", "-config", configPath, "-no-expand-env", "-level", "0", "-json", dbPath}, level0)
+	level0Result, level0Err := h.litestreamCommand(ctx, c, b.Region, []string{"ltx", "-config", configPath, "-no-expand-env", "-level", "0", "-json", dbPath}, level0)
 	level0.finish()
 	level9 := newBackupJSONArray([]string{"timestamp"}, func(row map[string]string) {
 		if at, err := time.Parse(time.RFC3339, row["timestamp"]); err == nil && (oldest.IsZero() || at.Before(oldest)) {
 			oldest = at
 		}
 	})
-	_, level9Err := h.litestreamCommand(ctx, c, b.Region, []string{"ltx", "-config", configPath, "-no-expand-env", "-level", "9", "-json", dbPath}, level9)
+	level9Result, level9Err := h.litestreamCommand(ctx, c, b.Region, []string{"ltx", "-config", configPath, "-no-expand-env", "-level", "9", "-json", dbPath}, level9)
 	level9.finish()
-	if err := errors.Join(statusErr, level0Err, level9Err); err != nil {
-		return err
+	switch {
+	case statusErr != nil:
+		return streamCommandFailure("litestream status", statusResult, statusErr)
+	case level0Err != nil:
+		return streamCommandFailure("litestream ltx", level0Result, level0Err)
+	case level9Err != nil:
+		return streamCommandFailure("litestream ltx", level9Result, level9Err)
 	}
 	if !written.IsZero() {
 		db.Written = written

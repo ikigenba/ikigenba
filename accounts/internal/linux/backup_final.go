@@ -142,9 +142,6 @@ func (h *Host) finalizeAccountBackup(ctx context.Context, s protocol.DesiredStat
 			return h.deferAccountFinal(ctx, slug, s.Backup.Close, lock, machine.ErrNotSynced.Error(), backupErr)
 		}
 		failure = h.readAccountBackupForPass(ctx, slug).Error
-		if failure == "" && backupErr != nil {
-			failure = boundBackupError(backupErr.Error())
-		}
 	case waiting:
 		return false, nil
 	case !present:
@@ -171,7 +168,11 @@ func (h *Host) deferAccountFinal(ctx context.Context, slug, id string, lock back
 }
 
 func (h *Host) finishAccountFinal(ctx context.Context, slug, id string, lock backupCloseLock, failure string, backupErr error) (bool, error) {
-	step := h.backupOperationStep(id, backupFailureCode(failure))
+	code := backupFailureCode(failure)
+	if backupErr != nil {
+		code = protocol.CodeFailed
+	}
+	step := h.backupOperationStep(id, code)
 	saveErr := h.updateAccountBackup(ctx, slug, func(facts *backupAccountFacts) {
 		facts.Operation.Final, facts.Operation.FinalVersion, facts.Error = step, lock.version, failure
 	})
@@ -184,7 +185,7 @@ func (h *Host) finalizeHostBackup(ctx context.Context, s protocol.DesiredState, 
 	if !hostBackupCredentials(s.Backup) {
 		failure = machine.NoCredentials
 	} else if backupErr = h.backupHostKeys(ctx, s, true); backupErr != nil {
-		failure = boundBackupError(backupErr.Error())
+		failure = backupErrorPrefix(backupErr.Error())
 	}
 	step := h.backupOperationStep(s.Backup.Close, backupFailureCode(failure))
 	saveErr := h.updateHostBackup(func(facts *backupHostFacts) {

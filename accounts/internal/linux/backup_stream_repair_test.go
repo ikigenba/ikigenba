@@ -9,7 +9,7 @@ import (
 )
 
 func TestLitestreamRestartsForNewGIDAndClearsOldMetadata(t *testing.T) {
-	// R-ANJP-8ASC
+	// R-MOTD-5EBA
 	f := newBackupPassFixture(t)
 	f.state.Accounts[0].GID = 20001
 	f.put("/srv/acme/data/app.db", walSQLite, 0o600)
@@ -57,7 +57,7 @@ func TestLitestreamRestartsForNewGIDAndClearsOldMetadata(t *testing.T) {
 }
 
 func TestLitestreamRemovesLastRestartOnlyWhenCleaningStaleConfig(t *testing.T) {
-	// R-ANJP-8ASC
+	// R-MOTD-5EBA
 	for _, tc := range []struct {
 		name       string
 		configured bool
@@ -112,7 +112,7 @@ func TestLitestreamRemovesLastRestartOnlyWhenCleaningStaleConfig(t *testing.T) {
 }
 
 func TestLitestreamGIDChangeDoesNotFollowMetadataParentLink(t *testing.T) {
-	// R-ANJP-8ASC R-B3EE-7BFD
+	// R-MOTD-5EBA R-N4O2-4EYB
 	f := newBackupPassFixture(t)
 	f.put("/srv/acme/data/app.db", walSQLite, 0o600)
 	f.stream()

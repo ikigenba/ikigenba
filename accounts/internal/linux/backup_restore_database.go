@@ -41,6 +41,7 @@ func (h *Host) restoreDatabase(ctx context.Context, b *protocol.Backup, credenti
 	args := []string{"restore", "-config", h.path(config), "-no-expand-env"}
 	args = append(args, flags...)
 	args = append(args, "-o", h.path(output), h.path("/srv/"+slug+"/"+path))
+	markBackupPassActivity(ctx, slug, nil)
 	_, err = h.litestreamCommand(ctx, credentials, b.Region, args, io.Discard)
 	return err
 }

@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -62,15 +63,38 @@ const (
 
 // InstallRestic installs the checked ARM64 restic executable from its bzip2 release.
 func InstallRestic(ctx context.Context, env Env, version, digest string) error {
-	return installBackupProgram(ctx, env, ResticPath, resticStamp, fmt.Sprintf(resticURL, version, version), digest,
+	err := installBackupProgram(ctx, env, ResticPath, resticStamp, fmt.Sprintf(resticURL, version, version), digest,
 		func(dst io.Writer, src io.Reader, buffer []byte) error {
 			return copyExecutable(dst, bzip2.NewReader(src), buffer)
 		})
+	return backupInstallError(ctx, err)
 }
 
 // InstallLitestream installs the checked ARM64 litestream executable from its tar release.
 func InstallLitestream(ctx context.Context, env Env, version, digest string) error {
-	return installBackupProgram(ctx, env, LitestreamPath, litestreamStamp, fmt.Sprintf(litestreamURL, version, version), digest, unpackLitestream)
+	err := installBackupProgram(ctx, env, LitestreamPath, litestreamStamp, fmt.Sprintf(litestreamURL, version, version), digest, unpackLitestream)
+	return backupInstallError(ctx, err)
+}
+
+type backupInstallFailure struct {
+	message string
+	cause   error
+}
+
+func (e backupInstallFailure) Error() string        { return e.message }
+func (e backupInstallFailure) Is(target error) bool { return errors.Is(e.cause, target) }
+
+func backupInstallError(ctx context.Context, err error) error {
+	if err == nil {
+		return nil
+	}
+	diagnostic := redactBackupDiagnostic(backupDiagnosticRedactor(ctx), err).Error()
+	message := strings.ToValidUTF8(backupErrorPrefix(diagnostic), "\uFFFD")
+	message = backupErrorPrefix(message)
+	if message == err.Error() {
+		return err
+	}
+	return backupInstallFailure{message: message, cause: err}
 }
 
 func installBackupProgram(ctx context.Context, env Env, path, stamp, url, digest string, unpack func(io.Writer, io.Reader, []byte) error) error {
@@ -412,9 +436,10 @@ func copyExecutable(dst io.Writer, src io.Reader, buffer []byte) error {
 }
 
 type installAttempt struct {
-	mu  sync.RWMutex
-	at  time.Time
-	err error
+	mu        sync.RWMutex
+	at        time.Time
+	err       error
+	attempted bool
 }
 
 // Each backup worker owns its attempt. Inspect only holds the mutex to read the error.
@@ -427,17 +452,20 @@ func (a *installAttempt) ensure(ctx context.Context, env Env, version, digest st
 	if retry {
 		return lastErr
 	}
-	err := redactBackupDiagnostic(backupDiagnosticRedactor(ctx), install(ctx, env, version, digest))
+	err := install(ctx, env, version, digest)
 	now = env.Now()
 	a.mu.Lock()
-	a.at, a.err = now, err
+	a.at, a.err, a.attempted = now, err, true
 	a.mu.Unlock()
 	return err
 }
 
-func (a *installAttempt) errorText() string {
+func (a *installAttempt) reportError(kept string) string {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
+	if !a.attempted {
+		return kept
+	}
 	if a.err == nil {
 		return ""
 	}

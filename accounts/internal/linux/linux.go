@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -76,10 +75,15 @@ func (e *CommandError) Error() string {
 
 func (e *CommandError) Unwrap() error { return e.Err }
 
-type capture struct{ prefix []byte }
+type capture struct {
+	prefix []byte
+	cut    bool
+}
 
 func (w *capture) Write(p []byte) (int, error) {
-	w.prefix = append(w.prefix, p[:min(len(p), MaxCapture-len(w.prefix))]...)
+	keep := min(len(p), MaxCapture-len(w.prefix))
+	w.prefix = append(w.prefix, p[:keep]...)
+	w.cut = w.cut || keep < len(p)
 	return len(p), nil
 }
 
@@ -131,6 +135,9 @@ func Exec(ctx context.Context, c Command) (Result, error) {
 	err = cmd.Wait()
 	stop()
 	result := Result{Stdout: stdout.prefix, Stderr: stderr.prefix, ExitCode: cmd.ProcessState.ExitCode()}
+	if bounds, ok := ctx.Value(backupCaptureKey{}).(*backupCaptureBounds); ok {
+		*bounds = backupCaptureBounds{known: true, stdoutCut: stdout.cut, stderrCut: stderr.cut}
+	}
 	if ctx.Err() != nil && result.ExitCode == -1 {
 		return result, ctx.Err()
 	}
@@ -273,12 +280,18 @@ func (h *Host) run(ctx context.Context, program string, args ...string) (Result,
 }
 
 func (h *Host) query(ctx context.Context, c Command, allowed ...int) (Result, error) {
-	res, err := h.env.Execute(ctx, c)
-	if redact := backupDiagnosticRedactor(ctx); redact != nil {
-		res.Stdout = []byte(redact.Replace(string(res.Stdout)))
-		res.Stderr = []byte(redact.Replace(string(res.Stderr)))
-		err = redactBackupDiagnostic(redact, err)
+	credentials := backupCommandCredentials(c.Env)
+	var bounds backupCaptureBounds
+	if credentials != (backupCredentials{}) {
+		ctx = context.WithValue(ctx, backupCaptureKey{}, &bounds)
 	}
+	res, err := h.env.Execute(ctx, c)
+	redact := backupDiagnosticRedactor(ctx)
+	if redact != nil {
+		res.Stdout = redact.capture(res.Stdout, credentials, bounds.known, bounds.stdoutCut)
+		res.Stderr = redact.capture(res.Stderr, credentials, bounds.known, bounds.stderrCut)
+	}
+	err = redactBackupDiagnostic(redact, err)
 	if err == nil {
 		if len(allowed) == 0 {
 			return res, nil
@@ -294,47 +307,4 @@ func (h *Host) query(ctx context.Context, c Command, allowed ...int) (Result, er
 		label += " " + c.Args[0]
 	}
 	return res, &CommandError{Label: label, Result: res, Err: err}
-}
-
-type backupDiagnosticKey struct{}
-
-// Use every credential in the pass when an external error names a credential
-// other than the one passed to the failing command.
-func withBackupDiagnosticRedactor(ctx context.Context, backup *protocol.Backup) context.Context {
-	var secrets []string
-	add := func(c protocol.Credentials) {
-		for _, value := range []string{c.AccessKeyID, c.SecretAccessKey, c.SessionToken} {
-			if value != "" {
-				secrets = append(secrets, value)
-			}
-		}
-	}
-	add(backup.Host)
-	for _, account := range backup.Accounts {
-		add(account.Credentials)
-	}
-	if len(secrets) == 0 {
-		return ctx
-	}
-	slices.SortFunc(secrets, func(a, b string) int { return len(b) - len(a) })
-	pairs := make([]string, 0, 2*len(secrets))
-	for _, value := range secrets {
-		pairs = append(pairs, value, "***")
-	}
-	return context.WithValue(ctx, backupDiagnosticKey{}, strings.NewReplacer(pairs...))
-}
-
-func backupDiagnosticRedactor(ctx context.Context) *strings.Replacer {
-	redact, _ := ctx.Value(backupDiagnosticKey{}).(*strings.Replacer)
-	return redact
-}
-
-func redactBackupDiagnostic(redact *strings.Replacer, err error) error {
-	if redact != nil && err != nil {
-		message := err.Error()
-		if cleaned := redact.Replace(message); cleaned != message {
-			return errors.New(cleaned)
-		}
-	}
-	return err
 }

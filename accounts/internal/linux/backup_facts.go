@@ -1,11 +1,13 @@
 package linux
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -13,6 +15,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"golang.org/x/sys/unix"
 
@@ -40,11 +43,17 @@ type backupAccountFacts struct {
 	Snapshots    []int64
 	Checked      time.Time
 	Error        string
+	PassErrors   backupPassErrors
 	Walk         backupWalk
 	WalkRecorded bool
 	WalkGID      *int64 `json:",omitempty"`
 	WalkToken    string `json:",omitempty"`
 	Operation    backupOperationFacts
+}
+
+type backupPassErrors struct {
+	Stream string `json:",omitempty"`
+	Backup string `json:",omitempty"`
 }
 
 type backupHostFacts struct {
@@ -205,6 +214,9 @@ func (h *Host) readAccountBackupFor(account protocol.Account) backupAccountFacts
 type backupPlacement struct {
 	account protocol.Account
 	walk    backupWalkPublication
+	// An unsaved error overrides the last kept error on this Host only.
+	unsavedStreamError *string
+	unsavedBackupError *string
 }
 
 type backupPlacementsKey struct{}
@@ -443,6 +455,50 @@ func (h *Host) updateAccountBackup(ctx context.Context, slug string, update func
 	return h.saveAccountBackup(placement, facts)
 }
 
+func (h *Host) recordBackupPassError(ctx context.Context, slug string, stream bool, passErr error) error {
+	h.backupFactsMu.Lock()
+	defer h.backupFactsMu.Unlock()
+	placement := h.currentBackupPlacement(ctx, slug)
+	if placement == nil {
+		return nil
+	}
+	var message string
+	if passErr != nil {
+		message = backupErrorPrefix(passErr.Error())
+	}
+	facts, readErr := h.loadAccountBackup(placement.account)
+	kept, unsaved := &facts.PassErrors.Backup, &placement.unsavedBackupError
+	if stream {
+		kept, unsaved = &facts.PassErrors.Stream, &placement.unsavedStreamError
+	}
+	if *kept == message && readErr == nil {
+		*unsaved = nil
+		return nil
+	}
+	*kept = message
+	if err := h.saveAccountBackup(placement, facts); err != nil {
+		*unsaved = &message
+		return err
+	}
+	*unsaved = nil
+	return nil
+}
+
+func (h *Host) accountBackupForReport(account protocol.Account) backupAccountFacts {
+	h.backupFactsMu.Lock()
+	defer h.backupFactsMu.Unlock()
+	facts := h.readAccountBackupFor(account)
+	if placement := h.backupPlacements[account.Slug]; placement != nil && placement.account.GID == account.GID {
+		if placement.unsavedStreamError != nil {
+			facts.PassErrors.Stream = *placement.unsavedStreamError
+		}
+		if placement.unsavedBackupError != nil {
+			facts.PassErrors.Backup = *placement.unsavedBackupError
+		}
+	}
+	return facts
+}
+
 func (h *Host) saveAccountBackup(placement *backupPlacement, facts backupAccountFacts) error {
 	facts.GID, facts.WalkGID = &placement.account.GID, nil
 	return saveBackupFacts(h, accountBackupStatusPath(placement.account.Slug), facts)
@@ -461,6 +517,32 @@ func backupTime(t time.Time) time.Time { return t.UTC().Truncate(time.Second) }
 func boundBackupError(message string) string {
 	report := protocol.Report{HostBackup: protocol.HostBackup{Error: message}}
 	return report.Bounded().HostBackup.Error
+}
+
+func backupErrorPrefix(message string) string {
+	end := min(len(message), protocol.MaxBackupError)
+	if end < len(message) {
+		for start := end - 1; start >= end-utf8.UTFMax+1; start-- {
+			if _, width := utf8.DecodeRuneInString(message[start:]); start+width > end {
+				end = start
+				break
+			}
+		}
+	}
+	return message[:end]
+}
+
+func backupCommandFailure(label string, result Result, err error) error {
+	failure := &CommandError{Label: label, Result: result, Err: err}
+	for output := result.Stderr; len(output) != 0; {
+		start := bytes.LastIndexByte(output, '\n') + 1
+		line := output[start:]
+		if len(bytes.Trim(line, " \t\r")) != 0 {
+			return fmt.Errorf("%w: %s", failure, strings.ReplaceAll(string(line[:min(len(line), protocol.MaxBackupError+utf8.UTFMax)]), "\r", " "))
+		}
+		output = output[:max(0, start-1)]
+	}
+	return failure
 }
 
 func backupActiveAccounts(s protocol.DesiredState) []protocol.Account {
@@ -491,17 +573,12 @@ func (h *Host) backupReport(s protocol.DesiredState, out *protocol.Report) {
 	host := h.readHostBackup()
 	out.HostBackup = protocol.HostBackup{Snapshot: backupTime(host.Snapshot), Error: host.Error}
 	accounts := make(map[string]backupAccountFacts, min(len(selected), protocol.MaxBackupAccounts))
-	resticError, litestreamError := host.ResticInstallError, host.LitestreamInstallError
-	if current := h.resticInstall.errorText(); current != "" {
-		resticError = boundBackupError(current)
-	}
-	if current := h.litestreamInstall.errorText(); current != "" {
-		litestreamError = boundBackupError(current)
-	}
+	resticError := h.resticInstall.reportError(host.ResticInstallError)
+	litestreamError := h.litestreamInstall.reportError(host.LitestreamInstallError)
 	for i, account := range selected {
 		var facts backupAccountFacts
 		if i < protocol.MaxBackupAccounts {
-			facts = h.readAccountBackupFor(account)
+			facts = h.accountBackupForReport(account)
 			accounts[account.Slug] = facts
 		}
 		_, credentials := accountBackupCredentials(s.Backup, account.Slug)
@@ -525,8 +602,12 @@ func accountBackupReport(slug string, facts backupAccountFacts, credentials bool
 		entry.Error = facts.Walk.Error
 	case resticError != "":
 		entry.Error = resticError
-	default:
+	case facts.Error != "":
 		entry.Error = facts.Error
+	case facts.PassErrors.Stream != "":
+		entry.Error = facts.PassErrors.Stream
+	default:
+		entry.Error = facts.PassErrors.Backup
 	}
 	for _, db := range facts.Walk.Databases {
 		current := db.Database

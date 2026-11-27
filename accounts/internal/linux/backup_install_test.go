@@ -508,7 +508,7 @@ func installTestState() protocol.DesiredState {
 }
 
 func TestBackupPassResticInstallRetry(t *testing.T) {
-	// R-BQKH-GYIK
+	// R-NRU5-E21I
 	f := newHardeningFixture(t)
 	f.put(dataPrivateKey, "host private", 0o600)
 	f.put(dataPublicKey, "host public", 0o644)
@@ -552,7 +552,7 @@ func TestBackupPassResticInstallRetry(t *testing.T) {
 }
 
 func TestStreamPassLitestreamInstallRetry(t *testing.T) {
-	// R-BQKH-GYIK
+	// R-NRU5-E21I
 	f := newHardeningFixture(t)
 	start := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
 	now := start

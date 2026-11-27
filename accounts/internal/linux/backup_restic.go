@@ -34,15 +34,27 @@ type backupRestic struct {
 	h           *Host
 	repo        string
 	cache       string
+	account     string
 	env         []string
 	restoreOnly bool
 	prepare     func([]string) ([]string, error)
 }
 
+type backupPassActivityKey struct{}
+
+type backupPassActivity map[string]error
+
+func markBackupPassActivity(ctx context.Context, slug string, err error) {
+	activity, _ := ctx.Value(backupPassActivityKey{}).(backupPassActivity)
+	if activity != nil {
+		activity[slug] = firstBackupError(activity[slug], err)
+	}
+}
+
 func (h *Host) resticCommand(b *protocol.Backup, c protocol.Credentials, prefix, cacheName string) backupRestic {
 	cache := ResticCache + "/" + cacheName
 	return backupRestic{
-		h: h, repo: "s3:s3." + b.Region + ".amazonaws.com/" + b.Bucket + "/" + strings.TrimRight(prefix, "/"), cache: cache,
+		h: h, repo: "s3:s3." + b.Region + ".amazonaws.com/" + b.Bucket + "/" + strings.TrimRight(prefix, "/"), cache: cache, account: cacheName,
 		env: append(backupAWSEnv(c), "AWS_DEFAULT_REGION="+b.Region, "RESTIC_CACHE_DIR="+h.path(cache)),
 	}
 }
@@ -62,24 +74,27 @@ func (r backupRestic) run(ctx context.Context, args []string, stdout io.Writer, 
 		return Result{}, err
 	}
 	if err := r.h.privateBackupDir(r.cache); err != nil {
+		err = hostError(r.cache, err)
+		markBackupPassActivity(ctx, r.account, err)
 		return Result{}, err
 	}
 	prepared, err := r.prepareArgs(args)
 	if err != nil {
 		return Result{}, err
 	}
+	markBackupPassActivity(ctx, r.account, nil)
 	result, err := r.h.query(ctx, r.command(prepared, stdout), allowed...)
 	if err == nil {
 		return result, nil
 	}
 	var failed *CommandError
 	_ = errors.As(err, &failed)
-	failure := resticFailure(args[0], result, failed.Err)
+	failure := backupCommandFailure("restic "+args[0], result, failed.Err)
 	if !r.restoreOnly && result.ExitCode == 11 && failed.Err == nil {
 		if unlock, err := r.prepareArgs([]string{"unlock"}); err == nil {
 			_, _ = r.h.query(ctx, r.command(unlock, nil))
 		}
-		r.h.lockedBackupRepos[r.repo] = errors.New(boundBackupError(failure.Error()))
+		r.h.lockedBackupRepos[r.repo] = errors.New(backupErrorPrefix(failure.Error()))
 	}
 	return result, failure
 }
@@ -89,20 +104,6 @@ func (r backupRestic) prepareArgs(args []string) ([]string, error) {
 		return args, nil
 	}
 	return r.prepare(args)
-}
-
-func resticFailure(verb string, result Result, err error) error {
-	failure := &CommandError{Label: "restic " + verb, Result: result, Err: err}
-	var last string
-	for line := range strings.SplitSeq(string(result.Stderr), "\n") {
-		if strings.Trim(line, " \t\r") != "" {
-			last = line
-		}
-	}
-	if last == "" {
-		return failure
-	}
-	return fmt.Errorf("%w: %s", failure, strings.ReplaceAll(last, "\r", " "))
 }
 
 func (r backupRestic) ready(ctx context.Context) error {
@@ -140,10 +141,10 @@ func (r backupRestic) snapshot(ctx context.Context, host string, args []string) 
 	}
 	writer.finish()
 	if !validEnd {
-		return time.Time{}, nil, resticFailure("backup", result, errBackupSummary)
+		return time.Time{}, nil, backupCommandFailure("restic backup", result, errBackupSummary)
 	}
 	if result.ExitCode == 3 {
-		partial = resticFailure("backup", result, nil)
+		partial = backupCommandFailure("restic backup", result, nil)
 	}
 	return at, partial, nil
 }
@@ -188,7 +189,7 @@ func backupCheckDue(facts backupAccountFacts, now time.Time, settings protocol.S
 }
 
 // Backup takes due restic snapshots and checks, or executes a requested restore.
-func (h *Host) Backup(ctx context.Context, s protocol.DesiredState) error {
+func (h *Host) Backup(ctx context.Context, s protocol.DesiredState) (result error) {
 	ctx, pruneErr := h.beginBackupFacts(ctx, s)
 	b := s.Backup
 	dirErr := h.privateBackupDir(BackupDir)
@@ -203,27 +204,39 @@ func (h *Host) Backup(ctx context.Context, s protocol.DesiredState) error {
 		return nil
 	}
 	ctx = withBackupDiagnosticRedactor(ctx, b)
-	installErr := errors.Join(h.ensureRestic(ctx), dirErr, cacheErr)
+	installErr := h.ensureRestic(ctx)
 	h.lockedBackupRepos = make(map[string]error)
 	defer func() { h.lockedBackupRepos = nil }()
+	passErr := firstBackupError(pruneErr, firstBackupError(dirErr, cacheErr))
 	if dirErr == nil {
-		installErr = errors.Join(installErr, h.updateHostBackup(func(facts *backupHostFacts) {
-			facts.ResticInstallError = boundBackupError(h.resticInstall.errorText())
+		passErr = firstBackupError(passErr, h.updateHostBackup(func(facts *backupHostFacts) {
+			facts.ResticInstallError = h.resticInstall.reportError("")
 		}))
 	}
 	if b.Restore != nil {
-		if installErr != nil {
-			return firstBackupError(installErr, pruneErr)
+		if blocked := firstBackupError(installErr, firstBackupError(dirErr, cacheErr)); blocked != nil {
+			return firstBackupError(blocked, passErr)
 		}
-		return firstBackupError(pruneErr, h.backupWholeRestore(ctx, s))
+		return firstBackupError(passErr, h.backupWholeRestore(ctx, s))
 	}
 	cleanupErr := h.clearWholeRestores()
 	if installErr != nil {
-		return firstBackupError(installErr, firstBackupError(pruneErr, cleanupErr))
+		return firstBackupError(installErr, firstBackupError(passErr, cleanupErr))
 	}
-	finals, passErr := h.backupFinals(ctx, s)
-	passErr = firstBackupError(passErr, firstBackupError(pruneErr, cleanupErr))
-	for _, account := range backupActiveAccounts(s) {
+	accounts := backupActiveAccounts(s)
+	activity := make(backupPassActivity, len(accounts))
+	ctx = context.WithValue(ctx, backupPassActivityKey{}, activity)
+	defer func() {
+		for _, account := range accounts {
+			if err, attempted := activity[account.Slug]; attempted {
+				err = redactBackupDiagnostic(backupDiagnosticRedactor(ctx), err)
+				result = firstBackupError(result, h.recordBackupPassError(ctx, account.Slug, false, err))
+			}
+		}
+	}()
+	finals, finalErr := h.backupFinals(ctx, s)
+	passErr = firstBackupError(finalErr, firstBackupError(passErr, cleanupErr))
+	for _, account := range accounts {
 		slug := account.Slug
 		creds, ok := accountBackupCredentials(b, slug)
 		if !ok || finals.Accounts[slug] {
@@ -283,18 +296,15 @@ func (h *Host) backupAccount(ctx context.Context, s protocol.DesiredState, accou
 			facts.Checked = h.env.Now()
 		}
 	}
+	var commandError *CommandError
 	switch {
 	case errors.Is(interrupted, errResticWalkUnavailable):
 		facts.Error = machine.WalkUnrecorded
-	case errors.Is(interrupted, errResticFinalNotSynced):
-		if ran {
-			facts.Error = ""
-		}
-	case err != nil:
-		facts.Error = boundBackupError(err.Error())
+	case errors.As(err, &commandError):
+		facts.Error = backupErrorPrefix(err.Error())
 		h.lockedBackupRepos[repo.repo] = errors.New(facts.Error)
 	case partial != nil:
-		facts.Error = boundBackupError(partial.Error())
+		facts.Error = backupErrorPrefix(partial.Error())
 	case ran:
 		facts.Error = ""
 	}
@@ -322,7 +332,12 @@ func (h *Host) prepareAccountRestic(ctx context.Context, s protocol.DesiredState
 		}
 		manifest, paths, err := h.backupManifest(ctx, slug, facts.Walk)
 		if err != nil {
-			return nil, err
+			if !errors.Is(err, errResticWalkUnavailable) {
+				err = hostError(BackupDir+"/manifest/"+slug, err)
+				markBackupPassActivity(ctx, slug, err)
+				return nil, err
+			}
+			return nil, unavailableResticWalk(final, readiness)
 		}
 		prepared := slices.Concat(args, h.backupAccountArgs(s, slug, manifest, paths))
 		// A new walk can finish while the manifest is being written. Use
@@ -456,7 +471,7 @@ func (h *Host) backupHostKeys(ctx context.Context, s protocol.DesiredState, forc
 	}
 	facts.Error = ""
 	if err != nil {
-		facts.Error = boundBackupError(err.Error())
+		facts.Error = backupErrorPrefix(err.Error())
 	}
 	return errors.Join(err, h.updateHostBackup(func(current *backupHostFacts) {
 		current.Snapshot, current.KeyDigests, current.Error = facts.Snapshot, facts.KeyDigests, facts.Error

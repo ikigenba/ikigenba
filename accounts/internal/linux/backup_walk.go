@@ -61,21 +61,23 @@ func (h *Host) walkBackupDatabases(slug string) (backupWalk, error) {
 		return backupWalk{}, hostError("/srv/"+slug+"/data", err)
 	}
 	defer func() { _ = data.Close() }()
-	var walker backupWalker
+	walker := backupWalker{accountRoot: "/srv/" + slug}
 	err = walker.directory(data, "data", 0)
 	if errors.Is(err, machine.ErrTooLarge) {
-		return backupWalk{Error: machine.DataTooLarge}, nil
+		return backupWalk{Error: machine.DataTooLarge}, walker.failure
 	}
 	if walker.walk.Total > MaxDatabasesPerAccount {
 		walker.walk.Error = machine.TooManyDatabases
 	}
 	slices.SortFunc(walker.walk.Databases, func(a, b backupDatabase) int { return cmp.Compare(a.Path, b.Path) })
-	return walker.walk, err
+	return walker.walk, walker.failure
 }
 
 type backupWalker struct {
-	walk    backupWalk
-	visited int
+	walk        backupWalk
+	visited     int
+	accountRoot string
+	failure     error
 }
 
 type backupDirectory interface {
@@ -84,7 +86,6 @@ type backupDirectory interface {
 }
 
 func (w *backupWalker) directory(dir backupDirectory, path string, depth int) error {
-	var failures error
 	for {
 		entries, err := dir.ReadDir(min(ReadBatch, MaxVisit-w.visited+1))
 		w.visited += len(entries)
@@ -97,17 +98,19 @@ func (w *backupWalker) directory(dir backupDirectory, path string, depth int) er
 				if errors.Is(err, machine.ErrTooLarge) {
 					return err
 				}
-				// One filesystem failure suffices while the remaining walk proceeds.
-				if failures == nil {
-					failures = hostError(p, err)
+				if w.failure == nil {
+					w.failure = hostError(filepath.Join(w.accountRoot, p), err)
 				}
 			}
 		}
 		if errors.Is(err, io.EOF) {
-			return failures
+			return nil
 		}
 		if err != nil {
-			return errors.Join(failures, err)
+			if w.failure == nil {
+				w.failure = hostError(filepath.Join(w.accountRoot, path), err)
+			}
+			return nil
 		}
 	}
 }
