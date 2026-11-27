@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/ikigenba/ikigenba/accounts/internal/linux"
@@ -17,8 +20,169 @@ import (
 
 const acmeStreamUnit = "accountsd-litestream@acme.service"
 
+func TestBackupRedactsCommandDiagnostics(t *testing.T) {
+	// R-56WT-T1S0
+	const key, secret, token = "OutputKey", "OutputSecret", "OutputSessionToken"
+	const longerKey, crossToken = "OutputKeyFromBravo", "AnotherAccountSessionToken"
+	const crossPrefix = "AnotherAccountSession"
+	const message = "failure " + key + " / " + secret + " / " + token
+	const masked = "failure " + machine.Redacted + " / " + machine.Redacted + " / " + machine.Redacted
+	forgetPrefix := (&linux.CommandError{Label: "restic forget", Result: linux.Result{ExitCode: 1}}).Error() + ": "
+	beforeErrorLimit := strings.Repeat("x", protocol.MaxBackupError-len(forgetPrefix)-10)
+	lastLine := "\ncut " + crossPrefix
+	fullCapture := strings.Repeat("x", linux.MaxCapture-len(lastLine)) + lastLine
+	for _, tc := range []struct {
+		name, program, verb, output, want string
+	}{
+		{name: "restic forget", program: "restic", verb: "forget", output: message, want: masked},
+		{name: "litestream status", program: "litestream", verb: "status", output: message, want: masked},
+		{name: "another account and longest first", program: "restic", verb: "cat",
+			output: longerKey + " / " + crossToken, want: machine.Redacted + " / " + machine.Redacted},
+		{name: "mask before error limit", program: "restic", verb: "forget",
+			output: beforeErrorLimit + token, want: beforeErrorLimit + machine.Redacted},
+		{name: "exact capture", program: "restic", verb: "cat",
+			output: fullCapture, want: "cut " + machine.Redacted},
+		{name: "short capture", program: "restic", verb: "cat",
+			output: fullCapture[1:], want: "cut " + crossPrefix},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newBackupPassFixture(t)
+			f.put("/srv/acme/data/app.db", walSQLite, 0o600)
+			f.state.Backup.Host.AccessKeyID = "status"
+			f.state.Backup.Accounts[0].Credentials = protocol.Credentials{AccessKeyID: key, SecretAccessKey: secret, SessionToken: token}
+			f.state.Backup.Accounts = append(f.state.Backup.Accounts, protocol.AccountCredentials{Account: "bravo",
+				Credentials: protocol.Credentials{AccessKeyID: longerKey, SessionToken: crossToken}})
+			var fail bool
+			f.execute = func(c linux.Command) (linux.Result, error) {
+				switch c.Name {
+				case f.path(linux.ResticPath):
+					if fail && tc.program == "restic" && c.Args[3] == tc.verb {
+						return linux.Result{ExitCode: 1, Stderr: []byte(tc.output)}, nil
+					}
+					if c.Args[3] == "backup" {
+						f.summary(c)
+					}
+				case f.path(linux.LitestreamPath):
+					if fail && tc.program == "litestream" && c.Args[0] == tc.verb {
+						return linux.Result{ExitCode: 1, Stderr: []byte(tc.output)}, nil
+					}
+				}
+				return linux.Result{}, nil
+			}
+			f.stream()
+			pass := f.host.Stream
+			if tc.program == "restic" {
+				pass = f.host.Backup
+			} else {
+				f.backup()
+			}
+			fail = true
+			label := tc.program + " " + tc.verb
+			want := (&linux.CommandError{Label: label, Result: linux.Result{ExitCode: 1}}).Error() + ": " + tc.want
+			if err := pass(t.Context(), f.state); err == nil || err.Error() != want {
+				t.Fatalf("pass error = %v, want %q", err, want)
+			}
+			if got := f.report().Backups[0].Error; got != want {
+				t.Fatalf("reported error = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestBackupDecodesCommandOutputWithCredentialBytes(t *testing.T) {
+	// R-56WT-T1S0
+	for _, stamp := range []string{"2025-11-26T12:00:00Z", "2026-11-26T12:00:00Z"} {
+		t.Run(stamp, func(t *testing.T) {
+			f := newBackupPassFixture(t)
+			const path = "/srv/acme/data/2025.db"
+			f.state.Backup.Accounts[0].Credentials.AccessKeyID = "2025"
+			f.execute = func(c linux.Command) (linux.Result, error) {
+				switch c.Name {
+				case f.path(linux.ResticPath):
+					switch c.Args[3] {
+					case "backup":
+						f.output(c, fmt.Sprintf(`{"message_type":"summary","snapshot_id":"fixture","backup_end":%q}`+"\n", stamp))
+					case "snapshots":
+						f.output(c, fmt.Sprintf(`[{"time":%q}]`, stamp))
+					}
+				case f.path(linux.LitestreamPath):
+					switch c.Args[0] {
+					case "status":
+						f.output(c, fmt.Sprintf(`[{"database":%q,"status":"ok","local_txid":"2025"}]`, path))
+					case "ltx":
+						f.output(c, fmt.Sprintf(`[{"timestamp":%q,"max_txid":"2025"}]`, stamp))
+					}
+				}
+				return linux.Result{}, nil
+			}
+			f.put(path, walSQLite, 0o600)
+			f.stream()
+			f.backup()
+			want, err := time.Parse(time.RFC3339, stamp)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := f.report().Backups[0]
+			if !got.Snapshot.Equal(want) || len(got.Snapshots) != 1 || got.Snapshots[0] != want.Unix() {
+				t.Fatalf("snapshot times = %v and %v, want %v", got.Snapshot, got.Snapshots, want)
+			}
+			if len(got.Databases) != 1 {
+				t.Fatalf("databases = %+v", got.Databases)
+			}
+			db := got.Databases[0]
+			if db.Path != "data/2025.db" || !db.Written.Equal(want) || !db.Oldest.Equal(want) || !db.Synced.Equal(f.at.Truncate(time.Second)) {
+				t.Fatalf("decoded database facts = %+v, want timestamps %v and sync %v", db, want, f.at)
+			}
+		})
+	}
+}
+
+func TestBackupRedactsWrappedExecutionFailures(t *testing.T) {
+	// R-56WT-T1S0
+	for _, tc := range []struct {
+		name string
+		wrap func(string, error) error
+	}{
+		{name: "path error", wrap: func(path string, cause error) error {
+			return &os.PathError{Op: "fork/exec", Path: path, Err: cause}
+		}},
+		{name: "execution error", wrap: func(name string, cause error) error {
+			return &exec.Error{Name: name, Err: cause}
+		}},
+		{name: "wrapped cause", wrap: func(_ string, cause error) error {
+			return cause
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newBackupPassFixture(t)
+			f.put("/srv/acme/data/app.db", plainSQLite, 0o600)
+			const prefix, suffix = "Expired", "Key"
+			f.state.Backup.Accounts[0].Credentials.SessionToken = prefix + suffix
+			program := f.path(linux.ResticPath)
+			cause := fmt.Errorf("%s%w", prefix, errors.New(suffix))
+			expectedCause := errors.New(machine.Redacted)
+			want := (&linux.CommandError{Label: "restic cat", Err: fmt.Errorf("start failed: %w", tc.wrap(program, expectedCause))}).Error()
+			f.stream()
+			f.execute = func(c linux.Command) (linux.Result, error) {
+				if c.Name == program && c.Args[3] == "cat" {
+					return linux.Result{}, fmt.Errorf("start failed: %w", tc.wrap(c.Name, cause))
+				}
+				return linux.Result{}, nil
+			}
+			err := f.host.Backup(t.Context(), f.state)
+			if err == nil || err.Error() != want {
+				t.Fatal("backup failure did not redact the credential across the wrapper boundary")
+			}
+			got := inspectBackupFacts(t, linux.New(f.env), f.state).Backups[0].Error
+			if got != want {
+				t.Fatal("persisted failure did not redact the credential across the wrapper boundary")
+			}
+		})
+	}
+}
+
 func TestStreamPassErrorsPersistByMethod(t *testing.T) {
-	// R-MIPV-8JLT R-N3G5-QN7M R-N10C-Z3Q8
+	// R-59CM-KL9E R-5VAT-GGLW R-5RN4-B5DT
 	f := newBackupPassFixture(t)
 	f.put("/srv/acme/data/app.db", walSQLite, 0o600)
 	f.state.Accounts = append(f.state.Accounts, protocol.Account{Slug: "bravo", GID: 20002, State: protocol.AccountActive})
@@ -80,7 +244,7 @@ func TestStreamPassErrorsPersistByMethod(t *testing.T) {
 }
 
 func TestStreamCleanupFailuresOnlyReportForBackedUpAccounts(t *testing.T) {
-	// R-MIPV-8JLT R-MYKK-7K8U
+	// R-59CM-KL9E R-5P7B-JLWF
 	for _, tc := range []struct {
 		name   string
 		gate   bool
@@ -134,7 +298,7 @@ func TestStreamCleanupFailuresOnlyReportForBackedUpAccounts(t *testing.T) {
 }
 
 func TestBackupPassErrorRequiresAnAccountFilesystemFailure(t *testing.T) {
-	// R-MIPV-8JLT R-N10C-Z3Q8
+	// R-59CM-KL9E R-5RN4-B5DT
 	f := newBackupPassFixture(t)
 	f.put("/srv/acme/data/app.db", walSQLite, 0o600)
 	f.put(dataPrivateKey, "host private", 0o600)
@@ -193,7 +357,7 @@ func TestBackupPassErrorRequiresAnAccountFilesystemFailure(t *testing.T) {
 }
 
 func TestFilesRestoreSharesBackupPassError(t *testing.T) {
-	// R-MIPV-8JLT
+	// R-59CM-KL9E
 	f := newBackupPassFixture(t)
 	const cache = linux.ResticCache + "/acme"
 	f.put(cache, "blocked cache", 0o600)
@@ -222,7 +386,7 @@ func TestFilesRestoreSharesBackupPassError(t *testing.T) {
 }
 
 func TestStreamPassErrorNamesUnreadableDatabasePath(t *testing.T) {
-	// R-MIPV-8JLT
+	// R-59CM-KL9E
 	f := newBackupPassFixture(t)
 	const blocked = "/srv/acme/data/app.db"
 	f.put(blocked, walSQLite, 0o000)
@@ -242,7 +406,7 @@ func TestStreamPassErrorNamesUnreadableDatabasePath(t *testing.T) {
 }
 
 func TestBackupInspectErrorPrecedence(t *testing.T) {
-	// R-N10C-Z3Q8
+	// R-5RN4-B5DT
 	f := newBackupPassFixture(t)
 	f.put("/srv/acme/data/app.db", walSQLite, 0o600)
 	f.stream()
@@ -289,7 +453,7 @@ func TestBackupInspectErrorPrecedence(t *testing.T) {
 }
 
 func TestBackupCommandErrorKeepsBoundedUTF8Prefix(t *testing.T) {
-	// R-MYKK-7K8U R-MIPV-8JLT
+	// R-5P7B-JLWF R-59CM-KL9E
 	for _, stream := range []bool{false, true} {
 		label := "restic forget"
 		if stream {

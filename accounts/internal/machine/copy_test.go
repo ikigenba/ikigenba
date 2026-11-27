@@ -8,7 +8,7 @@ import (
 )
 
 func TestRedactedCopy(t *testing.T) {
-	// R-MHHY-URV4
+	// R-584Q-6TIP
 	const text string = machine.Redacted
 	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
 	if len(text) == 0 || strings.ContainsAny(text, "\r\n") ||

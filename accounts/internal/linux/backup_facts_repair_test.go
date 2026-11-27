@@ -36,7 +36,7 @@ func expectBlankAccountBackup(t *testing.T, report protocol.Report) {
 }
 
 func TestBackupFactsDropForRemovedAndOmittedAccounts(t *testing.T) {
-	// R-MJXR-MBCI
+	// R-5AKI-YD03
 	for _, method := range []string{"Stream", "Backup"} {
 		for _, removed := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/removed=%t", method, removed), func(t *testing.T) {
@@ -88,7 +88,7 @@ func TestBackupFactsDropForRemovedAndOmittedAccounts(t *testing.T) {
 }
 
 func TestBackupFactsKeepAccountsNamedByWholeRestore(t *testing.T) {
-	// R-MJXR-MBCI
+	// R-5AKI-YD03
 	for _, method := range []string{"Stream", "Backup"} {
 		for _, active := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/active=%t", method, active), func(t *testing.T) {
@@ -130,7 +130,7 @@ func TestBackupFactsKeepAccountsNamedByWholeRestore(t *testing.T) {
 }
 
 func TestBackupFactsPruneBatchesWithoutFollowingLinks(t *testing.T) {
-	// R-MJXR-MBCI
+	// R-5AKI-YD03
 	f := newBackupPassFixture(t)
 	for i := range linux.ReadBatch + 1 {
 		f.put(fmt.Sprintf("%s/manifest/old%d", linux.BackupDir, i), "old manifest", 0o600)
@@ -155,7 +155,7 @@ func TestBackupFactsPruneBatchesWithoutFollowingLinks(t *testing.T) {
 }
 
 func TestBackupFactsDropAccountSteps(t *testing.T) {
-	// R-MJXR-MBCI
+	// R-5AKI-YD03
 	t.Run("final", func(t *testing.T) {
 		f := newBackupPassFixture(t)
 		f.state.Backup.Host = protocol.Credentials{}
@@ -215,7 +215,7 @@ func TestBackupFactsDropAccountSteps(t *testing.T) {
 }
 
 func TestBackupFactsIsolateAccountGIDs(t *testing.T) {
-	// R-ML5O-0337
+	// R-5D0B-PWHH
 	f := newBackupPassFixture(t)
 	f.state.Backup.Settings.CheckDays = 7
 	f.put("/srv/acme/data/app.db", walSQLite, 0o600)
@@ -243,7 +243,7 @@ func TestBackupFactsIsolateAccountGIDs(t *testing.T) {
 }
 
 func TestOldPlacementBackupCannotOverwriteNewPlacementFacts(t *testing.T) {
-	// R-ML5O-0337
+	// R-5D0B-PWHH
 	f := newBackupPassFixture(t)
 	f.put("/srv/acme/data/app.db", walSQLite, 0o600)
 	old, next := f.state, f.state
@@ -336,7 +336,7 @@ func TestOldPlacementBackupCannotOverwriteNewPlacementFacts(t *testing.T) {
 }
 
 func TestRestoreFactsUseAccountGIDBeforeRestoreGID(t *testing.T) {
-	// R-ML5O-0337
+	// R-5D0B-PWHH
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := wholeRestoreState()
@@ -361,7 +361,7 @@ func TestRestoreFactsUseAccountGIDBeforeRestoreGID(t *testing.T) {
 }
 
 func TestBackupFactsSurviveRestartAndDiscardOversizedRecords(t *testing.T) {
-	// R-N3G5-QN7M
+	// R-5VAT-GGLW
 	f := newBackupPassFixture(t)
 	f.state.Backup.Settings.CheckDays = 7
 	f.put("/srv/acme/data/app.db", walSQLite, 0o600)
@@ -403,7 +403,7 @@ func TestBackupFactsSurviveRestartAndDiscardOversizedRecords(t *testing.T) {
 }
 
 func TestHostRestoreErrorYieldsToUnusableCredentials(t *testing.T) {
-	// R-N289-CVGX
+	// R-5SV0-OX4I
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := wholeRestoreState()
@@ -425,7 +425,7 @@ func TestHostRestoreErrorYieldsToUnusableCredentials(t *testing.T) {
 }
 
 func TestHostBackupReportsLatestErrorUnlessCredentialsAreUnusable(t *testing.T) {
-	// R-N289-CVGX
+	// R-5SV0-OX4I
 	f := newBackupPassFixture(t)
 	if got := f.report().HostBackup; got != (protocol.HostBackup{}) {
 		t.Fatalf("initial host backup = %+v", got)

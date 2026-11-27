@@ -307,7 +307,7 @@ func TestMemorySeeds(t *testing.T) {
 }
 
 func TestMemoryInspect(t *testing.T) {
-	// R-BE5O-M23X R-NQM9-0AAT
+	// R-BE5O-M23X R-6IGW-Q3P3
 	now := time.Unix(48, 1234).In(time.FixedZone("test", -3600))
 	m := backupMachine(&now, nil, nil)
 	s := protocol.DesiredState{Host: "host01", Domain: "hosts.example.com", RootGB: 20, DataGB: 30, DataVolume: "vol-00000001", Accounts: []protocol.Account{

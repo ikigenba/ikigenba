@@ -29,29 +29,24 @@ func TestBackupCommandDiagnosticsMaskCredentialValues(t *testing.T) {
 	}
 }
 
-func TestBackupCapturedDiagnosticsMaskPrefixesOnlyOnKnownCuts(t *testing.T) {
+func TestBackupCapturedDiagnosticsMaskPrefixesAtLimit(t *testing.T) {
 	credentials := protocol.Credentials{AccessKeyID: "Key", SecretAccessKey: "KeyExtended", SessionToken: "SessionToken"}
 	ctx := withBackupDiagnosticRedactor(t.Context(), &protocol.Backup{Host: credentials})
 	const tokenPrefix = "SessionTo"
 	complete := strings.Repeat("x", MaxCapture-len(tokenPrefix)) + tokenPrefix
 	for _, tc := range []struct {
-		name  string
-		feed  string
-		want  string
-		known bool
+		name string
+		feed string
+		want string
 	}{
-		{name: "exact", feed: complete, want: complete, known: true},
-		{name: "cut", feed: complete + "ken", want: strings.TrimSuffix(complete, tokenPrefix) + machine.Redacted, known: true},
-		{name: "injected at cap", feed: complete, want: complete},
+		{name: "below limit", feed: complete[1:], want: complete[1:]},
+		{name: "exact", feed: complete, want: strings.TrimSuffix(complete, tokenPrefix) + machine.Redacted},
+		{name: "cut", feed: complete + "ken", want: strings.TrimSuffix(complete, tokenPrefix) + machine.Redacted},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			host := New(Env{Execute: func(callCtx context.Context, _ Command) (Result, error) {
+			host := New(Env{Execute: func(context.Context, Command) (Result, error) {
 				var stderr capture
 				_, _ = stderr.Write([]byte(tc.feed))
-				if tc.known {
-					bounds := callCtx.Value(backupCaptureKey{}).(*backupCaptureBounds)
-					*bounds = backupCaptureBounds{known: true, stderrCut: stderr.cut}
-				}
 				return Result{Stderr: stderr.prefix, ExitCode: 1}, nil
 			}})
 			_, err := host.query(ctx, Command{Name: ResticPath, Env: backupAWSEnv(credentials)}, 0)

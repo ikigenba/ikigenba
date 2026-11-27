@@ -229,7 +229,6 @@ func (h *Host) Backup(ctx context.Context, s protocol.DesiredState) (result erro
 	defer func() {
 		for _, account := range accounts {
 			if err, attempted := activity[account.Slug]; attempted {
-				err = redactBackupDiagnostic(backupDiagnosticRedactor(ctx), err)
 				result = firstBackupError(result, h.recordBackupPassError(ctx, account.Slug, false, err))
 			}
 		}

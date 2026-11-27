@@ -19,30 +19,6 @@ import (
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
 )
 
-type backupCredentials [3]string
-
-func backupCommandCredentials(env []string) backupCredentials {
-	var credentials backupCredentials
-	for _, entry := range env {
-		key, value, _ := strings.Cut(entry, "=")
-		switch key {
-		case "AWS_ACCESS_KEY_ID":
-			credentials[0] = value
-		case "AWS_SECRET_ACCESS_KEY":
-			credentials[1] = value
-		case "AWS_SESSION_TOKEN":
-			credentials[2] = value
-		}
-	}
-	return credentials
-}
-
-type backupCaptureKey struct{}
-
-type backupCaptureBounds struct {
-	known, stdoutCut, stderrCut bool
-}
-
 type backupDiagnosticKey struct{}
 
 // An external error can include a credential other than the one the command
@@ -79,80 +55,83 @@ func backupDiagnosticRedactor(ctx context.Context) *backupDiagnostics {
 func redactBackupDiagnostic(redact *backupDiagnostics, err error) error {
 	if redact != nil && err != nil {
 		message := err.Error()
-		if cleaned := redact.replace([]byte(message), len(message), backupCredentials{}); cleaned != nil {
-			return errors.New(string(cleaned))
+		if cleaned := redact.text(message); cleaned != message {
+			return errors.New(cleaned)
 		}
 	}
 	return err
 }
 
-func (d *backupDiagnostics) capture(output []byte, credentials backupCredentials, known, cut bool) []byte {
-	// An injected result of exactly MaxCapture bytes has no cut information.
-	if !known && credentials != (backupCredentials{}) && len(output) > MaxCapture {
-		output = output[:MaxCapture]
-		cut = true
-	}
+func (d *backupDiagnostics) capture(output []byte, limit int) []byte {
+	output = output[:min(len(output), limit)]
 	cutStart := len(output)
-	if cut {
-		for _, value := range credentials {
-			for n := min(len(value)-1, len(output)); n > len(output)-cutStart; n-- {
-				if bytes.HasSuffix(output, []byte(value[:n])) {
-					cutStart = len(output) - n
-					break
+	if len(output) == limit {
+		for _, group := range d {
+			for _, value := range group {
+				for n := min(len(value), len(output)); n > len(output)-cutStart; n-- {
+					if bytes.HasSuffix(output, []byte(value[:n])) {
+						cutStart = len(output) - n
+						break
+					}
 				}
 			}
 		}
 	}
-	if cleaned := d.replace(output, cutStart, credentials); cleaned != nil {
-		return cleaned
+	var cleaned []byte
+	start := 0
+	scanBackupDiagnostics(d, output, cutStart, func(begin, end int) {
+		if cleaned == nil {
+			cleaned = make([]byte, 0, len(machine.Redacted)*len(output))
+		}
+		cleaned = append(cleaned, output[start:begin]...)
+		cleaned = append(cleaned, machine.Redacted...)
+		start = end
+	})
+	if start != 0 {
+		return append(cleaned, output[start:]...)
 	}
 	return output
 }
 
-// replace scans the original bytes from left to right. It returns nil when
-// no edit is needed, and allocates a single bounded copy at the first match.
-func (d *backupDiagnostics) replace(output []byte, cutStart int, credentials backupCredentials) []byte {
-	var cleaned []byte
+func (d *backupDiagnostics) text(output string) string {
+	var cleaned strings.Builder
+	start := 0
+	scanBackupDiagnostics(d, output, len(output), func(begin, end int) {
+		if start == 0 {
+			cleaned.Grow(len(machine.Redacted) * len(output))
+		}
+		cleaned.WriteString(output[start:begin])
+		cleaned.WriteString(machine.Redacted)
+		start = end
+	})
+	if start == 0 {
+		return output
+	}
+	cleaned.WriteString(output[start:])
+	return cleaned.String()
+}
+
+// scanBackupDiagnostics visits matches in the original byte order.
+func scanBackupDiagnostics[T ~string | ~[]byte](d *backupDiagnostics, output T, cutStart int, mask func(int, int)) {
 	for i := 0; i < len(output); {
 		length := 0
 		if i >= cutStart {
 			length = len(output) - i
 		} else {
-			length = d.match(output[i:], credentials)
-		}
-		if length != 0 {
-			if cleaned == nil {
-				cleaned = make([]byte, 0, len(machine.Redacted)*len(output))
-				cleaned = append(cleaned, output[:i]...)
+			for _, value := range d[output[i]] {
+				if len(value) <= len(output)-i && string(output[i:i+len(value)]) == value {
+					length = len(value)
+					break
+				}
 			}
-			cleaned = append(cleaned, machine.Redacted...)
-			i += length
+		}
+		if length == 0 {
+			i++
 			continue
 		}
-		if cleaned != nil {
-			cleaned = append(cleaned, output[i])
-		}
-		i++
+		mask(i, i+length)
+		i += length
 	}
-	return cleaned
-}
-
-func (d *backupDiagnostics) match(output []byte, credentials backupCredentials) int {
-	longest := 0
-	for _, value := range credentials {
-		if len(value) > longest && bytes.HasPrefix(output, []byte(value)) {
-			longest = len(value)
-		}
-	}
-	if longest != 0 {
-		return longest
-	}
-	for _, value := range d[output[0]] {
-		if bytes.HasPrefix(output, []byte(value)) {
-			return len(value)
-		}
-	}
-	return 0
 }
 
 type backupJSONArray struct {

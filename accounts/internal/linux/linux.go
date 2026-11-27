@@ -77,13 +77,11 @@ func (e *CommandError) Unwrap() error { return e.Err }
 
 type capture struct {
 	prefix []byte
-	cut    bool
 }
 
 func (w *capture) Write(p []byte) (int, error) {
 	keep := min(len(p), MaxCapture-len(w.prefix))
 	w.prefix = append(w.prefix, p[:keep]...)
-	w.cut = w.cut || keep < len(p)
 	return len(p), nil
 }
 
@@ -135,9 +133,6 @@ func Exec(ctx context.Context, c Command) (Result, error) {
 	err = cmd.Wait()
 	stop()
 	result := Result{Stdout: stdout.prefix, Stderr: stderr.prefix, ExitCode: cmd.ProcessState.ExitCode()}
-	if bounds, ok := ctx.Value(backupCaptureKey{}).(*backupCaptureBounds); ok {
-		*bounds = backupCaptureBounds{known: true, stdoutCut: stdout.cut, stderrCut: stderr.cut}
-	}
 	if ctx.Err() != nil && result.ExitCode == -1 {
 		return result, ctx.Err()
 	}
@@ -280,18 +275,14 @@ func (h *Host) run(ctx context.Context, program string, args ...string) (Result,
 }
 
 func (h *Host) query(ctx context.Context, c Command, allowed ...int) (Result, error) {
-	credentials := backupCommandCredentials(c.Env)
-	var bounds backupCaptureBounds
-	if credentials != (backupCredentials{}) {
-		ctx = context.WithValue(ctx, backupCaptureKey{}, &bounds)
-	}
 	res, err := h.env.Execute(ctx, c)
-	redact := backupDiagnosticRedactor(ctx)
-	if redact != nil {
-		res.Stdout = redact.capture(res.Stdout, credentials, bounds.known, bounds.stdoutCut)
-		res.Stderr = redact.capture(res.Stderr, credentials, bounds.known, bounds.stderrCut)
+	if redact := backupDiagnosticRedactor(ctx); redact != nil {
+		// Backup stdout that is decoded goes directly to the command's writer.
+		// Captured bytes in Result are used only for diagnostics.
+		res.Stdout = redact.capture(res.Stdout, MaxCapture)
+		res.Stderr = redact.capture(res.Stderr, MaxCapture)
+		err = redactBackupDiagnostic(redact, err)
 	}
-	err = redactBackupDiagnostic(redact, err)
 	if err == nil {
 		if len(allowed) == 0 {
 			return res, nil

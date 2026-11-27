@@ -103,7 +103,7 @@ func (h *Host) Stream(ctx context.Context, s protocol.DesiredState) error {
 			dirErr = h.cleanStreamAccounts(ctx, nil, nil)
 		}
 		if err := firstBackupError(dirErr, pruneErr); err != nil && h.env.Stderr != nil {
-			_, _ = fmt.Fprintf(h.env.Stderr, "accountsd: %s\n", redactBackupDiagnostic(backupDiagnosticRedactor(ctx), err))
+			_, _ = fmt.Fprintf(h.env.Stderr, "accountsd: %s\n", err)
 		}
 		return nil
 	}
@@ -159,7 +159,6 @@ func (h *Host) Stream(ctx context.Context, s protocol.DesiredState) error {
 	}
 	for _, account := range accounts {
 		if accountErr, attempted := accountErrors[account.Slug]; attempted {
-			accountErr = redactBackupDiagnostic(backupDiagnosticRedactor(ctx), accountErr)
 			passErr = firstBackupError(passErr, accountErr)
 			passErr = firstBackupError(passErr, h.recordBackupPassError(ctx, account.Slug, true, accountErr))
 		}

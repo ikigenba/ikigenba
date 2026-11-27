@@ -67,13 +67,13 @@ func InstallRestic(ctx context.Context, env Env, version, digest string) error {
 		func(dst io.Writer, src io.Reader, buffer []byte) error {
 			return copyExecutable(dst, bzip2.NewReader(src), buffer)
 		})
-	return backupInstallError(ctx, err)
+	return backupInstallError(err)
 }
 
 // InstallLitestream installs the checked ARM64 litestream executable from its tar release.
 func InstallLitestream(ctx context.Context, env Env, version, digest string) error {
 	err := installBackupProgram(ctx, env, LitestreamPath, litestreamStamp, fmt.Sprintf(litestreamURL, version, version), digest, unpackLitestream)
-	return backupInstallError(ctx, err)
+	return backupInstallError(err)
 }
 
 type backupInstallFailure struct {
@@ -84,12 +84,11 @@ type backupInstallFailure struct {
 func (e backupInstallFailure) Error() string        { return e.message }
 func (e backupInstallFailure) Is(target error) bool { return errors.Is(e.cause, target) }
 
-func backupInstallError(ctx context.Context, err error) error {
+func backupInstallError(err error) error {
 	if err == nil {
 		return nil
 	}
-	diagnostic := redactBackupDiagnostic(backupDiagnosticRedactor(ctx), err).Error()
-	message := strings.ToValidUTF8(backupErrorPrefix(diagnostic), "\uFFFD")
+	message := strings.ToValidUTF8(backupErrorPrefix(err.Error()), "\uFFFD")
 	message = backupErrorPrefix(message)
 	if message == err.Error() {
 		return err
@@ -145,7 +144,7 @@ func (h *Host) downloadBackupProgram(ctx context.Context, url, digest string, bu
 	defer cancel()
 	body, err := h.env.Fetch(fetchCtx, url)
 	if err != nil {
-		return nil, err
+		return nil, redactBackupDiagnostic(backupDiagnosticRedactor(ctx), err)
 	}
 	defer func() { _ = body.Close() }()
 	if err := h.privateBackupDir(BackupDir); err != nil {

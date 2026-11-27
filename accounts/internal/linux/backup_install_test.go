@@ -508,7 +508,7 @@ func installTestState() protocol.DesiredState {
 }
 
 func TestBackupPassResticInstallRetry(t *testing.T) {
-	// R-NRU5-E21I
+	// R-6JOT-3VFS
 	f := newHardeningFixture(t)
 	f.put(dataPrivateKey, "host private", 0o600)
 	f.put(dataPublicKey, "host public", 0o644)
@@ -552,7 +552,7 @@ func TestBackupPassResticInstallRetry(t *testing.T) {
 }
 
 func TestStreamPassLitestreamInstallRetry(t *testing.T) {
-	// R-NRU5-E21I
+	// R-6JOT-3VFS
 	f := newHardeningFixture(t)
 	start := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
 	now := start
@@ -677,7 +677,79 @@ func TestHostBackupConcurrentCalls(t *testing.T) {
 }
 
 func TestHostBackupCredentialsStayInEnvironment(t *testing.T) {
-	// R-BRSD-UQ99
+	// R-6KWP-HN6H
+	f := newBackupPassFixture(t)
+	f.put(dataPrivateKey, "host private", 0o600)
+	f.put(dataPublicKey, "host public", 0o644)
+	f.put("/srv/acme/data/app.db", walSQLite, 0o600)
+	b := f.state.Backup
+	values := []string{b.Host.AccessKeyID, b.Host.SecretAccessKey, b.Host.SessionToken,
+		b.Accounts[0].Credentials.AccessKeyID, b.Accounts[0].Credentials.SecretAccessKey, b.Accounts[0].Credentials.SessionToken}
+	check := func(where, text string) {
+		t.Helper()
+		for i, value := range values {
+			if strings.Contains(text, value) {
+				t.Errorf("%s exposed credential %d", where, i)
+			}
+		}
+	}
+	var stderr bytes.Buffer
+	f.env.Stderr = &stderr
+	var resticCalls int
+	f.env.Execute = func(_ context.Context, c linux.Command) (linux.Result, error) {
+		check("command name", c.Name)
+		for _, arg := range c.Args {
+			check("command argument", arg)
+		}
+		if c.Stdin != nil {
+			input, err := io.ReadAll(c.Stdin)
+			if err != nil {
+				t.Fatal(err)
+			}
+			check("command input", string(input))
+		}
+		if c.Name == f.path(linux.ResticPath) {
+			resticCalls++
+			creds := b.Accounts[0].Credentials
+			if strings.Contains(c.Args[1], strings.TrimRight(b.HostPrefix, "/")) {
+				creds = b.Host
+			}
+			for _, entry := range []string{"AWS_ACCESS_KEY_ID=" + creds.AccessKeyID, "AWS_SECRET_ACCESS_KEY=" + creds.SecretAccessKey,
+				"AWS_SESSION_TOKEN=" + creds.SessionToken} {
+				if !slices.Contains(c.Env, entry) {
+					t.Error("restic invocation is missing a credential in its environment")
+				}
+			}
+		}
+		return linux.Result{ExitCode: 1}, nil
+	}
+	f.host = linux.New(f.env)
+	for _, pass := range []func(context.Context, protocol.DesiredState) error{f.host.Stream, f.host.Backup} {
+		if err := pass(t.Context(), f.state); err == nil {
+			t.Fatal("pass succeeded with failing commands")
+		} else {
+			check("pass error", err.Error())
+		}
+	}
+	if resticCalls != 2 {
+		t.Fatalf("expected a failed restic invocation for the host and account, saw %d commands", resticCalls)
+	}
+	report, err := json.Marshal(f.report())
+	if err != nil {
+		t.Fatal(err)
+	}
+	check("report", string(report))
+	check("stderr", stderr.String())
+	for name, file := range snapshotHost(t, f.root) {
+		check("file path", name)
+		check("symlink target", file.target)
+		if name != linux.BackupDir+"/acme.env" {
+			check(name, string(file.bytes))
+		}
+	}
+}
+
+func TestHostBackupFailuresDoNotExposeDiagnosticCredentials(t *testing.T) {
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	f.put(dataPrivateKey, "host private", 0o600)

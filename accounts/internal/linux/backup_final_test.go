@@ -29,7 +29,7 @@ func (f *hardeningFixture) applyCloseLock(state protocol.DesiredState) {
 }
 
 func TestCloseFinalsWaitForNewSyncAndKeepVersionedResults(t *testing.T) {
-	// R-N5VY-I6P0 R-N73U-VYFP R-N9JN-NHX3
+	// R-5XQM-803A R-5YYI-LRTZ R-606E-ZJKO
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	f.put(dataPrivateKey, "private", 0o600)
@@ -179,7 +179,7 @@ func TestCloseFinalsWaitForNewSyncAndKeepVersionedResults(t *testing.T) {
 }
 
 func TestCloseFinalRunsForAccountWithoutStreamedDatabases(t *testing.T) {
-	// R-N5VY-I6P0
+	// R-5XQM-803A
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	f.put("/srv/acme/document.txt", "plain text", 0o600)
@@ -223,7 +223,7 @@ func TestCloseFinalRunsForAccountWithoutStreamedDatabases(t *testing.T) {
 }
 
 func TestCloseFinalWithUnkeptWalkTimesOutFromLock(t *testing.T) {
-	// R-NWPQ-X50A
+	// R-6NCI-96NV
 	f := newBackupPassFixture(t)
 	f.put(dataPrivateKey, "private", 0o600)
 	f.put(dataPublicKey, "public", 0o644)
@@ -284,7 +284,7 @@ func TestCloseFinalWithUnkeptWalkTimesOutFromLock(t *testing.T) {
 }
 
 func TestCloseFinalKeepsWaitingForKnownUnsyncedDatabase(t *testing.T) {
-	// R-NWPQ-X50A
+	// R-6NCI-96NV
 	f := newBackupPassFixture(t)
 	f.state.Backup.Host = protocol.Credentials{}
 	f.put("/srv/acme/data/app.db", walSQLite, 0o660)
@@ -317,7 +317,7 @@ func TestCloseFinalKeepsWaitingForKnownUnsyncedDatabase(t *testing.T) {
 }
 
 func TestCloseFinalDiscardsPreviousPlacementsReadiness(t *testing.T) {
-	// R-N5VY-I6P0 R-NVHU-JD9L
+	// R-5XQM-803A R-6M4L-VEX6
 	for _, restarted := range []bool{false, true} {
 		t.Run(fmt.Sprintf("restarted %t", restarted), func(t *testing.T) {
 			f := newBackupPassFixture(t)
@@ -351,7 +351,7 @@ func TestCloseFinalDiscardsPreviousPlacementsReadiness(t *testing.T) {
 }
 
 func TestCloseFinalDoesNotUseHealthFromAnOlderWalkAfterFailedPublication(t *testing.T) {
-	// R-MR95-WXSO R-NWPQ-X50A R-N5VY-I6P0
+	// R-5HVX-8ZG9 R-6NCI-96NV R-5XQM-803A
 	f := newBackupPassFixture(t)
 	f.state.Backup.Host = protocol.Credentials{}
 	f.stream()
@@ -392,7 +392,7 @@ func TestCloseFinalDoesNotUseHealthFromAnOlderWalkAfterFailedPublication(t *test
 }
 
 func TestCloseFinalIsWithheldWhenLimitedWalkHasNoReadablePriorStatus(t *testing.T) {
-	// R-NWPQ-X50A R-NZ5J-OOHO R-N5VY-I6P0
+	// R-6NCI-96NV R-6PSB-0Q59 R-5XQM-803A
 	f := newBackupPassFixture(t)
 	f.state.Backup.Host = protocol.Credentials{}
 	f.put("/srv/acme/data/app.db", walSQLite, 0o660)
@@ -446,7 +446,7 @@ func TestCloseFinalIsWithheldWhenLimitedWalkHasNoReadablePriorStatus(t *testing.
 }
 
 func TestCloseFinalUsesLatestWalkReadinessWhenReadbackFails(t *testing.T) {
-	// R-NWPQ-X50A
+	// R-6NCI-96NV
 	for _, latestSynced := range []bool{true, false} {
 		t.Run(fmt.Sprintf("latest synced %t", latestSynced), func(t *testing.T) {
 			f := newBackupPassFixture(t)
@@ -524,7 +524,7 @@ func TestCloseFinalUsesLatestWalkReadinessWhenReadbackFails(t *testing.T) {
 }
 
 func TestCloseFinalRechecksReadinessAfterCatConfig(t *testing.T) {
-	// R-NWPQ-X50A
+	// R-6NCI-96NV
 	f := newBackupPassFixture(t)
 	f.state.Backup.Host = protocol.Credentials{}
 	f.stream()
@@ -565,7 +565,7 @@ func TestCloseFinalRechecksReadinessAfterCatConfig(t *testing.T) {
 }
 
 func TestCloseFinalPreservesResticErrorWhenNoCommandRuns(t *testing.T) {
-	// R-NWPQ-X50A
+	// R-6NCI-96NV
 	f := newBackupPassFixture(t)
 	f.state.Backup.Host = protocol.Credentials{}
 	f.state.Backup.Settings.CheckDays = 1
@@ -622,7 +622,7 @@ func TestCloseFinalPreservesResticErrorWhenNoCommandRuns(t *testing.T) {
 }
 
 func TestCloseHostFinalWithoutActiveAccountsRetriesOnlyGreaterLockVersion(t *testing.T) {
-	// R-N73U-VYFP R-N9JN-NHX3
+	// R-5YYI-LRTZ R-606E-ZJKO
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	f.put(dataPrivateKey, "private", 0o600)
@@ -696,7 +696,7 @@ func TestCloseHostFinalWithoutActiveAccountsRetriesOnlyGreaterLockVersion(t *tes
 }
 
 func TestCloseFinalTimeoutCountsFromLock(t *testing.T) {
-	// R-N5VY-I6P0 R-N73U-VYFP R-N9JN-NHX3
+	// R-5XQM-803A R-5YYI-LRTZ R-606E-ZJKO
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	f.put("/srv/acme/data/app.db", "SQLite format 3\x00\x00\x00\x02\x02", 0o600)
