@@ -80,7 +80,7 @@ func (h *Host) backupWholeRestore(ctx context.Context, s protocol.DesiredState) 
 	if host.Step.State == protocol.StepFailed {
 		return nil
 	}
-	marker, err := h.readBounded(RestoreMarker)
+	marker, err := h.readRestoreMarker()
 	switch {
 	case err != nil || string(marker) != "restore "+restore.ID+"\n":
 		host.Step = h.backupOperationStep(restore.ID, protocol.CodeNotEmpty)
@@ -109,6 +109,13 @@ func (h *Host) backupWholeRestore(ctx context.Context, s protocol.DesiredState) 
 		passErr = errors.Join(passErr, h.runWholeAccountRestore(ctx, s.Backup, account))
 	}
 	return passErr
+}
+
+func (h *Host) readRestoreMarker() ([]byte, error) {
+	if err := h.backupDirectory(DataDir, "", false); err != nil {
+		return nil, err
+	}
+	return h.readBounded(RestoreMarker)
 }
 
 func (h *Host) saveHostRestore(r backupRestoreAttempt) error {

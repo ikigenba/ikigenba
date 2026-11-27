@@ -330,11 +330,10 @@ func TestDatabaseWalkStopsAtVisitLimit(t *testing.T) {
 }
 
 func TestLitestreamWritesExactProtectedConfigAndRestartsOnSchedule(t *testing.T) {
-	// R-YHQV-9HR1 R-YIYR-N9HQ R-WRAU-7Z77 R-YLEK-ESZ4 R-WL7C-B4HQ
+	// R-YIYR-N9HQ R-WRAU-7Z77 R-YLEK-ESZ4 R-WL7C-B4HQ
 	f := newBackupPassFixture(t)
 	f.put("/srv/acme/data/z.db", walSQLite, 0o600)
 	f.put("/srv/acme/data/a\".db", walSQLite, 0o600)
-	f.setMode(linux.BackupDir, 0o755)
 	b := f.state.Backup
 	const envPath = linux.BackupDir + "/acme.env"
 	checkEnv := func(c protocol.Credentials) {
@@ -354,9 +353,6 @@ func TestLitestreamWritesExactProtectedConfigAndRestartsOnSchedule(t *testing.T)
 	}
 	f.execute = checkRestart
 	f.stream()
-	f.execute = nil
-	f.backup()
-	f.execute = checkRestart
 	f.expectFile(linux.BackupDir+"/acme.yml", `snapshot:
   interval: 24h
   retention: 840h
@@ -388,9 +384,6 @@ RestartSec=5
 TimeoutStopSec=60
 `, 0o644)
 	checkEnv(b.Host)
-	for _, path := range []string{linux.BackupDir, linux.BackupDir + "/meta", linux.BackupDir + "/meta/acme", linux.BackupDir + "/status", linux.BackupDir + "/manifest", linux.ResticCache, linux.ResticCache + "/acme"} {
-		f.expectMode(path, 0o700)
-	}
 	unit := f.commandsFor("systemctl")
 	if len(unit) != 3 || !slices.Equal(unit[0].Args, []string{"daemon-reload"}) || unit[1].Args[0] != "is-active" || unit[2].Args[0] != "restart" {
 		t.Fatalf("initial systemctl calls = %v", unit)
@@ -863,53 +856,205 @@ func TestBackupOutputSkipsLargeValuesAndLines(t *testing.T) {
 	}
 }
 
+func TestBackupPassesUsePrivateModes(t *testing.T) {
+	// R-Z62M-471G
+	t.Run("active", func(t *testing.T) {
+		f := newBackupPassFixture(t)
+		f.put("/srv/acme/data/app.db", walSQLite, 0o660)
+		f.put(linux.ResticCache+"/left-alone", "existing cache", 0o644)
+		f.setMode(linux.BackupDir, 0o755)
+		f.setMode(linux.ResticCache, 0o755)
+		before := snapshotApplyHost(t, f.root)
+		f.stream()
+		after := snapshotApplyHost(t, f.root)
+		assertPrivateBackupWrites(t, before, after)
+		for path, entry := range after {
+			if (path == linux.ResticCache || strings.HasPrefix(path, linux.ResticCache+"/")) && !reflect.DeepEqual(entry, before[path]) {
+				t.Errorf("Stream changed existing cache path %s", path)
+			}
+		}
+		f.setMode(linux.BackupDir, 0o755)
+		before = snapshotApplyHost(t, f.root)
+		f.backup()
+		after = snapshotApplyHost(t, f.root)
+		assertPrivateBackupWrites(t, before, after)
+		f.expectMode(linux.ResticCache, 0o700)
+		for path, entry := range after {
+			if _, exists := before[path]; !exists && strings.HasPrefix(path, linux.ResticCache+"/") && entry.mode.IsDir() && entry.mode != os.ModeDir|0o700 {
+				t.Errorf("Backup created cache directory %s with mode %v", path, entry.mode)
+			}
+		}
+	})
+	t.Run("missing backup member", func(t *testing.T) {
+		stream := newHardeningFixture(t)
+		backup := newHardeningFixture(t)
+		state := protocol.DesiredState{}
+		if err := stream.host.Stream(t.Context(), state); err != nil {
+			t.Fatal(err)
+		}
+		stream.expectMode(linux.BackupDir, 0o700)
+		stream.expectAbsent(linux.ResticCache)
+		if err := backup.host.Backup(t.Context(), state); err != nil {
+			t.Fatal(err)
+		}
+		backup.expectMode(linux.BackupDir, 0o700)
+		backup.expectMode(linux.ResticCache, 0o700)
+	})
+}
+
+func assertPrivateBackupWrites(t *testing.T, before, after map[string]applyHostFile) {
+	t.Helper()
+	if got := after[linux.BackupDir].mode; got != os.ModeDir|0o700 {
+		t.Errorf("%s mode = %v, want a directory with mode 0700", linux.BackupDir, got)
+	}
+	for path, entry := range after {
+		if !strings.HasPrefix(path, linux.BackupDir+"/") || reflect.DeepEqual(entry, before[path]) {
+			continue
+		}
+		want := os.FileMode(0o600)
+		if entry.mode.IsDir() {
+			if _, exists := before[path]; exists {
+				continue
+			}
+			want = os.ModeDir | 0o700
+		}
+		if entry.mode != want {
+			t.Errorf("%s mode = %v, want %v", path, entry.mode, want)
+		}
+	}
+}
+
 func TestBackupPassesLeaveUnrelatedFilesAndOnlyRunBackupCommands(t *testing.T) {
-	// R-UXZ1-MLEO
+	// R-Z9QB-9I9J
 	f := newBackupPassFixture(t)
 	f.put("/srv/acme/data/app.db", walSQLite, 0o660)
 	f.put("/home/user/.bashrc", "fixture", 0o644)
 	f.put("/etc/other.conf", "fixture", 0o644)
-	before := make(map[string]os.FileInfo)
-	check := func(collect bool) {
-		t.Helper()
-		err := filepath.Walk(f.root, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
+	f.put("/var/cache/existing/file", "fixture", 0o640)
+	f.expectAbsent("/etc/systemd")
+	f.expectAbsent("/var/cache/accountsd")
+	before := snapshotApplyHost(t, f.root)
+	f.stream()
+	afterStream := snapshotApplyHost(t, f.root)
+	unit := "/etc/systemd/system/" + linux.LitestreamUnit
+	assertHostChanges(t, withoutBackupTrees(before, linux.BackupDir), withoutBackupTrees(afterStream, linux.BackupDir), []string{unit, linux.LitestreamPath})
+	if !afterStream[unit].mode.IsRegular() {
+		t.Errorf("Stream did not create %s", unit)
+	}
+	assertBackupPassCommands(t, f, map[string][]string{
+		"systemctl":                  {"daemon-reload", "is-active", "restart"},
+		f.path(linux.LitestreamPath): {"status", "ltx"},
+	})
+	f.backupCommands = nil
+	f.backup()
+	afterBackup := snapshotApplyHost(t, f.root)
+	assertHostChanges(t, withoutBackupTrees(afterStream, linux.BackupDir, linux.ResticCache), withoutBackupTrees(afterBackup, linux.BackupDir, linux.ResticCache), []string{linux.ResticPath, linux.ResticCache})
+	if !afterBackup["/var/cache/accountsd"].mode.IsDir() {
+		t.Error("Backup did not create /var/cache/accountsd")
+	}
+	assertBackupPassCommands(t, f, map[string][]string{f.path(linux.ResticPath): {"cat", "backup", "forget", "snapshots"}})
+}
+
+func TestBackupPassesDoNotWriteThroughLinksToOtherHostPaths(t *testing.T) {
+	// R-Z9QB-9I9J
+	for _, tc := range []struct {
+		path string
+		run  func(*linux.Host, context.Context, protocol.DesiredState) error
+	}{
+		{"/etc/systemd", (*linux.Host).Stream},
+		{"/var/lib/accountsd", (*linux.Host).Stream},
+		{"/var/cache/accountsd", (*linux.Host).Backup},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			f := newBackupPassFixture(t)
+			f.put("/srv/acme/data/app.db", walSQLite, 0o660)
+			f.put("/unrelated/sentinel", "unchanged", 0o640)
+			target := f.path("/unrelated/target")
+			if err := os.Rename(f.path(tc.path), target); errors.Is(err, os.ErrNotExist) {
+				if err := os.Mkdir(target, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			} else if err != nil {
+				t.Fatal(err)
 			}
-			relative := strings.TrimPrefix(path, f.root)
-			skip := strings.HasPrefix(relative, linux.BackupDir) || strings.HasPrefix(relative, linux.ResticCache) ||
-				relative == "/var/cache/accountsd" || relative == "/var/cache" || relative == "/etc/systemd" || relative == "/etc/systemd/system" ||
-				relative == "/etc/systemd/system/"+linux.LitestreamUnit
-			if skip {
-				return nil
+			if err := os.MkdirAll(filepath.Dir(f.path(tc.path)), 0o700); err != nil {
+				t.Fatal(err)
 			}
-			if collect {
-				before[relative] = info
-				return nil
+			if err := os.Symlink(target, f.path(tc.path)); err != nil {
+				t.Fatal(err)
 			}
-			original := before[relative]
-			if original == nil {
-				t.Fatalf("unexpected entry %s", relative)
-			}
-			if !info.IsDir() {
-				assertUnchanged(t, path, original)
-			}
-			delete(before, relative)
-			return nil
+			before := snapshotApplyHost(t, f.path("/unrelated"))
+			_ = tc.run(f.host, t.Context(), f.state)
+			assertHostChanges(t, before, snapshotApplyHost(t, f.path("/unrelated")), nil)
 		})
-		if err != nil {
-			t.Fatal(err)
+	}
+}
+
+func TestStreamModeCorrectionLeavesUnrelatedHardLinkUntouched(t *testing.T) {
+	// R-Z9QB-9I9J
+	f := newBackupPassFixture(t)
+	f.put("/srv/acme/data/app.db", walSQLite, 0o660)
+	f.stream()
+	unit := "/etc/systemd/system/" + linux.LitestreamUnit
+	const unrelated = "/unrelated-unit"
+	f.setMode(unit, 0o600)
+	if err := os.Link(f.path(unit), f.path(unrelated)); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotApplyHost(t, f.root)
+	_ = f.host.Stream(t.Context(), f.state)
+	after := snapshotApplyHost(t, f.root)
+	if !reflect.DeepEqual(after[unrelated], before[unrelated]) {
+		t.Errorf("Stream changed the file hard-linked to %s", unit)
+	}
+}
+
+func TestStreamCompletesWalkWhenBackupDirectoryIsUnavailable(t *testing.T) {
+	// R-WMF8-OW8F
+	f := newBackupPassFixture(t)
+	const saved = "/saved-backup"
+	if err := os.Rename(f.path(linux.BackupDir), f.path(saved)); err != nil {
+		t.Fatal(err)
+	}
+	f.put(linux.BackupDir, "not a directory", 0o600)
+	f.put("/srv/acme/data/app.db", plainSQLite, 0o660)
+	_ = f.host.Stream(t.Context(), f.state)
+	if err := os.Remove(f.path(linux.BackupDir)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(f.path(saved), f.path(linux.BackupDir)); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.host.Backup(t.Context(), f.state)
+	commands := f.commandsFor(f.path(linux.ResticPath))
+	if len(commands) == 0 || !slices.Equal(commands[0].Args[3:], []string{"cat", "config"}) {
+		t.Fatalf("Backup did not recognize the completed account walk: %v", commands)
+	}
+}
+
+func withoutBackupTrees(entries map[string]applyHostFile, trees ...string) map[string]applyHostFile {
+	filtered := make(map[string]applyHostFile, len(entries))
+	for path, entry := range entries {
+		if !slices.ContainsFunc(trees, func(dir string) bool { return path == dir || strings.HasPrefix(path, dir+"/") }) {
+			filtered[path] = entry
 		}
 	}
-	check(true)
-	f.stream()
-	f.backup()
-	check(false)
-	if len(before) != 0 {
-		t.Fatalf("backup methods removed unrelated entries: %v", before)
-	}
+	return filtered
+}
+
+func assertBackupPassCommands(t *testing.T, f *backupPassFixture, allowed map[string][]string) {
+	t.Helper()
 	if len(f.commands) != 0 {
-		t.Fatalf("unexpected commands: %v", f.commands)
+		t.Errorf("unexpected commands: %v", f.commands)
+	}
+	for _, c := range f.backupCommands {
+		verb := 0
+		if c.Name == f.path(linux.ResticPath) {
+			verb = 3
+		}
+		if len(c.Args) <= verb || !slices.Contains(allowed[c.Name], c.Args[verb]) {
+			t.Errorf("unexpected command: %s %v", c.Name, c.Args)
+		}
 	}
 }
 

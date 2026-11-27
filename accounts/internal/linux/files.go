@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"golang.org/x/sys/unix"
 
@@ -86,7 +87,7 @@ func (h *Host) readBounded(path string) ([]byte, error) {
 func (h *Host) writeAtomic(path string, data []byte, mode fs.FileMode) (bool, error) {
 	full := h.path(path)
 	if same, _ := sameContents(full, data); same {
-		return false, h.mode(path, mode)
+		return false, h.atomicFileMode(path, mode)
 	}
 	temp, err := h.stageFile(path, data, mode)
 	if err != nil {
@@ -97,6 +98,29 @@ func (h *Host) writeAtomic(path string, data []byte, mode fs.FileMode) (bool, er
 		return false, hostError(path, err)
 	}
 	return true, nil
+}
+
+func (h *Host) atomicFileMode(path string, mode fs.FileMode) error {
+	full := h.path(path)
+	info, err := os.Lstat(full)
+	if err != nil {
+		return hostError(path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return hostError(path, fs.ErrInvalid)
+	}
+	if info.Mode()&permissionBits == mode {
+		return nil
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat.Nlink > 1 {
+		// An in-place chmod could change an unrelated path sharing this inode.
+		return hostError(path, fs.ErrInvalid)
+	}
+	if err := os.Chmod(full, mode); err != nil {
+		return hostError(path, err)
+	}
+	return nil
 }
 
 func (h *Host) stageFile(path string, data []byte, mode fs.FileMode) (string, error) {

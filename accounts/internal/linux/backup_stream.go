@@ -102,23 +102,34 @@ func (h *Host) Stream(ctx context.Context, s protocol.DesiredState) error {
 		return true
 	})
 	b := s.Backup
+	dirErr := h.privateBackupDir(BackupDir)
 	if !backupReady(b) {
-		_ = h.cleanStreamAccounts(ctx, nil)
+		if dirErr == nil {
+			_ = h.cleanStreamAccounts(ctx, nil)
+		}
 		return nil
 	}
 	ctx = withBackupDiagnosticRedactor(ctx, b)
 	installErr := h.ensureLitestream(ctx)
-	passErr := errors.Join(installErr, h.privateBackupDir(BackupDir))
-	passErr = firstBackupError(passErr, h.updateHostBackup(func(facts *backupHostFacts) {
-		facts.LitestreamInstallError = boundBackupError(h.litestreamInstall.errorText())
-	}))
+	passErr := errors.Join(dirErr, installErr)
+	if dirErr == nil {
+		passErr = firstBackupError(passErr, h.updateHostBackup(func(facts *backupHostFacts) {
+			facts.LitestreamInstallError = boundBackupError(h.litestreamInstall.errorText())
+		}))
+	}
 	retain := make(map[string]bool, len(s.Accounts))
 	var unitWritten bool
 	var unitErr error
 	for _, slug := range slugs {
 		walk, err := h.walkBackupDatabases(slug)
-		passErr = firstBackupError(passErr, firstBackupError(err, h.saveBackupWalk(slug, walk)))
+		if dirErr == nil {
+			err = firstBackupError(err, h.saveBackupWalk(slug, walk))
+		}
+		passErr = firstBackupError(passErr, err)
 		h.backupWalked.Store(slug, struct{}{})
+		if dirErr != nil {
+			continue
+		}
 		if walk.Error == machine.DataTooLarge {
 			walk = h.readAccountBackup(slug).Walk
 		}
@@ -137,10 +148,16 @@ func (h *Host) Stream(ctx context.Context, s protocol.DesiredState) error {
 			passErr = firstBackupError(passErr, h.streamAccount(ctx, b, slug, creds, paths, walk.Error != machine.DataTooLarge))
 		}
 	}
+	if dirErr != nil {
+		return passErr
+	}
 	return firstBackupError(passErr, h.cleanStreamAccounts(ctx, retain))
 }
 
 func (h *Host) prepareStreamUnit(ctx context.Context) error {
+	if err := h.backupDirectory(filepath.Dir(streamUnitPath), "", true); err != nil {
+		return err
+	}
 	changed, err := h.writeAtomic(streamUnitPath, []byte(streamUnit), 0o644)
 	if err != nil || !changed {
 		return err

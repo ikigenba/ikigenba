@@ -171,8 +171,10 @@ func backupCheckDue(facts backupAccountFacts, now time.Time, settings protocol.S
 // Backup takes due restic snapshots and checks, or executes a requested restore.
 func (h *Host) Backup(ctx context.Context, s protocol.DesiredState) error {
 	b := s.Backup
+	dirErr := h.privateBackupDir(BackupDir)
+	cacheErr := h.privateBackupDir(ResticCache)
 	var pruneErr error
-	if b != nil {
+	if b != nil && dirErr == nil {
 		pruneErr = h.prunePartialRestores(s)
 	}
 	if !backupReady(b) {
@@ -182,12 +184,14 @@ func (h *Host) Backup(ctx context.Context, s protocol.DesiredState) error {
 		return nil
 	}
 	ctx = withBackupDiagnosticRedactor(ctx, b)
+	installErr := errors.Join(h.ensureRestic(ctx), dirErr, cacheErr)
 	h.lockedBackupRepos = make(map[string]error)
 	defer func() { h.lockedBackupRepos = nil }()
-	installErr := errors.Join(h.ensureRestic(ctx), h.privateBackupDir(BackupDir), h.privateBackupDir(ResticCache))
-	installErr = errors.Join(installErr, h.updateHostBackup(func(facts *backupHostFacts) {
-		facts.ResticInstallError = boundBackupError(h.resticInstall.errorText())
-	}))
+	if dirErr == nil {
+		installErr = errors.Join(installErr, h.updateHostBackup(func(facts *backupHostFacts) {
+			facts.ResticInstallError = boundBackupError(h.resticInstall.errorText())
+		}))
+	}
 	if b.Restore != nil {
 		if installErr != nil {
 			return firstBackupError(installErr, pruneErr)

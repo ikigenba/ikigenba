@@ -158,8 +158,22 @@ func backupFailureCode(failure string) string {
 }
 
 func (h *Host) clearWholeRestores() error {
+	return errors.Join(h.clearRestoreMarker(), h.clearWholeRestoreFacts())
+}
+
+func (h *Host) clearRestoreMarker() error {
+	if err := h.backupDirectory(DataDir, "", false); err != nil {
+		return err
+	}
 	if err := os.RemoveAll(h.path(RestoreMarker)); err != nil {
 		return hostError(RestoreMarker, err)
+	}
+	return nil
+}
+
+func (h *Host) clearWholeRestoreFacts() error {
+	if err := h.backupDirectory(backupStatusDir, "", false); err != nil {
+		return err
 	}
 	if h.readHostBackup().Operation.Restore.Step.ID == "" {
 		return nil

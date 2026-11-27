@@ -84,19 +84,41 @@ func hostBackupCredentials(b *protocol.Backup) bool {
 }
 
 func (h *Host) privateBackupDir(path string) error {
-	info, err := os.Lstat(h.path(path))
+	privateRoot := BackupDir
+	if path == ResticCache || strings.HasPrefix(path, ResticCache+"/") {
+		privateRoot = ResticCache
+	}
+	return h.backupDirectory(path, privateRoot, true)
+}
+
+// backupDirectory checks each component before a pass can write through it.
+// Existing public parents are left alone. Only a private tree gets mode repairs.
+func (h *Host) backupDirectory(path, privateRoot string, create bool) error {
+	parent := filepath.Dir(path)
+	if parent == path {
+		return nil
+	}
+	if err := h.backupDirectory(parent, privateRoot, create); err != nil {
+		return err
+	}
+	private := privateRoot != "" && (path == privateRoot || strings.HasPrefix(path, privateRoot+"/"))
+	mode := fs.FileMode(0o755)
+	if private {
+		mode = 0o700
+	}
+	full := h.path(path)
+	info, err := os.Lstat(full)
 	if errors.Is(err, fs.ErrNotExist) {
-		if path == BackupDir || path == ResticCache {
-			if err := h.mkdir(filepath.Dir(path)); err != nil {
-				return err
-			}
-		} else if err := h.privateBackupDir(filepath.Dir(path)); err != nil {
-			return err
+		if !create {
+			return nil
 		}
-		if err := os.Mkdir(h.path(path), 0o700); err != nil && !errors.Is(err, fs.ErrExist) {
-			return hostError(path, err)
+		err = os.Mkdir(full, mode)
+		if err == nil {
+			return h.mode(path, mode)
 		}
-		info, err = os.Lstat(h.path(path))
+		if errors.Is(err, fs.ErrExist) {
+			info, err = os.Lstat(full)
+		}
 	}
 	if err != nil {
 		return hostError(path, err)
@@ -104,7 +126,10 @@ func (h *Host) privateBackupDir(path string) error {
 	if !info.IsDir() {
 		return hostError(path, fs.ErrInvalid)
 	}
-	return h.mode(path, 0o700)
+	if private {
+		return h.mode(path, mode)
+	}
+	return nil
 }
 
 func (h *Host) writeBackupFile(path string, value []byte) (bool, error) {

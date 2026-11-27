@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -126,12 +127,21 @@ func TestInstallBackupPrograms(t *testing.T) {
 			}
 			f.expectFile(tc.path, tc.executable, 0o755)
 			f.expectFile(stamp, digest+"\n", 0o600)
+			f.put(tc.path, "old executable", 0o755)
+			f.put(stamp, "old digest\n", 0o600)
+			watch := watchBackupProgramDirectory(t, f.path(filepath.Dir(tc.path)))
+			if err := tc.install(t.Context(), f.env, fixtureVersion, digest); err != nil {
+				t.Fatal(err)
+			}
+			assertBackupProgramDirectoryWrites(t, watch, filepath.Base(tc.path))
+			f.expectFile(tc.path, tc.executable, 0o755)
+			f.expectFile(stamp, digest+"\n", 0o600)
 			f.expectCalls()
 			before := snapshotHost(t, f.root)
 			if err := tc.install(t.Context(), f.env, fixtureVersion, digest); err != nil {
 				t.Fatal(err)
 			}
-			if fetches != 2 {
+			if fetches != 3 {
 				t.Fatalf("fetches after checking pinned install = %d", fetches)
 			}
 			if after := snapshotHost(t, f.root); !reflect.DeepEqual(after, before) {
@@ -150,6 +160,57 @@ func TestInstallBackupPrograms(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func watchBackupProgramDirectory(t *testing.T, path string) int {
+	t.Helper()
+	watch, err := syscall.InotifyInit1(syscall.IN_NONBLOCK | syscall.IN_CLOEXEC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = syscall.Close(watch) })
+	if _, err := syscall.InotifyAddWatch(watch, path, syscall.IN_CREATE|syscall.IN_DELETE|syscall.IN_MOVED_FROM|syscall.IN_MOVED_TO|syscall.IN_ATTRIB|syscall.IN_MODIFY); err != nil {
+		t.Fatal(err)
+	}
+	return watch
+}
+
+func assertBackupProgramDirectoryWrites(t *testing.T, watch int, program string) {
+	t.Helper()
+	temp := "." + program + ".new"
+	var buffer [4096]byte
+	var sawTemp, sawProgram bool
+	for {
+		n, err := syscall.Read(watch, buffer[:])
+		if errors.Is(err, syscall.EAGAIN) {
+			break
+		}
+		if errors.Is(err, syscall.EINTR) {
+			continue
+		}
+		if err != nil || n < syscall.SizeofInotifyEvent {
+			t.Fatalf("read executable directory events: n=%d err=%v", n, err)
+		}
+		for events := buffer[:n]; len(events) >= syscall.SizeofInotifyEvent; {
+			end := syscall.SizeofInotifyEvent + int(binary.NativeEndian.Uint32(events[12:16]))
+			if end > len(events) {
+				t.Fatal("truncated executable directory event")
+			}
+			name := string(bytes.TrimRight(events[syscall.SizeofInotifyEvent:end], "\x00"))
+			switch name {
+			case temp:
+				sawTemp = true
+			case program:
+				sawProgram = true
+			default:
+				t.Errorf("unexpected temporary entry %q next to %s", name, program)
+			}
+			events = events[end:]
+		}
+	}
+	if !sawTemp || !sawProgram {
+		t.Errorf("expected filesystem events at %s and %s", temp, program)
 	}
 }
 
@@ -306,12 +367,12 @@ func TestInstallBackupProgramsRecoverInterruptedPublication(t *testing.T) {
 func testBackupPublishRecovery(t *testing.T, program string, install backupInstaller) {
 	t.Helper()
 	staged := filepath.Join(filepath.Dir(program), "."+filepath.Base(program)+".new")
-	previous := staged + ".previous"
 	stamp := filepath.Join(linux.BackupDir, filepath.Base(program)+".digest")
 	const newStamp = linux.BackupDir + "/.fixture-digest"
+	const exchange = linux.BackupDir + "/.fixture-exchange"
 	record := stamp + ".install"
 	const oldDigest, newDigest = "old digest", "new digest"
-	for _, outcome := range []string{"rollback", "committed", "unexpected program", "unexpected stamp", "stamp edited in place"} {
+	for _, outcome := range []string{"prepared", "rollback", "committed", "unexpected program", "unexpected stamp", "stamp edited in place"} {
 		t.Run(outcome, func(t *testing.T) {
 			f := newHardeningFixture(t)
 			f.put(program, "previous executable", 0o755)
@@ -357,16 +418,17 @@ func testBackupPublishRecovery(t *testing.T, program string, install backupInsta
 				t.Fatal(err)
 			}
 			f.put(record, string(journal), 0o600)
-			if err := os.Link(f.path(program), f.path(previous)); err != nil {
-				t.Fatal(err)
-			}
 			rename := func(source, dest string) {
 				t.Helper()
 				if err := os.Rename(f.path(source), f.path(dest)); err != nil {
 					t.Fatal(err)
 				}
 			}
-			rename(staged, program)
+			if outcome != "prepared" {
+				rename(program, exchange)
+				rename(staged, program)
+				rename(exchange, staged)
+			}
 			fetches := 0
 			f.env.Fetch = func(context.Context, string) (io.ReadCloser, error) {
 				fetches++
@@ -378,14 +440,14 @@ func testBackupPublishRecovery(t *testing.T, program string, install backupInsta
 				rename(newStamp, stamp)
 				wantDigest, wantProgram = newDigest, "checked executable"
 			case "unexpected program":
-				rename(program, staged)
+				rename(program, exchange)
 				f.put(program, "external replacement", 0o755)
 				if err := install(t.Context(), f.env, fixtureVersion, oldDigest); err == nil {
 					t.Fatal("installed over an unexpected program")
 				}
-				f.expectFile(previous, "previous executable", 0o755)
+				f.expectFile(staged, "previous executable", 0o755)
 				f.expectFile(program, "external replacement", 0o755)
-				rename(staged, program)
+				rename(exchange, program)
 			case "unexpected stamp":
 				saved := stamp + ".saved"
 				rename(stamp, saved)
@@ -393,7 +455,7 @@ func testBackupPublishRecovery(t *testing.T, program string, install backupInsta
 				if err := install(t.Context(), f.env, fixtureVersion, oldDigest); err == nil {
 					t.Fatal("installed over an unexpected stamp")
 				}
-				f.expectFile(previous, "previous executable", 0o755)
+				f.expectFile(staged, "previous executable", 0o755)
 				f.expectFile(stamp, "external stamp", 0o600)
 				rename(saved, stamp)
 			case "stamp edited in place":
@@ -408,7 +470,7 @@ func testBackupPublishRecovery(t *testing.T, program string, install backupInsta
 				if err := install(t.Context(), f.env, fixtureVersion, newDigest); err == nil {
 					t.Fatal("accepted an edit to the stamp")
 				}
-				f.expectFile(previous, "previous executable", 0o755)
+				f.expectFile(staged, "previous executable", 0o755)
 				f.expectFile(program, "checked executable", 0o755)
 				f.expectFile(stamp, newDigest+"\n", 0o600)
 				f.put(stamp, oldDigest+"\n", 0o600)
@@ -422,7 +484,7 @@ func testBackupPublishRecovery(t *testing.T, program string, install backupInsta
 			}
 			f.expectFile(program, wantProgram, 0o755)
 			f.expectFile(stamp, wantDigest+"\n", 0o600)
-			f.expectAbsent(previous)
+			f.expectAbsent(staged)
 			f.expectAbsent(record)
 		})
 	}

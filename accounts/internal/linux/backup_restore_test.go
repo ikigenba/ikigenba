@@ -128,6 +128,14 @@ func TestWholeRestoreWaitsForApplyAndChecksInputs(t *testing.T) {
 				f.t.Fatal(err)
 			}
 		}, protocol.CodeNotEmpty, ""},
+		{"marker in linked data directory", func(f *hardeningFixture, _ *protocol.DesiredState) {
+			if err := os.Rename(f.path(linux.DataDir), f.path("/unrelated-restore")); err != nil {
+				f.t.Fatal(err)
+			}
+			if err := os.Symlink(f.path("/unrelated-restore"), f.path(linux.DataDir)); err != nil {
+				f.t.Fatal(err)
+			}
+		}, protocol.CodeNotEmpty, ""},
 		{"duplicate", func(_ *hardeningFixture, s *protocol.DesiredState) {
 			s.Backup.Restore.Accounts = append(s.Backup.Restore.Accounts, s.Backup.Restore.Accounts[0])
 		}, protocol.CodeFailed, machine.ErrInvalidState.Error()},
@@ -201,6 +209,39 @@ func TestWholeRestoreWaitsForApplyAndChecksInputs(t *testing.T) {
 			f.expectAbsent("/srv/acme")
 		})
 	}
+}
+
+func TestBackupClearsRestoreMarkerWithoutFollowingLinks(t *testing.T) {
+	// R-ZKUB-Y82L R-Z9QB-9I9J
+	t.Run("linked data directory", func(t *testing.T) {
+		f := newBackupPassFixture(t)
+		unrelated := "/unrelated-restore/" + filepath.Base(linux.RestoreMarker)
+		f.put(unrelated, "unchanged", 0o600)
+		if err := os.Symlink(f.path(filepath.Dir(unrelated)), f.path(linux.DataDir)); err != nil {
+			t.Fatal(err)
+		}
+		before := snapshotApplyHost(t, f.path(filepath.Dir(unrelated)))
+		_ = f.host.Backup(t.Context(), f.state)
+		assertHostChanges(t, before, snapshotApplyHost(t, f.path(filepath.Dir(unrelated))), nil)
+	})
+	t.Run("linked marker with unavailable backup directory", func(t *testing.T) {
+		f := newBackupPassFixture(t)
+		const unrelated = "/unrelated-marker"
+		f.put(unrelated, "unchanged", 0o600)
+		if err := os.Mkdir(f.path(linux.DataDir), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(f.path(unrelated), f.path(linux.RestoreMarker)); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(f.path(linux.BackupDir), f.path("/saved-backup")); err != nil {
+			t.Fatal(err)
+		}
+		f.put(linux.BackupDir, "not a directory", 0o600)
+		_ = f.host.Backup(t.Context(), f.state)
+		f.expectAbsent(linux.RestoreMarker)
+		f.expectFile(unrelated, "unchanged", 0o600)
+	})
 }
 
 func TestWholeRestoreSelectsNewestTargetsAndRecoversAfterRestart(t *testing.T) {

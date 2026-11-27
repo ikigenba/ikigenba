@@ -17,6 +17,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/ikigenba/ikigenba/accounts/internal/machine"
 )
 
@@ -73,9 +75,13 @@ func InstallLitestream(ctx context.Context, env Env, version, digest string) err
 
 func installBackupProgram(ctx context.Context, env Env, path, stamp, url, digest string, unpack func(io.Writer, io.Reader, []byte) error) error {
 	h := &Host{env: env}
-	staging := filepath.Join(filepath.Dir(path), "."+filepath.Base(path)+".new")
+	parent := filepath.Dir(path)
+	if err := errors.Join(h.backupDirectory(parent, "", false), h.backupDirectory(BackupDir, "", false)); err != nil {
+		return err
+	}
+	staging := filepath.Join(parent, "."+filepath.Base(path)+".new")
 	dest, staged := h.path(path), h.path(staging)
-	if err := h.recoverBackupProgram(dest, stamp, staged+".previous"); err != nil {
+	if err := h.recoverBackupProgram(staged, dest, stamp); err != nil {
 		return err
 	}
 	stampBytes := []byte(digest + "\n")
@@ -98,11 +104,10 @@ func installBackupProgram(ctx context.Context, env Env, path, stamp, url, digest
 	if err := h.stageExecutable(staging, archive, buffer[:], unpack); err != nil {
 		return err
 	}
-	defer func() { _ = os.Remove(staged) }()
 
 	stampTemp, err := h.stageFile(stamp, stampBytes, 0o600)
 	if err != nil {
-		return err
+		return errors.Join(err, os.Remove(staged))
 	}
 	defer func() { _ = os.Remove(stampTemp) }()
 	return h.publishBackupProgram(staged, dest, stampTemp, stamp)
@@ -119,7 +124,7 @@ func (h *Host) downloadBackupProgram(ctx context.Context, url, digest string, bu
 		return nil, err
 	}
 	defer func() { _ = body.Close() }()
-	if err := h.mkdir(BackupDir); err != nil {
+	if err := h.privateBackupDir(BackupDir); err != nil {
 		return nil, err
 	}
 	archive, err := os.CreateTemp(h.path(BackupDir), ".download-")
@@ -151,7 +156,7 @@ func storeBackupProgram(archive *os.File, body io.Reader, digest string, buffer 
 }
 
 func (h *Host) stageExecutable(path string, archive io.Reader, buffer []byte, unpack func(io.Writer, io.Reader, []byte) error) error {
-	if err := h.mkdir(filepath.Dir(path)); err != nil {
+	if err := h.backupDirectory(filepath.Dir(path), "", true); err != nil {
 		return err
 	}
 	staged := h.path(path)
@@ -221,54 +226,49 @@ type backupInstallRecord struct {
 
 func backupInstallRecordPath(stamp string) string { return stamp + ".install" }
 
-func (h *Host) prepareBackupPublish(staged, dest, stampTemp, stamp string) error {
+func (h *Host) prepareBackupPublish(staged, dest, stampTemp, stamp string) (backupInstallRecord, error) {
 	record := backupInstallRecord{}
 	var err error
 	for path, entry := range map[string]*backupInstallEntry{dest: &record.OldProgram, staged: &record.NewProgram} {
 		*entry, err = examineBackupInstallEntry(path)
 		if err != nil {
-			return err
+			return record, err
 		}
 	}
 	record.OldStamp, err = h.examineBackupInstallStamp(stamp)
 	if err != nil {
-		return err
+		return record, err
 	}
 	record.NewStamp, err = h.examineBackupInstallStamp(filepath.Join(filepath.Dir(stamp), filepath.Base(stampTemp)))
 	if err != nil {
-		return err
+		return record, err
 	}
 	if record.NewProgram == (backupInstallEntry{}) || record.NewStamp == (backupInstallEntry{}) {
-		return fs.ErrNotExist
+		return record, fs.ErrNotExist
 	}
 	data, err := json.Marshal(record)
 	if err != nil {
-		return err
+		return record, err
 	}
 	_, err = h.writeAtomic(backupInstallRecordPath(stamp), data, 0o600)
-	if err != nil {
-		return err
-	}
-	if record.OldProgram != (backupInstallEntry{}) {
-		if err := os.Link(dest, staged+".previous"); err != nil {
-			_, cleanup := h.remove(backupInstallRecordPath(stamp))
-			return errors.Join(err, cleanup)
-		}
-	}
-	return nil
+	return record, err
 }
 
 func (h *Host) publishBackupProgram(staged, dest, stampTemp, stamp string) error {
-	if err := h.prepareBackupPublish(staged, dest, stampTemp, stamp); err != nil {
-		return err
+	record, err := h.prepareBackupPublish(staged, dest, stampTemp, stamp)
+	if err != nil {
+		return errors.Join(err, os.Remove(staged))
 	}
-	// The old program remains linked while the checked executable and its
-	// already staged stamp are published.
-	err := os.Rename(staged, dest)
+	// Keep the old executable at the same staging path until the stamp commits.
+	if record.OldProgram == (backupInstallEntry{}) {
+		err = os.Rename(staged, dest)
+	} else {
+		err = exchangeBackupProgram(staged, dest)
+	}
 	if err == nil {
 		err = os.Rename(stampTemp, h.path(stamp))
 	}
-	recovery := h.recoverBackupProgram(dest, stamp, staged+".previous")
+	recovery := h.recoverBackupProgram(staged, dest, stamp)
 	if err != nil {
 		return errors.Join(err, recovery)
 	}
@@ -277,16 +277,11 @@ func (h *Host) publishBackupProgram(staged, dest, stampTemp, stamp string) error
 	return nil
 }
 
-func (h *Host) recoverBackupProgram(dest, stamp, previous string) error {
+func (h *Host) recoverBackupProgram(staged, dest, stamp string) error {
 	recordPath := backupInstallRecordPath(stamp)
 	raw, err := h.readBounded(recordPath)
 	if errors.Is(err, fs.ErrNotExist) {
-		if _, err := os.Lstat(previous); errors.Is(err, fs.ErrNotExist) {
-			return nil
-		} else if err != nil {
-			return err
-		}
-		return fmt.Errorf("%s: previous executable has no install record", previous)
+		return nil
 	}
 	if err != nil {
 		return err
@@ -307,40 +302,47 @@ func (h *Host) recoverBackupProgram(dest, stamp, previous string) error {
 	if err != nil {
 		return err
 	}
-	prior, err := examineBackupInstallEntry(previous)
+	temp, err := examineBackupInstallEntry(staged)
 	if err != nil {
 		return err
-	}
-	if prior != missing && prior != record.OldProgram {
-		return hostError(previous, fs.ErrInvalid)
 	}
 	switch {
 	case currentStamp == record.NewStamp && current == record.NewProgram:
 		// Both renames committed.
+		if temp != missing && temp != record.OldProgram {
+			return hostError(staged, fs.ErrInvalid)
+		}
 	case currentStamp == record.OldStamp && current == record.OldProgram:
 		// The executable was never replaced, or was already restored.
-	case currentStamp == record.OldStamp && (current == record.NewProgram || current == missing):
-		if err := rollbackBackupProgram(dest, previous, prior, record.OldProgram); err != nil {
-			return fmt.Errorf("restore previous executable from %s: %w", previous, err)
+		if temp != missing && temp != record.NewProgram {
+			return hostError(staged, fs.ErrInvalid)
+		}
+	case currentStamp == record.OldStamp && current == record.NewProgram:
+		if temp != record.OldProgram {
+			return hostError(staged, fs.ErrInvalid)
+		}
+		if err := rollbackBackupProgram(staged, dest, record.OldProgram); err != nil {
+			return fmt.Errorf("restore previous executable at %s: %w", dest, err)
 		}
 	default:
 		return hostError(recordPath, fs.ErrInvalid)
 	}
-	if err := os.Remove(previous); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err := os.Remove(staged); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	_, err = h.remove(recordPath)
 	return err
 }
 
-func rollbackBackupProgram(dest, previous string, prior, original backupInstallEntry) error {
+func rollbackBackupProgram(staged, dest string, original backupInstallEntry) error {
 	if original == (backupInstallEntry{}) {
 		return os.Remove(dest)
 	}
-	if prior != original {
-		return hostError(previous, fs.ErrInvalid)
-	}
-	return os.Rename(previous, dest)
+	return exchangeBackupProgram(staged, dest)
+}
+
+func exchangeBackupProgram(staged, dest string) error {
+	return unix.Renameat2(unix.AT_FDCWD, staged, unix.AT_FDCWD, dest, unix.RENAME_EXCHANGE)
 }
 
 func unpackLitestream(dst io.Writer, src io.Reader, buffer []byte) error {
