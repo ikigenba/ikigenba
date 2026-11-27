@@ -127,7 +127,7 @@ func NewMemory(cfg MemoryConfig) *Memory {
 		cfg: cfg, booted: cfg.Now().UTC().Truncate(time.Second),
 		accounts: make(map[string]Account), users: make(map[string]User),
 		identity: new(byte), bans: make(map[string]protocol.Ban),
-		backups: make(map[string]*memoryBackup), failing: make(map[string]bool), requests: make(map[string]memoryRequest),
+		failing: make(map[string]bool), requests: make(map[string]memoryRequest),
 	}
 }
 

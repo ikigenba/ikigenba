@@ -3,6 +3,7 @@ package machine
 import (
 	"cmp"
 	"context"
+	"maps"
 	"slices"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 const backupFailed = "simulated backup failure"
 
 type memoryBackup struct {
+	gid           int64
 	facts         protocol.AccountBackup
 	finalVersion  int64
 	retrySnapshot bool
@@ -24,32 +26,30 @@ func (b *memoryBackup) clearError() {
 
 // backupSelection retains only what State needs to project the last pass's facts.
 type backupSelection struct {
-	accounts []string
+	accounts map[string]int64
 	requests []string
 	close    string
 }
 
 func selectBackups(s protocol.DesiredState) backupSelection {
-	var selection backupSelection
-	for _, a := range s.Accounts {
-		if a.State == protocol.AccountActive {
-			selection.accounts = append(selection.accounts, a.Slug)
-		}
-	}
+	selection := backupSelection{accounts: make(map[string]int64)}
 	if b := s.Backup; b != nil {
 		selection.close = b.Close
 		if b.Restore != nil {
 			for _, a := range b.Restore.Accounts {
-				selection.accounts = append(selection.accounts, a.Slug)
+				selection.accounts[a.Slug] = a.GID
 			}
 		}
 		for _, q := range b.Restores {
 			selection.requests = append(selection.requests, q.ID)
 		}
 	}
-	slices.Sort(selection.accounts)
+	for _, a := range s.Accounts {
+		if _, restoring := selection.accounts[a.Slug]; restoring || a.State == protocol.AccountActive {
+			selection.accounts[a.Slug] = a.GID
+		}
+	}
 	slices.Sort(selection.requests)
-	selection.accounts = slices.Compact(selection.accounts)
 	selection.requests = slices.Compact(selection.requests)
 	return selection
 }
@@ -60,9 +60,10 @@ func (m *Memory) backupReport(selection backupSelection) ([]protocol.AccountBack
 		defer m.disk.mu.Unlock()
 	}
 	var backups []protocol.AccountBackup
-	for _, slug := range selection.accounts {
+	for _, slug := range slices.Sorted(maps.Keys(selection.accounts)) {
+		gid := selection.accounts[slug]
 		entry := protocol.AccountBackup{Account: slug}
-		if b := m.backups[slug]; b != nil {
+		if b := m.backups[slug]; b != nil && b.gid == gid {
 			entry = b.facts
 			entry.Snapshots = slices.Clone(entry.Snapshots)
 		}
@@ -70,15 +71,22 @@ func (m *Memory) backupReport(selection backupSelection) ([]protocol.AccountBack
 			entry.Final = protocol.Step{}
 		}
 		if m.disk != nil {
-			for _, db := range m.disk.databases[slug] {
-				entry.Databases = append(entry.Databases, db.facts)
-				if db.facts.Error != "" {
+			replicas := m.disk.replicas[slug]
+			for path := range m.disk.databases[slug] {
+				facts := protocol.Database{Path: path}
+				if replicas != nil && replicas.gid == gid {
+					if replica := replicas.databases[path]; replica != nil {
+						facts = replica.facts
+					}
+				}
+				entry.Databases = append(entry.Databases, facts)
+				if facts.Error != "" {
 					entry.DatabaseErrors++
 				}
-				if t := db.facts.Synced; !t.IsZero() && (entry.Synced.IsZero() || t.Before(entry.Synced)) {
+				if t := facts.Synced; !t.IsZero() && (entry.Synced.IsZero() || t.Before(entry.Synced)) {
 					entry.Synced = t
 				}
-				if t := db.facts.Written; t.After(entry.Written) {
+				if t := facts.Written; t.After(entry.Written) {
 					entry.Written = t
 				}
 			}
@@ -96,13 +104,22 @@ func (m *Memory) backupReport(selection backupSelection) ([]protocol.AccountBack
 	return backups, restores
 }
 
-func (m *Memory) accountBackup(slug string) *memoryBackup {
-	b := m.backups[slug]
-	if b == nil {
-		b = &memoryBackup{facts: protocol.AccountBackup{Account: slug}}
-		m.backups[slug] = b
+func (m *Memory) beginBackupPass(s protocol.DesiredState) map[string]*memoryBackup {
+	m.lastPass = selectBackups(s)
+	accounts := m.lastPass.accounts
+	kept := make(map[string]*memoryBackup, len(accounts))
+	for slug, gid := range accounts {
+		b := m.backups[slug]
+		if b == nil || b.gid != gid {
+			b = &memoryBackup{gid: gid, facts: protocol.AccountBackup{Account: slug}}
+		}
+		kept[slug] = b
 	}
-	return b
+	m.backups = kept
+	if m.disk != nil {
+		m.disk.pruneReplicas(accounts)
+	}
+	return kept
 }
 
 func backupReady(b *protocol.Backup) bool {
@@ -118,10 +135,10 @@ func credentialsFor(b *protocol.Backup, slug string) protocol.Credentials {
 	return protocol.Credentials{}
 }
 
-func (m *Memory) noCredentials(s protocol.DesiredState, withholdingSnapshot bool) {
+func noCredentials(s protocol.DesiredState, backups map[string]*memoryBackup, withholdingSnapshot bool) {
 	for _, a := range s.Accounts {
 		if a.State == protocol.AccountActive {
-			backup := m.accountBackup(a.Slug)
+			backup := backups[a.Slug]
 			backup.facts.Error = NoCredentials
 			backup.retrySnapshot = backup.retrySnapshot || withholdingSnapshot
 		}
@@ -142,12 +159,12 @@ func (m *Memory) Stream(ctx context.Context, s protocol.DesiredState) error {
 	defer m.streamMu.Unlock()
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.lastPass = selectBackups(s)
+	backups := m.beginBackupPass(s)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if !backupReady(s.Backup) {
-		m.noCredentials(s, false)
+		noCredentials(s, backups, false)
 		return nil
 	}
 	disk := m.disk
@@ -157,7 +174,10 @@ func (m *Memory) Stream(ctx context.Context, s protocol.DesiredState) error {
 		if a.State != protocol.AccountActive {
 			continue
 		}
-		backup := m.accountBackup(a.Slug)
+		backup := backups[a.Slug]
+		if m.backups[a.Slug] != backup {
+			continue // A concurrent pass retired this account's facts.
+		}
 		c := credentialsFor(s.Backup, a.Slug)
 		if c.AccessKeyID == "" {
 			backup.facts.Error = NoCredentials
@@ -167,47 +187,60 @@ func (m *Memory) Stream(ctx context.Context, s protocol.DesiredState) error {
 			backup.clearError()
 		}
 		if disk != nil {
-			m.streamAccount(disk, a.Slug, c, now, failing[a.Slug])
+			m.streamAccount(disk, a.Slug, backup.gid, c, now, failing[a.Slug])
 		}
 	}
 	return nil
 }
 
-func (m *Memory) streamAccount(disk *memoryDisk, slug string, c protocol.Credentials, now time.Time, failing bool) {
+func (m *Memory) streamAccount(disk *memoryDisk, slug string, gid int64, c protocol.Credentials, now time.Time, failing bool) {
 	disk.mu.Lock()
+	defer disk.mu.Unlock()
+	replicas := disk.replicas[slug]
+	if replicas == nil || replicas.gid != gid {
+		replicas = &memoryReplicas{gid: gid, databases: make(map[string]*memoryReplica)}
+		disk.replicas[slug] = replicas
+	}
 	var paths []string
 	for path := range disk.databases[slug] {
 		paths = append(paths, path)
 	}
 	slices.Sort(paths)
-	defer disk.mu.Unlock()
 	for _, path := range paths {
 		db := disk.databases[slug][path]
+		replica := replicas.databases[path]
+		if replica == nil {
+			replica = &memoryReplica{facts: protocol.Database{Path: path}}
+			replicas.databases[path] = replica
+		}
 		if !db.wal {
-			db.facts.Error = NotWAL
+			replica.facts.Error = NotWAL
 			continue
 		}
-		if !db.started {
+		if !replica.started {
 			disk.mu.Unlock()
 			err := func() error {
 				defer disk.mu.Lock()
 				return m.put(c, protocol.AccountPrefix(slug)+path)
 			}()
+			if disk.replicas[slug] != replicas {
+				return // A concurrent pass retired this account's replica facts.
+			}
 			if disk.databases[slug][path] != db {
 				continue // The database was replaced while the put was in flight.
 			}
-			if !db.started {
+			if !replica.started {
 				if err != nil {
-					db.facts.Error = err.Error()
+					replica.facts.Error = err.Error()
 					continue
 				}
-				db.started = true
-				db.facts.Oldest = now
-				db.facts.Error = ""
+				replica.started = true
+				replica.facts.Oldest = now
+				replica.facts.Error = ""
 			}
 		}
 		if !failing {
-			db.facts.Synced, db.facts.Written, db.facts.Error = now, now, ""
+			replica.facts.Synced, replica.facts.Written, replica.facts.Error = now, now, ""
 		}
 	}
 }
@@ -226,7 +259,7 @@ func (m *Memory) Backup(ctx context.Context, s protocol.DesiredState) error {
 	defer m.backupMu.Unlock()
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.lastPass = selectBackups(s)
+	backups := m.beginBackupPass(s)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -236,7 +269,7 @@ func (m *Memory) Backup(ctx context.Context, s protocol.DesiredState) error {
 		}
 	}
 	if !backupReady(s.Backup) {
-		m.noCredentials(s, true)
+		noCredentials(s, backups, true)
 		return nil
 	}
 	now := m.cfg.Now()
@@ -244,16 +277,16 @@ func (m *Memory) Backup(ctx context.Context, s protocol.DesiredState) error {
 	disk := m.disk
 	failing := m.passFailures()
 	if s.Backup.Restore != nil {
-		m.restoreHost(disk, s.Backup, failing, now, at)
+		m.restoreHost(disk, s.Backup, backups, failing, now, at)
 		return nil
 	}
-	m.takeSnapshots(s, failing, now, at)
-	m.finishClose(s, failing, now, at)
-	m.restoreCopies(disk, s, failing, now)
+	m.takeSnapshots(s, backups, failing, now, at)
+	m.finishClose(s, backups, failing, now, at)
+	m.restoreCopies(disk, s, backups, failing, now)
 	return nil
 }
 
-func (m *Memory) takeSnapshots(s protocol.DesiredState, failing map[string]bool, now, at time.Time) {
+func (m *Memory) takeSnapshots(s protocol.DesiredState, backups map[string]*memoryBackup, failing map[string]bool, now, at time.Time) {
 	b := s.Backup
 	interval := time.Duration(b.Settings.EveryMinutes) * time.Minute
 	checks := time.Duration(b.Settings.CheckDays) * 24 * time.Hour
@@ -261,7 +294,7 @@ func (m *Memory) takeSnapshots(s protocol.DesiredState, failing map[string]bool,
 		if a.State != protocol.AccountActive {
 			continue
 		}
-		backup := m.accountBackup(a.Slug)
+		backup := backups[a.Slug]
 		facts := &backup.facts
 		c := credentialsFor(b, a.Slug)
 		switch {

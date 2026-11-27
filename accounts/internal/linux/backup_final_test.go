@@ -29,7 +29,7 @@ func (f *hardeningFixture) applyCloseLock(state protocol.DesiredState) {
 }
 
 func TestCloseFinalsWaitForNewSyncAndKeepVersionedResults(t *testing.T) {
-	// R-0IHU-01TZ R-0JPQ-DTKO R-0KXM-RLBD
+	// R-B4MA-L362 R-B5U6-YUWR R-B723-CMNG
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	f.put(dataPrivateKey, "private", 0o600)
@@ -179,7 +179,7 @@ func TestCloseFinalsWaitForNewSyncAndKeepVersionedResults(t *testing.T) {
 }
 
 func TestCloseFinalRunsForAccountWithoutStreamedDatabases(t *testing.T) {
-	// R-0IHU-01TZ
+	// R-B4MA-L362
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	f.put("/srv/acme/document.txt", "plain text", 0o600)
@@ -223,7 +223,7 @@ func TestCloseFinalRunsForAccountWithoutStreamedDatabases(t *testing.T) {
 }
 
 func TestCloseFinalWithUnkeptWalkTimesOutFromLock(t *testing.T) {
-	// R-ZWJN-46HH
+	// R-BU86-M9QN
 	f := newBackupPassFixture(t)
 	f.put(dataPrivateKey, "private", 0o600)
 	f.put(dataPublicKey, "public", 0o644)
@@ -284,7 +284,7 @@ func TestCloseFinalWithUnkeptWalkTimesOutFromLock(t *testing.T) {
 }
 
 func TestCloseFinalKeepsWaitingForKnownUnsyncedDatabase(t *testing.T) {
-	// R-ZWJN-46HH
+	// R-BU86-M9QN
 	f := newBackupPassFixture(t)
 	f.state.Backup.Host = protocol.Credentials{}
 	f.put("/srv/acme/data/app.db", walSQLite, 0o660)
@@ -316,7 +316,7 @@ func TestCloseFinalKeepsWaitingForKnownUnsyncedDatabase(t *testing.T) {
 }
 
 func TestCloseFinalDiscardsPreviousPlacementsReadiness(t *testing.T) {
-	// R-0IHU-01TZ R-ZVBQ-QEQS
+	// R-B4MA-L362 R-BT0A-8HZY
 	for _, restarted := range []bool{false, true} {
 		t.Run(fmt.Sprintf("restarted %t", restarted), func(t *testing.T) {
 			f := newBackupPassFixture(t)
@@ -350,7 +350,7 @@ func TestCloseFinalDiscardsPreviousPlacementsReadiness(t *testing.T) {
 }
 
 func TestCloseFinalDoesNotUseHealthFromAnOlderWalkAfterFailedPublication(t *testing.T) {
-	// R-02N5-116Y R-ZWJN-46HH R-0IHU-01TZ
+	// R-AORL-M2J1 R-BU86-M9QN R-B4MA-L362
 	f := newBackupPassFixture(t)
 	f.state.Backup.Host = protocol.Credentials{}
 	f.stream()
@@ -390,8 +390,8 @@ func TestCloseFinalDoesNotUseHealthFromAnOlderWalkAfterFailedPublication(t *test
 	}
 }
 
-func TestCloseFinalUsesRetainedSyncReadinessWhenLimitedWalkCannotBeKept(t *testing.T) {
-	// R-ZWJN-46HH R-0IHU-01TZ
+func TestCloseFinalIsWithheldWhenLimitedWalkHasNoReadablePriorStatus(t *testing.T) {
+	// R-BU86-M9QN R-BWNZ-DT81 R-B4MA-L362
 	f := newBackupPassFixture(t)
 	f.state.Backup.Host = protocol.Credentials{}
 	f.put("/srv/acme/data/app.db", walSQLite, 0o660)
@@ -414,9 +414,14 @@ func TestCloseFinalUsesRetainedSyncReadinessWhenLimitedWalkCannotBeKept(t *testi
 	if err := os.MkdirAll(f.path("/srv/acme/data/"+strings.Repeat("deep/", linux.MaxDepth+1)), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	f.backupCommands = nil
 	if err := f.host.Stream(t.Context(), f.state); err == nil {
 		t.Fatal("Stream wrote through a symbolic link in the status path")
 	}
+	if got := f.commandsFor(f.path(linux.LitestreamPath)); len(got) != 0 {
+		t.Fatalf("limited walk used databases from unreadable prior status: %v", got)
+	}
+	f.expectAbsent(linux.BackupDir + "/acme.yml")
 	if err := os.Remove(status); err != nil {
 		t.Fatal(err)
 	}
@@ -428,19 +433,19 @@ func TestCloseFinalUsesRetainedSyncReadinessWhenLimitedWalkCannotBeKept(t *testi
 	f.at = lock.Add(linux.FinalSyncTimeout - time.Second)
 	f.backup()
 	pending := protocol.Step{ID: f.state.Backup.Close, State: protocol.StepPending}
-	if got := f.report().Backups[0]; got.Final != pending || got.Error != "" || len(f.resticVerbs()) != 0 {
-		t.Fatalf("before timeout with retained unsynced database: %+v, commands %v", got, f.backupCommands)
+	if got := f.report().Backups[0]; got.Final != pending || got.Error != machine.WalkUnrecorded || len(f.resticVerbs()) != 0 {
+		t.Fatalf("before timeout with unreadable prior walk: %+v, commands %v", got, f.backupCommands)
 	}
 	f.at = lock.Add(linux.FinalSyncTimeout)
 	f.backup()
 	failed := protocol.Step{ID: f.state.Backup.Close, State: protocol.StepFailed, At: f.at, Code: protocol.CodeFailed}
-	if got := f.report().Backups[0]; got.Final != failed || got.Error != machine.ErrNotSynced.Error() || len(f.resticVerbs()) != 0 {
-		t.Fatalf("at timeout with retained unsynced database: %+v, commands %v", got, f.backupCommands)
+	if got := f.report().Backups[0]; got.Final != failed || got.Error != machine.WalkUnrecorded || len(f.resticVerbs()) != 0 {
+		t.Fatalf("at timeout with unreadable prior walk: %+v, commands %v", got, f.backupCommands)
 	}
 }
 
 func TestCloseFinalUsesLatestWalkReadinessWhenReadbackFails(t *testing.T) {
-	// R-ZWJN-46HH
+	// R-BU86-M9QN
 	for _, latestSynced := range []bool{true, false} {
 		t.Run(fmt.Sprintf("latest synced %t", latestSynced), func(t *testing.T) {
 			f := newBackupPassFixture(t)
@@ -518,7 +523,7 @@ func TestCloseFinalUsesLatestWalkReadinessWhenReadbackFails(t *testing.T) {
 }
 
 func TestCloseFinalRechecksReadinessAfterCatConfig(t *testing.T) {
-	// R-ZWJN-46HH
+	// R-BU86-M9QN
 	f := newBackupPassFixture(t)
 	f.state.Backup.Host = protocol.Credentials{}
 	f.stream()
@@ -559,7 +564,7 @@ func TestCloseFinalRechecksReadinessAfterCatConfig(t *testing.T) {
 }
 
 func TestCloseFinalPreservesResticErrorWhenNoCommandRuns(t *testing.T) {
-	// R-ZWJN-46HH
+	// R-BU86-M9QN
 	f := newBackupPassFixture(t)
 	f.state.Backup.Host = protocol.Credentials{}
 	f.state.Backup.Settings.CheckDays = 1
@@ -616,7 +621,7 @@ func TestCloseFinalPreservesResticErrorWhenNoCommandRuns(t *testing.T) {
 }
 
 func TestCloseHostFinalWithoutActiveAccountsRetriesOnlyGreaterLockVersion(t *testing.T) {
-	// R-0JPQ-DTKO R-0KXM-RLBD
+	// R-B5U6-YUWR R-B723-CMNG
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	f.put(dataPrivateKey, "private", 0o600)
@@ -690,7 +695,7 @@ func TestCloseHostFinalWithoutActiveAccountsRetriesOnlyGreaterLockVersion(t *tes
 }
 
 func TestCloseFinalTimeoutCountsFromLock(t *testing.T) {
-	// R-0IHU-01TZ R-0JPQ-DTKO R-0KXM-RLBD
+	// R-B4MA-L362 R-B5U6-YUWR R-B723-CMNG
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	f.put("/srv/acme/data/app.db", "SQLite format 3\x00\x00\x00\x02\x02", 0o600)

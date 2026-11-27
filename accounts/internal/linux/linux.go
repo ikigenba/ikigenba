@@ -170,8 +170,9 @@ type Host struct {
 	resticInstall     installAttempt
 	litestreamInstall installAttempt
 	backupFactsMu     sync.Mutex
-	backupWalks       map[string]backupWalkPublication
-	backupInitialGID  *int64
+	backupPlacements  map[string]*backupPlacement
+	backupLegacyOnce  sync.Once
+	backupLegacyGIDs  map[string]int64
 	lockedBackupRepos map[string]error
 
 	previousCPU     cpuTimes
@@ -190,7 +191,6 @@ type Host struct {
 func New(env Env) *Host {
 	return &Host{
 		env: env, written: make(map[string]struct{}), signIns: make(map[string]time.Time),
-		backupWalks: make(map[string]backupWalkPublication),
 	}
 }
 
@@ -199,6 +199,7 @@ func (h *Host) Apply(ctx context.Context, s protocol.DesiredState) error {
 	if err := validateState(s); err != nil {
 		return err
 	}
+	h.rememberLegacyBackupGIDs(s)
 	defer h.clearBackups()
 	clear(h.written)
 	if err := h.locks(ctx, s); err != nil {

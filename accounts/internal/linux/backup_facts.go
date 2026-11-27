@@ -2,15 +2,19 @@ package linux
 
 import (
 	"cmp"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"time"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/ikigenba/ikigenba/accounts/internal/machine"
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
@@ -31,6 +35,7 @@ type backupWalk struct {
 }
 
 type backupAccountFacts struct {
+	GID          *int64 `json:",omitempty"`
 	Snapshot     time.Time
 	Snapshots    []int64
 	Checked      time.Time
@@ -150,6 +155,9 @@ func readBackupFacts[T any](h *Host, path string) T {
 
 func loadBackupFacts[T any](h *Host, path string) (T, error) {
 	var facts T
+	if err := h.backupDirectory(filepath.Dir(path), "", false); err != nil {
+		return facts, err
+	}
 	data, err := h.readBounded(path)
 	if err != nil {
 		return facts, err
@@ -161,11 +169,140 @@ func loadBackupFacts[T any](h *Host, path string) (T, error) {
 	return facts, nil
 }
 
-func (h *Host) readAccountBackup(slug string) backupAccountFacts {
-	if valid.Slug(slug) != nil {
-		return backupAccountFacts{}
+func accountBackupStatusPath(slug string) string { return backupStatusDir + "/" + slug + ".json" }
+
+func (h *Host) loadAccountBackup(account protocol.Account) (backupAccountFacts, error) {
+	if valid.Slug(account.Slug) != nil {
+		return backupAccountFacts{}, machine.ErrInvalidState
 	}
-	return readBackupFacts[backupAccountFacts](h, backupStatusDir+"/"+slug+".json")
+	facts, err := loadBackupFacts[backupAccountFacts](h, accountBackupStatusPath(account.Slug))
+	switch {
+	case err != nil:
+		return backupAccountFacts{}, err
+	case facts.GID != nil && *facts.GID == account.GID:
+		return facts, nil
+	case facts.GID == nil:
+		gid, known := h.backupLegacyGIDs[account.Slug]
+		if known && gid == account.GID {
+			// The predecessor bound its walk separately. Other facts stay
+			// eligible for first-state adoption.
+			if facts.WalkGID != nil && *facts.WalkGID != gid {
+				facts.Walk, facts.WalkRecorded, facts.WalkToken = backupWalk{}, false, ""
+			}
+			return facts, nil
+		}
+		return backupAccountFacts{}, nil
+	default:
+		return backupAccountFacts{}, nil
+	}
+}
+
+func (h *Host) readAccountBackupFor(account protocol.Account) backupAccountFacts {
+	facts, _ := h.loadAccountBackup(account)
+	return facts
+}
+
+type backupPlacement struct {
+	account protocol.Account
+	walk    backupWalkPublication
+}
+
+type backupPlacementsKey struct{}
+
+func backupFactAccounts(s protocol.DesiredState) map[string]protocol.Account {
+	accounts := make(map[string]protocol.Account)
+	if s.Backup != nil && s.Backup.Restore != nil {
+		for _, restore := range s.Backup.Restore.Accounts {
+			if valid.Slug(restore.Slug) == nil {
+				accounts[restore.Slug] = protocol.Account{Slug: restore.Slug, GID: restore.GID}
+			}
+		}
+	}
+	for _, account := range s.Accounts {
+		_, restoring := accounts[account.Slug]
+		if valid.Slug(account.Slug) == nil && (account.State == protocol.AccountActive || restoring) {
+			accounts[account.Slug] = account
+		}
+	}
+	return accounts
+}
+
+func (h *Host) rememberLegacyBackupGIDs(s protocol.DesiredState) {
+	h.backupLegacyOnce.Do(func() {
+		accounts := backupFactAccounts(s)
+		h.backupLegacyGIDs = make(map[string]int64, len(accounts))
+		for slug, account := range accounts {
+			h.backupLegacyGIDs[slug] = account.GID
+		}
+	})
+}
+
+// beginBackupFacts reconciles placement lifetimes before any pass work. Both
+// workers share a placement while its slug and gid stay in the desired state.
+func (h *Host) beginBackupFacts(ctx context.Context, s protocol.DesiredState) (context.Context, error) {
+	h.rememberLegacyBackupGIDs(s)
+	h.backupFactsMu.Lock()
+	defer h.backupFactsMu.Unlock()
+
+	accounts := backupFactAccounts(s)
+	placements := make(map[string]*backupPlacement, len(accounts))
+	for slug, account := range accounts {
+		if previous := h.backupPlacements[slug]; previous != nil && previous.account.GID == account.GID {
+			placements[slug] = previous
+		} else {
+			placements[slug] = &backupPlacement{account: account}
+		}
+	}
+	h.backupPlacements = placements
+	ctx = context.WithValue(ctx, backupPlacementsKey{}, placements)
+	return ctx, errors.Join(
+		h.pruneBackupFactDirectory(backupStatusDir, ".json", placements),
+		h.pruneBackupFactDirectory(BackupDir+"/manifest", "", placements),
+	)
+}
+
+// currentBackupPlacement is called under backupFactsMu before publishing.
+// Pointer identity also rejects writers from a previous lifetime of the same gid.
+func (h *Host) currentBackupPlacement(ctx context.Context, slug string) *backupPlacement {
+	placements, _ := ctx.Value(backupPlacementsKey{}).(map[string]*backupPlacement)
+	placement := placements[slug]
+	if h.backupPlacements[slug] != placement {
+		return nil
+	}
+	return placement
+}
+
+func (h *Host) pruneBackupFactDirectory(path, suffix string, placements map[string]*backupPlacement) error {
+	if err := h.backupDirectory(filepath.Dir(path), "", false); err != nil {
+		return err
+	}
+	dir, err := openBackupDirectory(unix.AT_FDCWD, h.path(path))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return hostError(path, err)
+	}
+	defer func() { _ = dir.Close() }()
+	var removalErr error
+	for {
+		names, err := dir.Readdirnames(ReadBatch)
+		for _, name := range names {
+			slug, ok := strings.CutSuffix(name, suffix)
+			if ok && valid.Slug(slug) == nil && placements[slug] == nil {
+				removeErr := unix.Unlinkat(int(dir.Fd()), name, 0)
+				if removeErr != nil && !errors.Is(removeErr, fs.ErrNotExist) && removalErr == nil {
+					removalErr = hostError(filepath.Join(path, name), removeErr)
+				}
+			}
+		}
+		if errors.Is(err, io.EOF) {
+			return removalErr
+		}
+		if err != nil {
+			return firstBackupError(removalErr, hostError(path, err))
+		}
+	}
 }
 
 type backupWalkState uint8
@@ -184,12 +321,10 @@ type backupWalkIdentity struct {
 type backupWalkDigest [sha256.Size]byte
 
 type backupWalkPublication struct {
-	identity     backupWalkIdentity
-	readiness    backupWalkReadiness
-	gid          int64
-	inactive     bool
-	blocked      bool
-	ignoreLegacy bool
+	identity  backupWalkIdentity
+	readiness backupWalkReadiness
+	attempted bool
+	blocked   bool
 }
 
 // All WAL databases must be synced after the lock. Save only their oldest
@@ -229,40 +364,25 @@ func (walk backupWalk) digest() (backupWalkDigest, error) {
 
 // Read the walk and its publication state together. Only the current pass's
 // read of the saved walk may supply a manifest or exclusions.
-func (h *Host) accountBackupForPass(account protocol.Account) (backupAccountFacts, backupWalkState, backupWalkReadiness) {
+func (h *Host) accountBackupForPass(ctx context.Context, account protocol.Account) (backupAccountFacts, backupWalkState, backupWalkReadiness) {
 	h.backupFactsMu.Lock()
 	defer h.backupFactsMu.Unlock()
-	facts := h.readAccountBackup(account.Slug)
-	facts.clearWalkForOtherPlacement(account.GID)
-	if facts.WalkGID == nil && !h.legacyWalkBelongsTo(account) {
-		facts.clearWalk()
+	placement := h.currentBackupPlacement(ctx, account.Slug)
+	if placement == nil {
+		return backupAccountFacts{}, walkNotAttempted, backupWalkReadiness{}
 	}
-	kept, attempted := h.backupWalks[account.Slug]
-	if !attempted {
+	facts := h.readAccountBackupFor(placement.account)
+	kept := placement.walk
+	if !kept.attempted {
 		if facts.WalkRecorded {
 			return facts, walkNotAttempted, facts.Walk.readiness()
 		}
-		return facts, walkNotAttempted, backupWalkReadiness{}
-	}
-	if kept.inactive || kept.gid != account.GID {
 		return facts, walkNotAttempted, backupWalkReadiness{}
 	}
 	if kept.blocked || !facts.matchesWalk(kept.identity) {
 		return facts, walkUnrecorded, kept.readiness
 	}
 	return facts, walkKept, kept.readiness
-}
-
-func (facts *backupAccountFacts) clearWalkForOtherPlacement(gid int64) {
-	// A legacy status file has no GID. Use it until the next publication
-	// binds the walk to an account placement.
-	if facts.WalkGID != nil && *facts.WalkGID != gid {
-		facts.clearWalk()
-	}
-}
-
-func (facts *backupAccountFacts) clearWalk() {
-	facts.Walk, facts.WalkRecorded, facts.WalkGID, facts.WalkToken = backupWalk{}, false, nil, ""
 }
 
 func (facts backupAccountFacts) matchesWalk(kept backupWalkIdentity) bool {
@@ -274,17 +394,15 @@ func (facts backupAccountFacts) matchesWalk(kept backupWalkIdentity) bool {
 }
 
 // keepBackupWalkHealth updates the authenticated publication under backupFactsMu.
-func (h *Host) keepBackupWalkHealth(slug string, facts backupAccountFacts) error {
+func (h *Host) keepBackupWalkHealth(placement *backupPlacement, facts backupAccountFacts) error {
 	identity, err := facts.walkIdentity()
 	if err != nil {
 		return err
 	}
-	if err := saveBackupFacts(h, backupStatusDir+"/"+slug+".json", facts); err != nil {
+	if err := h.saveAccountBackup(placement, facts); err != nil {
 		return err
 	}
-	publication := h.backupWalks[slug]
-	publication.identity, publication.readiness = identity, facts.Walk.readiness()
-	h.backupWalks[slug] = publication
+	placement.walk.identity, placement.walk.readiness = identity, facts.Walk.readiness()
 	return nil
 }
 
@@ -301,15 +419,33 @@ func saveBackupFacts(h *Host, path string, value any) error {
 	return err
 }
 
-func (h *Host) updateAccountBackup(slug string, update func(*backupAccountFacts)) error {
+func (h *Host) readAccountBackupForPass(ctx context.Context, slug string) backupAccountFacts {
+	h.backupFactsMu.Lock()
+	defer h.backupFactsMu.Unlock()
+	if placement := h.currentBackupPlacement(ctx, slug); placement != nil {
+		return h.readAccountBackupFor(placement.account)
+	}
+	return backupAccountFacts{}
+}
+
+func (h *Host) updateAccountBackup(ctx context.Context, slug string, update func(*backupAccountFacts)) error {
 	if valid.Slug(slug) != nil {
 		return machine.ErrInvalidState
 	}
 	h.backupFactsMu.Lock()
 	defer h.backupFactsMu.Unlock()
-	facts := h.readAccountBackup(slug)
+	placement := h.currentBackupPlacement(ctx, slug)
+	if placement == nil {
+		return nil
+	}
+	facts := h.readAccountBackupFor(placement.account)
 	update(&facts)
-	return saveBackupFacts(h, backupStatusDir+"/"+slug+".json", facts)
+	return h.saveAccountBackup(placement, facts)
+}
+
+func (h *Host) saveAccountBackup(placement *backupPlacement, facts backupAccountFacts) error {
+	facts.GID, facts.WalkGID = &placement.account.GID, nil
+	return saveBackupFacts(h, accountBackupStatusPath(placement.account.Slug), facts)
 }
 
 func (h *Host) updateHostBackup(update func(*backupHostFacts)) error {
@@ -339,19 +475,21 @@ func backupActiveAccounts(s protocol.DesiredState) []protocol.Account {
 }
 
 func (h *Host) backupReport(s protocol.DesiredState, out *protocol.Report) {
+	h.rememberLegacyBackupGIDs(s)
 	selected := backupActiveAccounts(s)
 	if s.Backup != nil && s.Backup.Restore != nil {
 		selected = make([]protocol.Account, 0, len(s.Backup.Restore.Accounts))
 		for _, a := range s.Backup.Restore.Accounts {
-			selected = append(selected, protocol.Account{Slug: a.Slug, GID: a.GID})
+			account := protocol.Account{Slug: a.Slug, GID: a.GID}
+			if i := slices.IndexFunc(s.Accounts, func(a protocol.Account) bool { return a.Slug == account.Slug }); i >= 0 {
+				account.GID = s.Accounts[i].GID
+			}
+			selected = append(selected, account)
 		}
 		slices.SortFunc(selected, func(a, b protocol.Account) int { return cmp.Compare(a.Slug, b.Slug) })
 	}
 	host := h.readHostBackup()
 	out.HostBackup = protocol.HostBackup{Snapshot: backupTime(host.Snapshot), Error: host.Error}
-	if !backupReady(s.Backup) || !hostBackupCredentials(s.Backup) {
-		out.HostBackup.Error = machine.NoCredentials
-	}
 	accounts := make(map[string]backupAccountFacts, min(len(selected), protocol.MaxBackupAccounts))
 	resticError, litestreamError := host.ResticInstallError, host.LitestreamInstallError
 	if current := h.resticInstall.errorText(); current != "" {
@@ -363,36 +501,16 @@ func (h *Host) backupReport(s protocol.DesiredState, out *protocol.Report) {
 	for i, account := range selected {
 		var facts backupAccountFacts
 		if i < protocol.MaxBackupAccounts {
-			facts = h.readAccountBackup(account.Slug)
-			facts.clearWalkForOtherPlacement(account.GID)
-			h.clearLegacyWalkForOtherPlacement(account, &facts)
+			facts = h.readAccountBackupFor(account)
 			accounts[account.Slug] = facts
 		}
 		_, credentials := accountBackupCredentials(s.Backup, account.Slug)
 		out.Backups = append(out.Backups, accountBackupReport(account.Slug, facts, backupReady(s.Backup) && credentials, resticError, litestreamError))
 	}
 	h.operationBackupReport(s, out, host, accounts)
-}
-
-func (h *Host) clearLegacyWalkForOtherPlacement(account protocol.Account, facts *backupAccountFacts) {
-	if facts.WalkGID != nil || !facts.WalkRecorded && facts.Walk.Error == "" {
-		return
+	if !backupReady(s.Backup) || !hostBackupCredentials(s.Backup) {
+		out.HostBackup.Error = machine.NoCredentials
 	}
-	h.backupFactsMu.Lock()
-	belongs := h.legacyWalkBelongsTo(account)
-	h.backupFactsMu.Unlock()
-	if !belongs {
-		facts.clearWalk()
-	}
-}
-
-// legacyWalkBelongsTo reads placement history under backupFactsMu.
-func (h *Host) legacyWalkBelongsTo(account protocol.Account) bool {
-	if h.backupInitialGID != nil && account.GID > *h.backupInitialGID {
-		return false
-	}
-	publication, attempted := h.backupWalks[account.Slug]
-	return !attempted || publication.gid == account.GID && !publication.ignoreLegacy
 }
 
 func accountBackupReport(slug string, facts backupAccountFacts, credentials bool, resticError, litestreamError string) protocol.AccountBackup {

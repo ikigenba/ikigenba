@@ -26,12 +26,21 @@ type memoryDisk struct {
 	folders   map[string]struct{}
 	seeds     map[string]Seed
 	databases map[string]map[string]*memoryDatabase
+	replicas  map[string]*memoryReplicas
 	restored  map[string]struct{}
 	copies    map[copyScope]*memoryCopies
 }
 
 type memoryDatabase struct {
-	wal     bool
+	wal bool
+}
+
+type memoryReplicas struct {
+	gid       int64
+	databases map[string]*memoryReplica
+}
+
+type memoryReplica struct {
 	started bool
 	facts   protocol.Database
 }
@@ -57,7 +66,8 @@ func (d *Disks) disk(volume string, owner *byte, restoreID string) *memoryDisk {
 		disk = &memoryDisk{
 			owner: owner, restoreID: restoreID, folders: make(map[string]struct{}), seeds: make(map[string]Seed),
 			databases: make(map[string]map[string]*memoryDatabase), restored: make(map[string]struct{}),
-			copies: make(map[copyScope]*memoryCopies),
+			replicas: make(map[string]*memoryReplicas),
+			copies:   make(map[copyScope]*memoryCopies),
 		}
 		d.volumes[volume] = disk
 	}
@@ -86,7 +96,20 @@ func (d *memoryDisk) addDatabase(account, path string, wal bool) {
 	if d.databases[account] == nil {
 		d.databases[account] = make(map[string]*memoryDatabase)
 	}
-	d.databases[account][path] = &memoryDatabase{wal: wal, facts: protocol.Database{Path: path}}
+	d.databases[account][path] = &memoryDatabase{wal: wal}
+	if replicas := d.replicas[account]; replicas != nil {
+		delete(replicas.databases, path)
+	}
+}
+
+func (d *memoryDisk) pruneReplicas(accounts map[string]int64) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for slug, replicas := range d.replicas {
+		if gid, keep := accounts[slug]; !keep || gid != replicas.gid {
+			delete(d.replicas, slug)
+		}
+	}
 }
 
 // AddDatabase replaces the database at path on the current volume.

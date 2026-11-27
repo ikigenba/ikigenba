@@ -37,13 +37,13 @@ func shouldFinish(step protocol.Step, id string, failedVersion, version int64) b
 	return step.ID != id || step.State == protocol.StepPending || (step.State == protocol.StepFailed && version > failedVersion)
 }
 
-func (m *Memory) finishClose(s protocol.DesiredState, failing map[string]bool, now, at time.Time) {
+func (m *Memory) finishClose(s protocol.DesiredState, backups map[string]*memoryBackup, failing map[string]bool, now, at time.Time) {
 	b := s.Backup
 	id := b.Close
 	if id == "" {
 		m.close = passDelay{}
 		m.hostBackup.Final = protocol.Step{}
-		for _, saved := range m.backups {
+		for _, saved := range backups {
 			saved.facts.Final = protocol.Step{}
 		}
 		return
@@ -55,7 +55,7 @@ func (m *Memory) finishClose(s protocol.DesiredState, failing map[string]bool, n
 		if a.State != protocol.AccountActive {
 			continue
 		}
-		saved := m.accountBackup(a.Slug)
+		saved := backups[a.Slug]
 		if shouldFinish(saved.facts.Final, id, saved.finalVersion, version) {
 			m.finishAccount(saved, credentialsFor(b, a.Slug), id, version, ready, failing[a.Slug], at)
 		}
@@ -96,14 +96,14 @@ func (m *Memory) finishAccount(b *memoryBackup, c protocol.Credentials, id strin
 	b.finalVersion = version
 }
 
-func (m *Memory) restoreHost(disk *memoryDisk, b *protocol.Backup, failing map[string]bool, now, at time.Time) {
+func (m *Memory) restoreHost(disk *memoryDisk, b *protocol.Backup, backups map[string]*memoryBackup, failing map[string]bool, now, at time.Time) {
 	q := b.Restore
 	id := q.ID
 	if disk == nil || disk.owner != m.identity {
 		m.restore = passDelay{}
 		m.hostBackup.Restored = pending(id)
 		for _, a := range q.Accounts {
-			m.accountBackup(a.Slug).facts.Restored = pending(id)
+			backups[a.Slug].facts.Restored = pending(id)
 		}
 		return
 	}
@@ -115,7 +115,7 @@ func (m *Memory) restoreHost(disk *memoryDisk, b *protocol.Backup, failing map[s
 	if !m.restore.ready(id, now, m.cfg.ApplyDelay) {
 		m.hostBackup.Restored = pending(id)
 		for _, a := range q.Accounts {
-			m.accountBackup(a.Slug).facts.Restored = pending(id)
+			backups[a.Slug].facts.Restored = pending(id)
 		}
 		return
 	}
@@ -125,7 +125,7 @@ func (m *Memory) restoreHost(disk *memoryDisk, b *protocol.Backup, failing map[s
 	disk.mu.Lock()
 	defer disk.mu.Unlock()
 	for _, a := range q.Accounts {
-		backup := m.accountBackup(a.Slug)
+		backup := backups[a.Slug]
 		facts := &backup.facts
 		if facts.Restored.ID == id && facts.Restored.State == protocol.StepDone {
 			if _, restored := disk.restored[a.Slug]; restored {
@@ -155,7 +155,7 @@ type memoryRequest struct {
 	result protocol.RestoreResult
 }
 
-func (m *Memory) restoreCopies(disk *memoryDisk, s protocol.DesiredState, failing map[string]bool, now time.Time) {
+func (m *Memory) restoreCopies(disk *memoryDisk, s protocol.DesiredState, backups map[string]*memoryBackup, failing map[string]bool, now time.Time) {
 	active := make(map[string]bool)
 	for _, account := range s.Accounts {
 		active[account.Slug] = account.State == protocol.AccountActive
@@ -169,12 +169,12 @@ func (m *Memory) restoreCopies(disk *memoryDisk, s protocol.DesiredState, failin
 		if r.result.State != "" || now.Before(r.first.Add(m.cfg.ApplyDelay)) || !active[q.Account] || credentialsFor(s.Backup, q.Account).AccessKeyID == "" {
 			continue
 		}
-		r.result = m.restoreCopy(disk, q, failing[q.Account])
+		r.result = restoreCopy(disk, q, backups[q.Account].facts.Snapshots, failing[q.Account])
 		m.requests[q.ID] = r
 	}
 }
 
-func (m *Memory) restoreCopy(disk *memoryDisk, q protocol.RestoreRequest, failing bool) protocol.RestoreResult {
+func restoreCopy(disk *memoryDisk, q protocol.RestoreRequest, snapshots []int64, failing bool) protocol.RestoreResult {
 	result := protocol.RestoreResult{ID: q.ID, State: protocol.StepFailed}
 	if failing {
 		result.Error = backupFailed
@@ -196,7 +196,7 @@ func (m *Memory) restoreCopy(disk *memoryDisk, q protocol.RestoreRequest, failin
 			return result
 		}
 	case protocol.RestoreFiles:
-		if !slices.Contains(m.accountBackup(q.Account).facts.Snapshots, q.AsOf.Unix()) {
+		if !slices.Contains(snapshots, q.AsOf.Unix()) {
 			result.Error = ErrNoSnapshot.Error()
 			return result
 		}

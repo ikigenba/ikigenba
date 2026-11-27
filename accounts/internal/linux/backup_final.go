@@ -4,14 +4,18 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/fs"
 	"os"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/ikigenba/ikigenba/accounts/internal/machine"
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
+	"github.com/ikigenba/ikigenba/accounts/internal/valid"
 )
 
 type backupOperationFacts struct {
@@ -83,7 +87,7 @@ func (h *Host) backupFinals(ctx context.Context, s protocol.DesiredState) (backu
 	var passErr error
 	for _, account := range backupActiveAccounts(s) {
 		slug := account.Slug
-		facts, walk, readiness := h.accountBackupForPass(account)
+		facts, walk, readiness := h.accountBackupForPass(ctx, account)
 		if facts.Operation.finalSettled(id, lock) {
 			continue
 		}
@@ -92,7 +96,7 @@ func (h *Host) backupFinals(ctx context.Context, s protocol.DesiredState) (backu
 		// An unavailable walk can also withhold an independent scheduled
 		// command when an unsynced final reaches its deadline.
 		if settled {
-			_, currentWalk, currentReadiness := h.accountBackupForPass(account)
+			_, currentWalk, currentReadiness := h.accountBackupForPass(ctx, account)
 			runs.Accounts[slug] = currentWalk != walkUnrecorded || currentReadiness.syncedAfter(lock.at)
 		}
 		allSettled = allSettled && settled
@@ -122,7 +126,7 @@ func (h *Host) finalizeAccountBackup(ctx context.Context, s protocol.DesiredStat
 	var backupErr error
 	switch {
 	case present && walk == walkUnrecorded && synced:
-		return h.deferAccountFinal(slug, s.Backup.Close, lock, machine.WalkUnrecorded, nil)
+		return h.deferAccountFinal(ctx, slug, s.Backup.Close, lock, machine.WalkUnrecorded, nil)
 	case present && synced && walk == walkNotAttempted:
 		// A persisted walk can prove synchronization, while the snapshot
 		// still requires a walk by this process.
@@ -133,11 +137,11 @@ func (h *Host) finalizeAccountBackup(ctx context.Context, s protocol.DesiredStat
 		interrupted, backupErr = h.backupAccount(ctx, s, account, credentials, facts, true, check, &lock)
 		switch {
 		case errors.Is(interrupted, errResticWalkUnavailable):
-			return h.deferAccountFinal(slug, s.Backup.Close, lock, machine.WalkUnrecorded, backupErr)
+			return h.deferAccountFinal(ctx, slug, s.Backup.Close, lock, machine.WalkUnrecorded, backupErr)
 		case errors.Is(interrupted, errResticFinalNotSynced):
-			return h.deferAccountFinal(slug, s.Backup.Close, lock, machine.ErrNotSynced.Error(), backupErr)
+			return h.deferAccountFinal(ctx, slug, s.Backup.Close, lock, machine.ErrNotSynced.Error(), backupErr)
 		}
-		failure = h.readAccountBackup(slug).Error
+		failure = h.readAccountBackupForPass(ctx, slug).Error
 		if failure == "" && backupErr != nil {
 			failure = boundBackupError(backupErr.Error())
 		}
@@ -148,17 +152,17 @@ func (h *Host) finalizeAccountBackup(ctx context.Context, s protocol.DesiredStat
 	default:
 		failure = machine.ErrNotSynced.Error()
 	}
-	return h.finishAccountFinal(slug, s.Backup.Close, lock, failure, backupErr)
+	return h.finishAccountFinal(ctx, slug, s.Backup.Close, lock, failure, backupErr)
 }
 
-func (h *Host) deferAccountFinal(slug, id string, lock backupCloseLock, failure string, backupErr error) (bool, error) {
+func (h *Host) deferAccountFinal(ctx context.Context, slug, id string, lock backupCloseLock, failure string, backupErr error) (bool, error) {
 	if !h.env.Now().Before(lock.at.Add(FinalSyncTimeout)) {
-		return h.finishAccountFinal(slug, id, lock, failure, backupErr)
+		return h.finishAccountFinal(ctx, slug, id, lock, failure, backupErr)
 	}
 	if failure != machine.WalkUnrecorded {
 		return false, backupErr
 	}
-	err := h.updateAccountBackup(slug, func(facts *backupAccountFacts) {
+	err := h.updateAccountBackup(ctx, slug, func(facts *backupAccountFacts) {
 		facts.Operation.Final = protocol.Step{ID: id, State: protocol.StepPending}
 		facts.Operation.FinalVersion = lock.version
 		facts.Error = failure
@@ -166,9 +170,9 @@ func (h *Host) deferAccountFinal(slug, id string, lock backupCloseLock, failure 
 	return false, errors.Join(backupErr, err)
 }
 
-func (h *Host) finishAccountFinal(slug, id string, lock backupCloseLock, failure string, backupErr error) (bool, error) {
+func (h *Host) finishAccountFinal(ctx context.Context, slug, id string, lock backupCloseLock, failure string, backupErr error) (bool, error) {
 	step := h.backupOperationStep(id, backupFailureCode(failure))
-	saveErr := h.updateAccountBackup(slug, func(facts *backupAccountFacts) {
+	saveErr := h.updateAccountBackup(ctx, slug, func(facts *backupAccountFacts) {
 		facts.Operation.Final, facts.Operation.FinalVersion, facts.Error = step, lock.version, failure
 	})
 	return saveErr == nil, errors.Join(backupErr, saveErr)
@@ -211,14 +215,19 @@ func (h *Host) clearRestoreMarker() error {
 }
 
 func (h *Host) clearWholeRestoreFacts() error {
+	h.backupFactsMu.Lock()
+	defer h.backupFactsMu.Unlock()
 	if err := h.backupDirectory(backupStatusDir, "", false); err != nil {
 		return err
 	}
-	if h.readHostBackup().Operation.Restore.Step.ID == "" {
+	host := h.readHostBackup()
+	if host.Operation.Restore.Step.ID == "" {
 		return nil
 	}
-
-	status, err := os.Open(h.path(backupStatusDir))
+	status, err := openBackupDirectory(unix.AT_FDCWD, h.path(backupStatusDir))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
 	if err != nil {
 		return hostError(backupStatusDir, err)
 	}
@@ -227,12 +236,16 @@ func (h *Host) clearWholeRestoreFacts() error {
 		names, err := status.Readdirnames(ReadBatch)
 		for _, name := range names {
 			slug, ok := strings.CutSuffix(name, ".json")
-			if !ok || h.readAccountBackup(slug).Operation.Restore.Step.ID == "" {
+			if !ok || valid.Slug(slug) != nil {
 				continue
 			}
-			if err := h.updateAccountBackup(slug, func(f *backupAccountFacts) {
-				f.Operation.Restore = backupRestoreAttempt{}
-			}); err != nil {
+			path := accountBackupStatusPath(slug)
+			facts := readBackupFacts[backupAccountFacts](h, path)
+			if facts.Operation.Restore.Step.ID == "" {
+				continue
+			}
+			facts.Operation.Restore = backupRestoreAttempt{}
+			if err := saveBackupFacts(h, path, facts); err != nil {
 				return err
 			}
 		}
@@ -243,7 +256,6 @@ func (h *Host) clearWholeRestoreFacts() error {
 			return hostError(backupStatusDir, err)
 		}
 	}
-	return h.updateHostBackup(func(f *backupHostFacts) {
-		f.Operation.Restore = backupRestoreAttempt{}
-	})
+	host.Operation.Restore = backupRestoreAttempt{}
+	return saveBackupFacts(h, backupStatusDir+"/.host.json", host)
 }

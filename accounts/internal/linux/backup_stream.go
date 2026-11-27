@@ -94,6 +94,7 @@ func walPaths(walk backupWalk) []string {
 
 // Stream discovers SQLite replicas, reconciles their units, and records replica health.
 func (h *Host) Stream(ctx context.Context, s protocol.DesiredState) error {
+	ctx, pruneErr := h.beginBackupFacts(ctx, s)
 	b := s.Backup
 	dirErr := h.privateBackupDir(BackupDir)
 	if !backupReady(b) {
@@ -102,10 +103,9 @@ func (h *Host) Stream(ctx context.Context, s protocol.DesiredState) error {
 		}
 		return nil
 	}
-	h.pruneBackupWalks(s)
 	ctx = withBackupDiagnosticRedactor(ctx, b)
 	installErr := h.ensureLitestream(ctx)
-	passErr := errors.Join(dirErr, installErr)
+	passErr := errors.Join(pruneErr, dirErr, installErr)
 	if dirErr == nil {
 		passErr = firstBackupError(passErr, h.updateHostBackup(func(facts *backupHostFacts) {
 			facts.LitestreamInstallError = boundBackupError(h.litestreamInstall.errorText())
@@ -117,7 +117,7 @@ func (h *Host) Stream(ctx context.Context, s protocol.DesiredState) error {
 	for _, account := range backupActiveAccounts(s) {
 		slug := account.Slug
 		walk, walkErr := h.walkBackupDatabases(slug)
-		walk, saveErr := h.recordBackupWalk(account, walk, dirErr == nil)
+		walk, saveErr := h.recordBackupWalk(ctx, slug, walk, dirErr == nil)
 		passErr = firstBackupError(passErr, firstBackupError(walkErr, saveErr))
 		if dirErr != nil {
 			continue
@@ -134,7 +134,7 @@ func (h *Host) Stream(ctx context.Context, s protocol.DesiredState) error {
 			passErr = firstBackupError(passErr, unitErr)
 		}
 		if unitErr == nil {
-			passErr = firstBackupError(passErr, h.streamAccount(ctx, b, slug, creds, paths, walk, saveErr == nil))
+			passErr = firstBackupError(passErr, h.streamAccount(ctx, b, account, creds, paths, walk, saveErr == nil))
 		}
 	}
 	if dirErr != nil {
@@ -155,11 +155,15 @@ func (h *Host) prepareStreamUnit(ctx context.Context) error {
 	return err
 }
 
-func (h *Host) streamAccount(ctx context.Context, b *protocol.Backup, slug string, c protocol.Credentials, paths []string, walk backupWalk, kept bool) error {
+func streamRestartPath(slug string) string { return BackupDir + "/" + slug + ".restart-gid" }
+
+func (h *Host) streamAccount(ctx context.Context, b *protocol.Backup, account protocol.Account, c protocol.Credentials, paths []string, walk backupWalk, kept bool) error {
+	slug := account.Slug
+	restartPath := streamRestartPath(slug)
+	lastGID, _ := h.readBounded(restartPath)
+	previousGID, parseErr := strconv.ParseInt(strings.TrimSuffix(string(lastGID), "\n"), 10, 64)
+	gidChanged := parseErr == nil && previousGID != account.GID
 	config := BackupDir + "/" + slug + ".yml"
-	if err := h.privateBackupDir(BackupDir + "/meta/" + slug); err != nil {
-		return err
-	}
 	changed, err := h.writeBackupFile(config, backupLitestreamYAML(b, slug, paths))
 	if err != nil {
 		return err
@@ -176,22 +180,29 @@ func (h *Host) streamAccount(ctx context.Context, b *protocol.Backup, slug strin
 	newEnv := streamEnv(c, b.Region, digest)
 	envPath := BackupDir + "/" + slug + ".env"
 	previous, readErr := h.readBounded(envPath)
-	if active.ExitCode != 0 || changed || readErr != nil || restartStreamEnv(string(previous), newEnv, h.env.Now()) {
+	if gidChanged {
+		if err := h.privateBackupDir(BackupDir + "/meta"); err != nil {
+			return err
+		}
+		if err := h.removeStreamMeta(slug); err != nil {
+			return err
+		}
+	} else if err := h.privateBackupDir(BackupDir + "/meta/" + slug); err != nil {
+		return err
+	}
+	var passErr error
+	if active.ExitCode != 0 || changed || readErr != nil || restartStreamEnv(string(previous), newEnv, h.env.Now()) || gidChanged {
 		if _, err := h.writeBackupFile(envPath, []byte(newEnv)); err != nil {
 			return err
 		}
 		if _, err := h.run(ctx, "systemctl", "restart", streamInstance(slug)); err != nil {
 			return err
 		}
+		_, passErr = h.writeBackupFile(restartPath, []byte(strconv.FormatInt(account.GID, 10)+"\n"))
 	}
 	if walk.Error == machine.DataTooLarge {
-		return nil
+		return passErr
 	}
-	identity, err := h.readAccountBackup(slug).walkIdentity()
-	if err != nil {
-		return err
-	}
-	var passErr error
 	for i := range walk.Databases {
 		db := &walk.Databases[i]
 		if db.WAL {
@@ -199,7 +210,7 @@ func (h *Host) streamAccount(ctx context.Context, b *protocol.Backup, slug strin
 		}
 	}
 	if kept {
-		passErr = firstBackupError(passErr, h.saveStreamHealth(slug, walk, identity))
+		passErr = firstBackupError(passErr, h.saveStreamHealth(ctx, slug, walk))
 	}
 	return passErr
 }
@@ -238,15 +249,28 @@ func (h *Host) removeStreamAccount(ctx context.Context, slug string) error {
 	}
 	_, ymlErr := h.remove(BackupDir + "/" + slug + ".yml")
 	_, envErr := h.remove(BackupDir + "/" + slug + ".env")
+	metaErr := h.removeStreamMeta(slug)
+	_, restartErr := h.remove(streamRestartPath(slug))
+	return errors.Join(err, ymlErr, envErr, metaErr, restartErr)
+}
+
+func (h *Host) removeStreamMeta(slug string) error {
 	meta := BackupDir + "/meta"
-	info, metaErr := os.Lstat(h.path(meta))
-	if metaErr == nil && info.IsDir() {
-		metaErr = os.RemoveAll(h.path(filepath.Join(meta, slug)))
+	info, err := os.Lstat(h.path(meta))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
 	}
-	if errors.Is(metaErr, fs.ErrNotExist) {
-		metaErr = nil
+	if err != nil {
+		return hostError(meta, err)
 	}
-	return errors.Join(err, ymlErr, envErr, metaErr)
+	if !info.IsDir() {
+		return nil
+	}
+	path := filepath.Join(meta, slug)
+	if err := os.RemoveAll(h.path(path)); err != nil {
+		return hostError(path, err)
+	}
+	return nil
 }
 
 func (h *Host) streamDatabase(ctx context.Context, b *protocol.Backup, slug string, c protocol.Credentials, config string, db *backupDatabase) error {
@@ -301,12 +325,15 @@ func backupTxID(s string) (uint64, bool) {
 	return id, err == nil
 }
 
-func (h *Host) saveStreamHealth(slug string, walk backupWalk, identity backupWalkIdentity) error {
+func (h *Host) saveStreamHealth(ctx context.Context, slug string, walk backupWalk) error {
 	h.backupFactsMu.Lock()
 	defer h.backupFactsMu.Unlock()
-	facts := h.readAccountBackup(slug)
-	publication := h.backupWalks[slug]
-	if publication.blocked || identity != publication.identity || !facts.matchesWalk(identity) {
+	placement := h.currentBackupPlacement(ctx, slug)
+	if placement == nil || placement.walk.blocked {
+		return nil
+	}
+	facts, _ := h.loadAccountBackup(placement.account)
+	if !facts.matchesWalk(placement.walk.identity) {
 		return nil
 	}
 	for _, updated := range walk.Databases {
@@ -315,5 +342,5 @@ func (h *Host) saveStreamHealth(slug string, walk backupWalk, identity backupWal
 			facts.Walk.Databases[i] = updated
 		}
 	}
-	return h.keepBackupWalkHealth(slug, facts)
+	return h.keepBackupWalkHealth(placement, facts)
 }

@@ -101,7 +101,7 @@ func (f *hardeningFixture) prepareWholeRestore(state protocol.DesiredState) {
 }
 
 func TestWholeRestoreWaitsForApplyAndChecksInputs(t *testing.T) {
-	// R-0M5J-5D22 R-Z2JU-7NY6
+	// R-B89Z-QEE5 R-Z2JU-7NY6
 	for _, tc := range []struct {
 		name string
 		edit func(*hardeningFixture, *protocol.DesiredState)
@@ -212,7 +212,7 @@ func TestWholeRestoreWaitsForApplyAndChecksInputs(t *testing.T) {
 }
 
 func TestBackupClearsRestoreMarkerWithoutFollowingLinks(t *testing.T) {
-	// R-ZKUB-Y82L R-0H9X-MA3A
+	// R-ZKUB-Y82L R-B3EE-7BFD
 	t.Run("linked data directory", func(t *testing.T) {
 		f := newBackupPassFixture(t)
 		unrelated := "/unrelated-restore/" + filepath.Base(linux.RestoreMarker)
@@ -245,7 +245,7 @@ func TestBackupClearsRestoreMarkerWithoutFollowingLinks(t *testing.T) {
 }
 
 func TestWholeRestoreSelectsNewestTargetsAndRecoversAfterRestart(t *testing.T) {
-	// R-0NDF-J4SR R-0OLB-WWJG R-0PT8-AOA5 R-0UOT-TR8X R-0X4M-LAQB R-ZJMF-KGBW R-ZKUB-Y82L
+	// R-B9HW-464U R-BAPS-HXVJ R-BD5L-9HCX R-BGTA-ESL0 R-BJ93-6C2E R-ZJMF-KGBW R-ZKUB-Y82L
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := wholeRestoreState()
@@ -388,6 +388,8 @@ func TestWholeRestoreSelectsNewestTargetsAndRecoversAfterRestart(t *testing.T) {
 	f.expectAbsent(linux.BackupDir + "/restore.yml")
 
 	withoutRestore := state
+	restored := state.Backup.Restore.Accounts[0]
+	withoutRestore.Accounts = []protocol.Account{{Slug: restored.Slug, GID: restored.GID + 1, State: protocol.AccountActive}}
 	withoutRestore.Backup = &protocol.Backup{Bucket: state.Backup.Bucket, Region: state.Backup.Region, Settings: state.Backup.Settings}
 	f.backup(withoutRestore)
 	f.expectAbsent(linux.RestoreMarker)
@@ -404,7 +406,7 @@ func TestWholeRestoreSelectsNewestTargetsAndRecoversAfterRestart(t *testing.T) {
 }
 
 func TestWholeRestoreRemovesLitestreamConfigOnFailure(t *testing.T) {
-	// R-0X4M-LAQB
+	// R-BJ93-6C2E
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := wholeRestoreState()
@@ -458,7 +460,7 @@ func TestWholeRestoreRemovesLitestreamConfigOnFailure(t *testing.T) {
 }
 
 func TestWholeRestoreWithNoSnapshots(t *testing.T) {
-	// R-0M5J-5D22 R-0NDF-J4SR R-0OLB-WWJG R-0PT8-AOA5
+	// R-B89Z-QEE5 R-B9HW-464U R-BAPS-HXVJ R-BD5L-9HCX
 	for _, status := range []int{0, 10} {
 		t.Run(fmt.Sprintf("exit %d", status), func(t *testing.T) {
 			f := newHardeningFixture(t)
@@ -569,7 +571,7 @@ func (f *hardeningFixture) checkRestoreLitestream(c linux.Command, state protoco
 }
 
 func TestWholeRestoreRetriesUnexpectedExitThreeTimes(t *testing.T) {
-	// R-0R14-OG0U
+	// R-BEDH-N93M
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := wholeRestoreState()
@@ -623,7 +625,7 @@ func TestWholeRestoreRetriesUnexpectedExitThreeTimes(t *testing.T) {
 }
 
 func TestWholeRestoreBoundsManifest(t *testing.T) {
-	// R-0TGX-FZI8
+	// R-BFLE-10UB
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := wholeRestoreState()
@@ -711,7 +713,7 @@ func writeOlderRestoreSnapshots(f *hardeningFixture, c linux.Command) {
 }
 
 func TestWholeRestoreRefusesOccupiedTargetsAndRetriesRemainingMoves(t *testing.T) {
-	// R-0OLB-WWJG R-0PT8-AOA5
+	// R-BAPS-HXVJ R-BD5L-9HCX
 	for _, occupiedInitially := range []bool{true, false} {
 		t.Run(fmt.Sprintf("occupied initially %t", occupiedInitially), func(t *testing.T) {
 			f := newHardeningFixture(t)
@@ -788,7 +790,7 @@ func partialRestoreState() protocol.DesiredState {
 }
 
 func TestPartialDatabaseRestoreNamesCopiesAndKeepsResults(t *testing.T) {
-	// R-0VWQ-7IZM R-ZB34-W251 R-0YCI-Z2H0 R-0X4M-LAQB R-ZIEJ-6OL7
+	// R-BI16-SKBP R-ZB34-W251 R-BKGZ-K3T3 R-BJ93-6C2E R-ZIEJ-6OL7
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := partialRestoreState()
@@ -921,7 +923,7 @@ func (f *hardeningFixture) forbidRestoreWork() {
 }
 
 func TestPartialDatabaseRestoreRefusesSymlinkAndCollision(t *testing.T) {
-	// R-0YCI-Z2H0 R-7VGU-VQLI
+	// R-BKGZ-K3T3 R-7VGU-VQLI
 	for _, linked := range []bool{true, false} {
 		t.Run(fmt.Sprintf("linked data directory %t", linked), func(t *testing.T) {
 			f := newHardeningFixture(t)
@@ -974,7 +976,7 @@ func TestPartialDatabaseRestoreRefusesSymlinkAndCollision(t *testing.T) {
 }
 
 func TestPartialRestoresRemoveWorkResidue(t *testing.T) {
-	// R-0YCI-Z2H0 R-0ZKF-CU7P
+	// R-BKGZ-K3T3 R-BLOV-XVJS
 	for _, tc := range []struct {
 		kind   string
 		path   string
@@ -1070,7 +1072,7 @@ func TestPartialRestoresRemoveWorkResidue(t *testing.T) {
 }
 
 func TestPartialFilesRestoreEscapesPatternAndCopiesIntoHome(t *testing.T) {
-	// R-0ZKF-CU7P R-0X4M-LAQB R-0UOT-TR8X R-ZB34-W251
+	// R-BLOV-XVJS R-BJ93-6C2E R-BGTA-ESL0 R-ZB34-W251
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := partialRestoreState()
@@ -1121,7 +1123,7 @@ func TestPartialFilesRestoreEscapesPatternAndCopiesIntoHome(t *testing.T) {
 }
 
 func TestPartialFilesRestoreSkipsOccupiedTimestampDirectory(t *testing.T) {
-	// R-0ZKF-CU7P
+	// R-BLOV-XVJS
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := partialRestoreState()
@@ -1234,7 +1236,7 @@ func TestWholeRestoreStatePrunesAbsentPartialRequest(t *testing.T) {
 }
 
 func TestWholeRestoreRetriesTargetThatWasNeverMoved(t *testing.T) {
-	// R-0PT8-AOA5
+	// R-BD5L-9HCX
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := wholeRestoreState()

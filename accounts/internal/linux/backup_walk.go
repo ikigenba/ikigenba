@@ -3,6 +3,7 @@ package linux
 import (
 	"bytes"
 	"cmp"
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -165,60 +166,28 @@ func backupDBHeader(fd int, name string) (database, wal bool, err error) {
 	return true, n == len(header) && header[18] == 2 && header[19] == 2, nil
 }
 
-func (h *Host) pruneBackupWalks(s protocol.DesiredState) {
-	h.backupFactsMu.Lock()
-	defer h.backupFactsMu.Unlock()
-	if h.backupInitialGID == nil {
-		// Any placement added after this state has a greater GID. A legacy
-		// record left by an old placement cannot belong to that account.
-		var highest int64
-		for _, account := range s.Accounts {
-			highest = max(highest, account.GID)
-		}
-		h.backupInitialGID = &highest
-	}
-	for slug, walk := range h.backupWalks {
-		index := slices.IndexFunc(s.Accounts, func(a protocol.Account) bool { return a.Slug == slug })
-		switch {
-		case index < 0:
-			delete(h.backupWalks, slug)
-		case s.Accounts[index].State != protocol.AccountActive || s.Accounts[index].GID != walk.gid:
-			// Keep the saved identity and any withholding for the same
-			// account, but require a new walk on reactivation.
-			walk.inactive = true
-			h.backupWalks[slug] = walk
-		}
-	}
-}
-
-func (h *Host) recordBackupWalk(account protocol.Account, walk backupWalk, directoryReady bool) (backupWalk, error) {
+func (h *Host) recordBackupWalk(ctx context.Context, slug string, walk backupWalk, directoryReady bool) (backupWalk, error) {
 	h.backupFactsMu.Lock()
 	defer h.backupFactsMu.Unlock()
 
-	slug := account.Slug
-	previous, attempted := h.backupWalks[slug]
-	replaced := attempted && previous.gid != account.GID
-	if replaced {
-		previous = backupWalkPublication{ignoreLegacy: true}
+	placement := h.currentBackupPlacement(ctx, slug)
+	if placement == nil {
+		return walk, nil
 	}
+	previous := placement.walk
 	publication := previous
-	publication.gid, publication.inactive = account.GID, false
+	publication.attempted = true
 	publication.blocked = true
 	limited := walk.Error == machine.DataTooLarge
 	publication.readiness = walk.readiness()
 	// A finished walk supersedes its predecessor for restic even if
 	// its publication fails. Keep the last saved identity for discovery.
-	h.backupWalks[slug] = publication
+	placement.walk = publication
 	if !directoryReady {
 		return walk, nil
 	}
 
-	path := backupStatusDir + "/" + slug + ".json"
-	facts, err := loadBackupFacts[backupAccountFacts](h, path)
-	if facts.WalkGID == nil && !h.legacyWalkBelongsTo(account) {
-		facts.clearWalk()
-	}
-	facts.clearWalkForOtherPlacement(account.GID)
+	facts, err := h.loadAccountBackup(placement.account)
 	if limited {
 		retained := facts.WalkRecorded && (previous.identity.token == "" || facts.matchesWalk(previous.identity))
 		// A first, limited walk keeps an empty set. A missing or unreadable
@@ -245,12 +214,9 @@ func (h *Host) recordBackupWalk(account protocol.Account, walk backupWalk, direc
 		publication.blocked = false
 	}
 	publication.readiness = walk.readiness()
-	attempt := h.backupWalks[slug]
-	attempt.readiness = publication.readiness
-	h.backupWalks[slug] = attempt
-	facts.Walk, facts.WalkGID = walk, &account.GID
-	publication.ignoreLegacy = false
-	return walk, h.publishBackupWalk(slug, facts, publication)
+	placement.walk.readiness = publication.readiness
+	facts.Walk, facts.GID, facts.WalkGID = walk, &placement.account.GID, nil
+	return walk, h.publishBackupWalk(placement, facts, publication)
 }
 
 func (h *Host) stageBackupPublication(path string, marshal func(token string) ([]byte, error)) (string, error) {
@@ -277,8 +243,8 @@ func (h *Host) stageBackupPublication(path string, marshal func(token string) ([
 	})
 }
 
-func (h *Host) publishBackupWalk(slug string, facts backupAccountFacts, publication backupWalkPublication) error {
-	path := backupStatusDir + "/" + slug + ".json"
+func (h *Host) publishBackupWalk(placement *backupPlacement, facts backupAccountFacts, publication backupWalkPublication) error {
+	path := accountBackupStatusPath(placement.account.Slug)
 	temp, err := h.stageBackupPublication(path, func(token string) ([]byte, error) {
 		facts.WalkToken = token
 		return json.Marshal(facts)
@@ -295,6 +261,6 @@ func (h *Host) publishBackupWalk(slug string, facts backupAccountFacts, publicat
 		return hostError(path, err)
 	}
 	publication.identity = identity
-	h.backupWalks[slug] = publication
+	placement.walk = publication
 	return nil
 }

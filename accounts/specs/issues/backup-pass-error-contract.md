@@ -1,0 +1,9 @@
+# Backup pass errors have conflicting requirements
+
+Filed during the accounts build-spec run from `789907d3`. The blocked requirements are R-AHG7-BG2V, R-AZQP-207A and R-AXAW-AGPW in D15.
+
+- Give `Stream` an active `acme` with no `backup` member and an existing `BackupDir/acme.yml`. Have the recording `Execute` return exit 0 for `systemctl is-active` and exit 1 for `systemctl stop`. R-Y6RR-TK2S requires the call to return nil. R-AHG7-BG2V requires recording the failed stop for `acme` and returning a non-nil error, which R-AXAW-AGPW also requires.
+- Run the R-BU86-M9QN example where `Stream` walks an active `acme` with usable credentials while `BackupDir` is a regular file. R-AHG7-BG2V requires recording the failure to keep that walk. Replace the file with a directory and run `Backup` without another `Stream`. R-BU86-M9QN requires `Inspect` to report `machine.WalkUnrecorded`. The `Stream` error has not cleared and R-AZQP-207A requires it to take precedence. While the path remains a regular file, R-B26H-TJOO also requires the recorded error to be written beneath it and available to a fresh `Host`. Its exception for an unkept walk does not cover the error.
+- In a valid `Stream`, have the recording `Execute` return exit 1 from `litestream status` for `acme`, with the account's session token in the last stderr line. R-AHG7-BG2V requires that line in the account's error. R-BRSD-UQ99 forbids the token in the report, persisted facts and returned errors. The same conflict exists between R-AXAW-AGPW and R-BRSD-UQ99 for restic stderr.
+
+Specify whether cleanup failures before backup validation are diagnostic only or returned as pass errors. Define what the current and fresh `Host` report when the facts directory cannot be written, and which error wins in the `WalkUnrecorded` example. Specify redaction of credential values before extracting or publishing command diagnostics. These choices change the contract and cannot be made in the build run.

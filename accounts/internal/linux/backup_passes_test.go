@@ -188,7 +188,7 @@ func TestBackupsPreserveUncredentialedAccounts(t *testing.T) {
 }
 
 func TestAccountResticWaitsForItsWalk(t *testing.T) {
-	// R-ZVBQ-QEQS
+	// R-BT0A-8HZY
 	f := newBackupPassFixture(t)
 	f.stream()
 	f.host = linux.New(f.env)
@@ -244,7 +244,7 @@ func TestAccountResticWaitsForItsWalk(t *testing.T) {
 }
 
 func TestDatabaseDiscoveryUsesValidRegularSQLiteFiles(t *testing.T) {
-	// R-ZXRJ-HY86
+	// R-BVG3-01HC
 	f := newBackupPassFixture(t)
 	f.put("/srv/acme/data/z.db", plainSQLite, 0o660)
 	f.put("/srv/acme/data/mixed.db", "SQLite format 3\x00\x00\x00\x02\x01", 0o600)
@@ -287,7 +287,7 @@ func TestDatabaseDiscoveryUsesValidRegularSQLiteFiles(t *testing.T) {
 }
 
 func TestDatabaseWalkBoundsKeepPriorCompletedFacts(t *testing.T) {
-	// R-ZYZF-VPYV
+	// R-BWNZ-DT81
 	f := newBackupPassFixture(t)
 	for i := range linux.MaxDatabasesPerAccount + 1 {
 		f.put(fmt.Sprintf("/srv/acme/data/db%03d", i), walSQLite, 0o600)
@@ -310,7 +310,7 @@ func TestDatabaseWalkBoundsKeepPriorCompletedFacts(t *testing.T) {
 }
 
 func TestDepthLimitedWalkRejectsUnreadableFallback(t *testing.T) {
-	// R-ZVBQ-QEQS R-ZYZF-VPYV R-0G21-8ICL
+	// R-BT0A-8HZY R-BWNZ-DT81 R-B26H-TJOO
 	for _, corruption := range []string{"oversized", "missing", "stale"} {
 		t.Run(corruption, func(t *testing.T) {
 			f := newBackupPassFixture(t)
@@ -358,7 +358,7 @@ func TestDepthLimitedWalkRejectsUnreadableFallback(t *testing.T) {
 }
 
 func TestDepthLimitedWalkUsesOnlyKeptFacts(t *testing.T) {
-	// R-ZVBQ-QEQS R-ZYZF-VPYV
+	// R-BT0A-8HZY R-BWNZ-DT81
 	for _, dir := range []string{linux.BackupDir, linux.BackupDir + "/status"} {
 		t.Run(dir, func(t *testing.T) {
 			f := newBackupPassFixture(t)
@@ -408,7 +408,7 @@ func TestDepthLimitedWalkUsesOnlyKeptFacts(t *testing.T) {
 }
 
 func TestCompleteWalkRestoresEligibilityAfterLimitedWalk(t *testing.T) {
-	// R-ZVBQ-QEQS
+	// R-BT0A-8HZY
 	f := newBackupPassFixture(t)
 	f.put("/srv/acme/data/old.db", walSQLite, 0o600)
 	f.stream()
@@ -439,12 +439,11 @@ func TestCompleteWalkRestoresEligibilityAfterLimitedWalk(t *testing.T) {
 	f.expectFile(linux.BackupDir+"/manifest/acme", fmt.Sprintf("%d %d 0660 data/new.db\n", os.Getuid(), os.Getgid()), 0o600)
 }
 
-func TestDepthLimitedWalkUsesLegacyStatusAfterRestart(t *testing.T) {
-	// R-ZVBQ-QEQS R-ZYZF-VPYV R-0G21-8ICL
+func TestDepthLimitedWalkUsesSavedStatusAfterRestart(t *testing.T) {
+	// R-BT0A-8HZY R-BWNZ-DT81 R-B26H-TJOO
 	f := newBackupPassFixture(t)
 	f.put("/srv/acme/data/app.db", walSQLite, 0o660)
 	f.stream()
-	f.removeSavedWalkGID()
 	f.host = linux.New(f.env)
 	if err := os.MkdirAll(f.path("/srv/acme/data/"+strings.Repeat("deep/", linux.MaxDepth+1)), 0o700); err != nil {
 		t.Fatal(err)
@@ -455,14 +454,13 @@ func TestDepthLimitedWalkUsesLegacyStatusAfterRestart(t *testing.T) {
 	f.expectFile(linux.BackupDir+"/manifest/acme", fmt.Sprintf("%d %d 0660 data/app.db\n", os.Getuid(), os.Getgid()), 0o600)
 }
 
-func TestLegacyWalkFromPreviousPlacementIsNotReused(t *testing.T) {
-	// R-ZVBQ-QEQS R-ZYZF-VPYV R-0DM8-GYV7
+func TestObstructedWalkFromPreviousPlacementIsNotReused(t *testing.T) {
+	// R-BT0A-8HZY R-BWNZ-DT81 R-0DM8-GYV7
 	for _, omitted := range []bool{false, true} {
 		t.Run(fmt.Sprintf("previous placement omitted %t", omitted), func(t *testing.T) {
 			f := newBackupPassFixture(t)
 			f.put("/srv/acme/data/app.db", walSQLite, 0o660)
 			f.stream()
-			f.removeSavedWalkGID()
 			f.host = linux.New(f.env)
 			restore := f.obstructBackupDirectory(linux.BackupDir)
 			if err := f.host.Stream(t.Context(), f.state); err == nil {
@@ -483,7 +481,7 @@ func TestLegacyWalkFromPreviousPlacementIsNotReused(t *testing.T) {
 			f.state.Accounts[0].GID++
 			f.state.Version++
 			if got := f.report().Backups[0]; got.DatabaseTotal != 0 || len(got.Databases) != 0 {
-				t.Fatalf("the new account reported legacy paths from the previous placement: %+v", got)
+				t.Fatalf("the new account reported paths from the previous placement: %+v", got)
 			}
 			if err := os.MkdirAll(f.path("/srv/acme/data/"+strings.Repeat("deep/", linux.MaxDepth+1)), 0o700); err != nil {
 				t.Fatal(err)
@@ -496,27 +494,8 @@ func TestLegacyWalkFromPreviousPlacementIsNotReused(t *testing.T) {
 	}
 }
 
-func (f *backupPassFixture) removeSavedWalkGID() {
-	f.t.Helper()
-	const status = linux.BackupDir + "/status/acme.json"
-	raw, err := os.ReadFile(f.path(status))
-	if err != nil {
-		f.t.Fatal(err)
-	}
-	var legacy map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &legacy); err != nil {
-		f.t.Fatal(err)
-	}
-	delete(legacy, "WalkGID")
-	raw, err = json.Marshal(legacy)
-	if err != nil {
-		f.t.Fatal(err)
-	}
-	f.put(status, string(raw), 0o600)
-}
-
 func TestNewPlacementCannotUsePreviousPlacementsWalk(t *testing.T) {
-	// R-ZVBQ-QEQS R-ZYZF-VPYV R-0DM8-GYV7
+	// R-BT0A-8HZY R-BWNZ-DT81 R-0DM8-GYV7
 	for _, restarted := range []bool{false, true} {
 		t.Run(fmt.Sprintf("restarted %t", restarted), func(t *testing.T) {
 			f := newBackupPassFixture(t)
@@ -549,55 +528,44 @@ func TestNewPlacementCannotUsePreviousPlacementsWalk(t *testing.T) {
 	}
 }
 
-func TestWithholdingSurvivesStreamPassesThatDoNotWalkTheAccount(t *testing.T) {
-	// R-ZVBQ-QEQS
-	for _, tc := range []struct {
-		name string
-		skip func(*protocol.DesiredState)
-	}{
-		{"backup gate", func(s *protocol.DesiredState) { s.Backup, s.Accounts = nil, nil }},
-		{"inactive", func(s *protocol.DesiredState) { s.Accounts[0].State = protocol.AccountRemoved }},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			f := newBackupPassFixture(t)
-			f.put("/srv/acme/data/kept.db", walSQLite, 0o660)
-			f.stream()
-			restore := f.obstructBackupDirectory(linux.BackupDir)
-			f.put("/srv/acme/data/unkept.db", walSQLite, 0o660)
-			if err := f.host.Stream(t.Context(), f.state); err == nil {
-				t.Fatal("Stream accepted an unwritable backup directory")
-			}
-			restore()
-
-			skipped := f.state
-			skipped.Accounts = slices.Clone(skipped.Accounts)
-			tc.skip(&skipped)
-			f.at = f.at.Add(linux.InstallRetry)
-			if err := f.host.Stream(t.Context(), skipped); err != nil {
-				t.Fatal(err)
-			}
-			deep := f.path("/srv/acme/data/deep")
-			if err := os.MkdirAll(deep+"/"+strings.Repeat("more/", linux.MaxDepth), 0o700); err != nil {
-				t.Fatal(err)
-			}
-			f.stream()
-			f.backupCommands = nil
-			f.backup()
-			if got := f.commandsFor(f.path(linux.ResticPath)); len(got) != 0 {
-				t.Fatalf("restic ran after a limited walk of an account with an unkept walk: %v", got)
-			}
-			if err := os.RemoveAll(deep); err != nil {
-				t.Fatal(err)
-			}
-			f.stream()
-			f.backup()
-			f.requireResticConfig("acme")
-		})
+func TestWithholdingSurvivesAStreamPassWithNoBackupMember(t *testing.T) {
+	// R-BT0A-8HZY
+	f := newBackupPassFixture(t)
+	f.put("/srv/acme/data/kept.db", walSQLite, 0o660)
+	f.stream()
+	restore := f.obstructBackupDirectory(linux.BackupDir)
+	f.put("/srv/acme/data/unkept.db", walSQLite, 0o660)
+	if err := f.host.Stream(t.Context(), f.state); err == nil {
+		t.Fatal("Stream accepted an unwritable backup directory")
 	}
+	restore()
+
+	skipped := f.state
+	skipped.Backup = nil
+	f.at = f.at.Add(linux.InstallRetry)
+	if err := f.host.Stream(t.Context(), skipped); err != nil {
+		t.Fatal(err)
+	}
+	deep := f.path("/srv/acme/data/deep")
+	if err := os.MkdirAll(deep+"/"+strings.Repeat("more/", linux.MaxDepth), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	f.stream()
+	f.backupCommands = nil
+	f.backup()
+	if got := f.resticVerbs(); len(got) != 0 {
+		t.Fatalf("restic ran after a limited walk of an account with an unkept walk: %v", got)
+	}
+	if err := os.RemoveAll(deep); err != nil {
+		t.Fatal(err)
+	}
+	f.stream()
+	f.backup()
+	f.requireResticConfig("acme")
 }
 
 func TestDatabaseWalkStopsAtVisitLimit(t *testing.T) {
-	// R-ZYZF-VPYV
+	// R-BWNZ-DT81
 	f := newBackupPassFixture(t)
 	f.put("/srv/acme/data/legacy.db", plainSQLite, 0o600)
 	data := f.path("/srv/acme/data")
@@ -624,7 +592,7 @@ func TestDatabaseWalkStopsAtVisitLimit(t *testing.T) {
 }
 
 func TestLitestreamWritesExactProtectedConfigAndRestartsOnSchedule(t *testing.T) {
-	// R-YIYR-N9HQ R-007C-9HPK R-YLEK-ESZ4 R-01F8-N9G9
+	// R-YIYR-N9HQ R-AMBS-UJ1N R-YLEK-ESZ4 R-ANJP-8ASC
 	f := newBackupPassFixture(t)
 	f.put("/srv/acme/data/z.db", walSQLite, 0o600)
 	f.put("/srv/acme/data/a\".db", walSQLite, 0o600)
@@ -737,7 +705,7 @@ TimeoutStopSec=60
 }
 
 func TestLitestreamRecordsReplicaHealthOnlyAfterThreeAnswers(t *testing.T) {
-	// R-02N5-116Y R-0DM8-GYV7
+	// R-AORL-M2J1 R-0DM8-GYV7
 	f := newBackupPassFixture(t)
 	f.put("/srv/acme/data/one.db", walSQLite, 0o600)
 	f.put("/srv/acme/data/two.db", walSQLite, 0o600)
@@ -836,7 +804,7 @@ func TestLitestreamRecordsReplicaHealthOnlyAfterThreeAnswers(t *testing.T) {
 }
 
 func TestResticAccountCommandsAndReports(t *testing.T) {
-	// R-03V1-ESXN R-052X-SKOC R-06AU-6CF1 R-YTXV-375Z R-08QM-XVWF R-0DM8-GYV7 R-0G21-8ICL
+	// R-APZH-ZU9Q R-AR7E-DM0F R-ATN7-55HT R-YTXV-375Z R-AUV3-IX8I R-0DM8-GYV7 R-B26H-TJOO
 	f := newBackupPassFixture(t)
 	f.state.Host = "host01"
 	f.state.Backup.Settings.CheckDays = 2
@@ -957,7 +925,7 @@ func TestResticAccountCommandsAndReports(t *testing.T) {
 }
 
 func TestResticErrorContinuesOtherAccountsAndUnlocksOnce(t *testing.T) {
-	// R-09YJ-BNN4 R-0B6F-PFDT R-06AU-6CF1 R-0DM8-GYV7
+	// R-AW2Z-WOZ7 R-0B6F-PFDT R-ATN7-55HT R-0DM8-GYV7
 	f := newBackupPassFixture(t)
 	f.put(dataPrivateKey, "host private", 0o600)
 	f.put(dataPublicKey, "host public", 0o644)
@@ -1031,7 +999,7 @@ func TestResticErrorContinuesOtherAccountsAndUnlocksOnce(t *testing.T) {
 }
 
 func TestBackupRetriesOnlyWhenNoSnapshotWasRecorded(t *testing.T) {
-	// R-03V1-ESXN R-06AU-6CF1 R-0B6F-PFDT
+	// R-APZH-ZU9Q R-ATN7-55HT R-0B6F-PFDT
 	for _, tc := range []struct {
 		verb string
 		code int
@@ -1108,7 +1076,7 @@ func (f *backupPassFixture) resticVerbs() []string {
 }
 
 func TestHostBackupDetectsChangedKeysAndReportsFacts(t *testing.T) {
-	// R-0CEC-374I R-0EU4-UQLW R-0G21-8ICL
+	// R-AYIS-O8GL R-B0YL-FRXZ R-B26H-TJOO
 	f := newBackupPassFixture(t)
 	f.put(dataPrivateKey, "key one", 0o600)
 	f.backup()
@@ -1296,7 +1264,7 @@ func assertPrivateBackupWrites(t *testing.T, before, after map[string]applyHostF
 }
 
 func TestBackupPassesLeaveUnrelatedFilesAndOnlyRunBackupCommands(t *testing.T) {
-	// R-0H9X-MA3A
+	// R-B3EE-7BFD
 	f := newBackupPassFixture(t)
 	f.put("/srv/acme/data/app.db", walSQLite, 0o660)
 	f.put("/home/user/.bashrc", "fixture", 0o644)
@@ -1327,7 +1295,7 @@ func TestBackupPassesLeaveUnrelatedFilesAndOnlyRunBackupCommands(t *testing.T) {
 }
 
 func TestBackupPassesDoNotWriteThroughLinksToOtherHostPaths(t *testing.T) {
-	// R-0H9X-MA3A
+	// R-B3EE-7BFD
 	for _, tc := range []struct {
 		path string
 		run  func(*linux.Host, context.Context, protocol.DesiredState) error
@@ -1362,7 +1330,7 @@ func TestBackupPassesDoNotWriteThroughLinksToOtherHostPaths(t *testing.T) {
 }
 
 func TestStreamModeCorrectionLeavesUnrelatedHardLinkUntouched(t *testing.T) {
-	// R-0H9X-MA3A
+	// R-B3EE-7BFD
 	f := newBackupPassFixture(t)
 	f.put("/srv/acme/data/app.db", walSQLite, 0o660)
 	f.stream()
@@ -1416,7 +1384,7 @@ func (f *backupPassFixture) requireResticConfig(slug string) {
 }
 
 func TestBackupWithholdsUnkeptWalkAndRetries(t *testing.T) {
-	// R-ZVBQ-QEQS R-ZWJN-46HH
+	// R-BT0A-8HZY R-BU86-M9QN
 	for _, tc := range []struct {
 		name  string
 		dir   string
@@ -1485,7 +1453,7 @@ func TestBackupWithholdsUnkeptWalkAndRetries(t *testing.T) {
 }
 
 func TestAccountResticRechecksWalkAfterCommand(t *testing.T) {
-	// R-ZVBQ-QEQS R-ZWJN-46HH
+	// R-BT0A-8HZY R-BU86-M9QN
 	for _, kept := range []bool{true, false} {
 		name := "kept"
 		if !kept {
@@ -1570,7 +1538,7 @@ func TestAccountResticRechecksWalkAfterCommand(t *testing.T) {
 }
 
 func TestBackupReadsBackLatestKeptWalk(t *testing.T) {
-	// R-ZVBQ-QEQS R-ZWJN-46HH
+	// R-BT0A-8HZY R-BU86-M9QN
 	f := newBackupPassFixture(t)
 	const status = linux.BackupDir + "/status"
 	f.put("/srv/acme/data/old.db", walSQLite, 0o660)
@@ -1624,7 +1592,7 @@ func TestBackupReadsBackLatestKeptWalk(t *testing.T) {
 }
 
 func TestBackupRejectsWalkKeptByAnotherHost(t *testing.T) {
-	// R-ZVBQ-QEQS
+	// R-BT0A-8HZY
 	f := newBackupPassFixture(t)
 	const status = linux.BackupDir + "/status"
 	f.put("/srv/acme/data/new.db", walSQLite, 0o660)
@@ -1720,7 +1688,7 @@ func assertBackupPassCommands(t *testing.T, f *backupPassFixture, allowed map[st
 }
 
 func TestBackupRunsDueCheckIndependentlyOfSnapshot(t *testing.T) {
-	// R-08QM-XVWF R-03V1-ESXN
+	// R-AUV3-IX8I R-APZH-ZU9Q
 	f := newBackupPassFixture(t)
 	f.state.Backup.Settings.EveryMinutes = 7 * 24 * 60
 	f.state.Backup.Settings.CheckDays = 1
@@ -1747,7 +1715,7 @@ func TestBackupRunsDueCheckIndependentlyOfSnapshot(t *testing.T) {
 }
 
 func TestBackupWithholdsDueCheckAndContinuesWithNextAccount(t *testing.T) {
-	// R-ZWJN-46HH
+	// R-BU86-M9QN
 	f := newBackupPassFixture(t)
 	f.state.Backup.Settings.EveryMinutes = 7 * 24 * 60
 	f.state.Backup.Settings.CheckDays = 1
@@ -1800,7 +1768,7 @@ func TestBackupWithholdsDueCheckAndContinuesWithNextAccount(t *testing.T) {
 }
 
 func TestBackupReportPreservesBoundedInstallErrorsAcrossRestart(t *testing.T) {
-	// R-0DM8-GYV7 R-0G21-8ICL
+	// R-0DM8-GYV7 R-B26H-TJOO
 	f := newBackupPassFixture(t)
 	f.put("/srv/acme/data/app.db", walSQLite, 0o600)
 	for _, path := range []string{linux.ResticPath, linux.LitestreamPath} {
@@ -1831,7 +1799,7 @@ func TestBackupReportPreservesBoundedInstallErrorsAcrossRestart(t *testing.T) {
 }
 
 func TestResticRejectsInvalidEndOfLastSummary(t *testing.T) {
-	// R-06AU-6CF1 R-0B6F-PFDT
+	// R-ATN7-55HT R-0B6F-PFDT
 	for _, tc := range []struct{ name, end string }{
 		{"numeric end", `17`}, {"null end", `null`}, {"invalid timestamp", `"not a timestamp"`}, {"no summary", ""},
 	} {

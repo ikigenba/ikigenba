@@ -124,8 +124,8 @@ func (h *Host) saveHostRestore(r backupRestoreAttempt) error {
 	})
 }
 
-func (h *Host) saveAccountRestore(slug string, r backupRestoreAttempt) error {
-	return h.updateAccountBackup(slug, func(f *backupAccountFacts) {
+func (h *Host) saveAccountRestore(ctx context.Context, slug string, r backupRestoreAttempt) error {
+	return h.updateAccountBackup(ctx, slug, func(f *backupAccountFacts) {
 		f.Operation.Restore = r
 	})
 }
@@ -141,14 +141,14 @@ func (h *Host) restoreHostKeys(ctx context.Context, repo backupRestic) error {
 }
 
 func (h *Host) runWholeAccountRestore(ctx context.Context, b *protocol.Backup, account protocol.RestoreAccount) error {
-	attempt := restoreAttemptFor(h.readAccountBackup(account.Slug).Operation.Restore, b.Restore.ID)
+	attempt := restoreAttemptFor(h.readAccountBackupForPass(ctx, account.Slug).Operation.Restore, b.Restore.ID)
 	if restoreFinished(attempt.Step) {
 		return nil
 	}
 	credentials, present := accountBackupCredentials(b, account.Slug)
 	if !present {
 		attempt.Error = machine.NoCredentials
-		return h.saveAccountRestore(account.Slug, attempt)
+		return h.saveAccountRestore(ctx, account.Slug, attempt)
 	}
 
 	repo := h.resticCommand(b, credentials, protocol.FilesPrefix(account.Slug), account.Slug)
@@ -158,7 +158,7 @@ func (h *Host) runWholeAccountRestore(ctx context.Context, b *protocol.Backup, a
 	if errors.Is(err, errRestoreTargetOccupied) {
 		err = nil
 	}
-	return errors.Join(err, h.saveAccountRestore(account.Slug, attempt))
+	return errors.Join(err, h.saveAccountRestore(ctx, account.Slug, attempt))
 }
 
 type restoreSnapshot struct {
@@ -239,7 +239,7 @@ func (h *Host) restoreWholeAccount(ctx context.Context, b *protocol.Backup, acco
 			}
 		}
 		attempt.Checked = true
-		if err := h.saveAccountRestore(account.Slug, *attempt); err != nil {
+		if err := h.saveAccountRestore(ctx, account.Slug, *attempt); err != nil {
 			return err
 		}
 	}
@@ -273,7 +273,7 @@ func (h *Host) restoreWholeAccount(ctx context.Context, b *protocol.Backup, acco
 		}
 		if moved {
 			attempt.Moved = append(attempt.Moved, target.path)
-			if err := h.saveAccountRestore(account.Slug, *attempt); err != nil {
+			if err := h.saveAccountRestore(ctx, account.Slug, *attempt); err != nil {
 				return err
 			}
 		}
