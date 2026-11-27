@@ -29,7 +29,7 @@ func (f *hardeningFixture) applyCloseLock(state protocol.DesiredState) {
 }
 
 func TestCloseFinalsWaitForNewSyncAndKeepVersionedResults(t *testing.T) {
-	// R-WDVY-0I1K R-W6KJ-PVLE R-WBG5-8YK6
+	// R-0IHU-01TZ R-0JPQ-DTKO R-0KXM-RLBD
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	f.put(dataPrivateKey, "private", 0o600)
@@ -179,7 +179,7 @@ func TestCloseFinalsWaitForNewSyncAndKeepVersionedResults(t *testing.T) {
 }
 
 func TestCloseFinalRunsForAccountWithoutStreamedDatabases(t *testing.T) {
-	// R-WDVY-0I1K
+	// R-0IHU-01TZ
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	f.put("/srv/acme/document.txt", "plain text", 0o600)
@@ -223,7 +223,7 @@ func TestCloseFinalRunsForAccountWithoutStreamedDatabases(t *testing.T) {
 }
 
 func TestCloseFinalWithUnkeptWalkTimesOutFromLock(t *testing.T) {
-	// R-NWRZ-T0ML
+	// R-ZWJN-46HH
 	f := newBackupPassFixture(t)
 	f.put(dataPrivateKey, "private", 0o600)
 	f.put(dataPublicKey, "public", 0o644)
@@ -284,7 +284,7 @@ func TestCloseFinalWithUnkeptWalkTimesOutFromLock(t *testing.T) {
 }
 
 func TestCloseFinalKeepsWaitingForKnownUnsyncedDatabase(t *testing.T) {
-	// R-NWRZ-T0ML
+	// R-ZWJN-46HH
 	f := newBackupPassFixture(t)
 	f.state.Backup.Host = protocol.Credentials{}
 	f.put("/srv/acme/data/app.db", walSQLite, 0o660)
@@ -315,8 +315,132 @@ func TestCloseFinalKeepsWaitingForKnownUnsyncedDatabase(t *testing.T) {
 	}
 }
 
+func TestCloseFinalDiscardsPreviousPlacementsReadiness(t *testing.T) {
+	// R-0IHU-01TZ R-ZVBQ-QEQS
+	for _, restarted := range []bool{false, true} {
+		t.Run(fmt.Sprintf("restarted %t", restarted), func(t *testing.T) {
+			f := newBackupPassFixture(t)
+			f.state.Backup.Host = protocol.Credentials{}
+			f.stream()
+			f.backup()
+			f.state.Accounts[0].GID++
+			f.state.Backup.Close = "close_new"
+			f.state.Version++
+			f.at = f.at.Add(time.Second).UTC().Truncate(time.Second)
+			f.applyCloseLock(f.state)
+			lock := f.at
+			if restarted {
+				f.host = linux.New(f.env)
+			}
+			f.backupCommands = nil
+			f.at = lock.Add(linux.FinalSyncTimeout - time.Second)
+			f.backup()
+			pending := protocol.Step{ID: f.state.Backup.Close, State: protocol.StepPending}
+			if got := f.report().Backups[0]; got.Final != pending || len(f.resticVerbs()) != 0 {
+				t.Fatalf("before timeout on the new placement: %+v, commands %v", got, f.backupCommands)
+			}
+			f.at = lock.Add(linux.FinalSyncTimeout)
+			f.backup()
+			failed := protocol.Step{ID: f.state.Backup.Close, State: protocol.StepFailed, At: f.at, Code: protocol.CodeFailed}
+			if got := f.report().Backups[0]; got.Final != failed || got.Error != machine.ErrNotSynced.Error() || len(f.resticVerbs()) != 0 {
+				t.Fatalf("the new placement adopted stale readiness: %+v, commands %v", got, f.backupCommands)
+			}
+		})
+	}
+}
+
+func TestCloseFinalDoesNotUseHealthFromAnOlderWalkAfterFailedPublication(t *testing.T) {
+	// R-02N5-116Y R-ZWJN-46HH R-0IHU-01TZ
+	f := newBackupPassFixture(t)
+	f.state.Backup.Host = protocol.Credentials{}
+	f.stream()
+	f.backup()
+	f.state.Backup.Close = "close_after_failed_walk"
+	f.state.Version++
+	f.at = f.at.Add(time.Second).UTC().Truncate(time.Second)
+	f.applyCloseLock(f.state)
+	lock := f.at
+
+	restore := f.obstructBackupDirectory(linux.BackupDir + "/status")
+	const database = "/srv/acme/data/app.db"
+	f.put(database, walSQLite, 0o660)
+	f.execute = func(c linux.Command) (linux.Result, error) {
+		if c.Name == "systemctl" && c.Args[0] == "is-active" && restore != nil {
+			restore()
+			restore = nil
+		}
+		if c.Name == f.path(linux.LitestreamPath) && c.Args[len(c.Args)-1] != f.path(database) {
+			t.Fatalf("health check used a database from an older walk: %v", c.Args)
+		}
+		return linux.Result{}, nil
+	}
+	f.backupCommands = nil
+	if err := f.host.Stream(t.Context(), f.state); err == nil || restore != nil {
+		t.Fatalf("Stream did not fail publication before the status path recovered: %v", err)
+	}
+	if got := f.commandsFor(f.path(linux.LitestreamPath)); len(got) != 3 {
+		t.Fatalf("expected status and both replica checks for the current walk: %v", got)
+	}
+	f.backupCommands = nil
+	f.at = lock.Add(linux.FinalSyncTimeout)
+	f.backup()
+	failed := protocol.Step{ID: f.state.Backup.Close, State: protocol.StepFailed, At: f.at, Code: protocol.CodeFailed}
+	if got := f.report().Backups[0]; got.Final != failed || got.Error != machine.ErrNotSynced.Error() || len(f.resticVerbs()) != 0 {
+		t.Fatalf("the unkept WAL database did not keep its readiness: %+v, commands %v", got, f.backupCommands)
+	}
+}
+
+func TestCloseFinalUsesRetainedSyncReadinessWhenLimitedWalkCannotBeKept(t *testing.T) {
+	// R-ZWJN-46HH R-0IHU-01TZ
+	f := newBackupPassFixture(t)
+	f.state.Backup.Host = protocol.Credentials{}
+	f.put("/srv/acme/data/app.db", walSQLite, 0o660)
+	f.stream()
+	f.backup()
+	f.state.Backup.Close = "close_limited"
+	f.state.Version++
+	f.at = f.at.Add(time.Second).UTC().Truncate(time.Second)
+	f.applyCloseLock(f.state)
+	lock := f.at
+
+	status := f.path(linux.BackupDir + "/status")
+	saved := f.path("/saved-status")
+	if err := os.Rename(status, saved); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(saved, status); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(f.path("/srv/acme/data/"+strings.Repeat("deep/", linux.MaxDepth+1)), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.host.Stream(t.Context(), f.state); err == nil {
+		t.Fatal("Stream wrote through a symbolic link in the status path")
+	}
+	if err := os.Remove(status); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(saved, status); err != nil {
+		t.Fatal(err)
+	}
+
+	f.backupCommands = nil
+	f.at = lock.Add(linux.FinalSyncTimeout - time.Second)
+	f.backup()
+	pending := protocol.Step{ID: f.state.Backup.Close, State: protocol.StepPending}
+	if got := f.report().Backups[0]; got.Final != pending || got.Error != "" || len(f.resticVerbs()) != 0 {
+		t.Fatalf("before timeout with retained unsynced database: %+v, commands %v", got, f.backupCommands)
+	}
+	f.at = lock.Add(linux.FinalSyncTimeout)
+	f.backup()
+	failed := protocol.Step{ID: f.state.Backup.Close, State: protocol.StepFailed, At: f.at, Code: protocol.CodeFailed}
+	if got := f.report().Backups[0]; got.Final != failed || got.Error != machine.ErrNotSynced.Error() || len(f.resticVerbs()) != 0 {
+		t.Fatalf("at timeout with retained unsynced database: %+v, commands %v", got, f.backupCommands)
+	}
+}
+
 func TestCloseFinalUsesLatestWalkReadinessWhenReadbackFails(t *testing.T) {
-	// R-NWRZ-T0ML
+	// R-ZWJN-46HH
 	for _, latestSynced := range []bool{true, false} {
 		t.Run(fmt.Sprintf("latest synced %t", latestSynced), func(t *testing.T) {
 			f := newBackupPassFixture(t)
@@ -394,7 +518,7 @@ func TestCloseFinalUsesLatestWalkReadinessWhenReadbackFails(t *testing.T) {
 }
 
 func TestCloseFinalRechecksReadinessAfterCatConfig(t *testing.T) {
-	// R-NWRZ-T0ML
+	// R-ZWJN-46HH
 	f := newBackupPassFixture(t)
 	f.state.Backup.Host = protocol.Credentials{}
 	f.stream()
@@ -435,7 +559,7 @@ func TestCloseFinalRechecksReadinessAfterCatConfig(t *testing.T) {
 }
 
 func TestCloseFinalPreservesResticErrorWhenNoCommandRuns(t *testing.T) {
-	// R-NWRZ-T0ML
+	// R-ZWJN-46HH
 	f := newBackupPassFixture(t)
 	f.state.Backup.Host = protocol.Credentials{}
 	f.state.Backup.Settings.CheckDays = 1
@@ -492,7 +616,7 @@ func TestCloseFinalPreservesResticErrorWhenNoCommandRuns(t *testing.T) {
 }
 
 func TestCloseHostFinalWithoutActiveAccountsRetriesOnlyGreaterLockVersion(t *testing.T) {
-	// R-W6KJ-PVLE R-WBG5-8YK6
+	// R-0JPQ-DTKO R-0KXM-RLBD
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	f.put(dataPrivateKey, "private", 0o600)
@@ -566,7 +690,7 @@ func TestCloseHostFinalWithoutActiveAccountsRetriesOnlyGreaterLockVersion(t *tes
 }
 
 func TestCloseFinalTimeoutCountsFromLock(t *testing.T) {
-	// R-WDVY-0I1K R-W6KJ-PVLE R-WBG5-8YK6
+	// R-0IHU-01TZ R-0JPQ-DTKO R-0KXM-RLBD
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	f.put("/srv/acme/data/app.db", "SQLite format 3\x00\x00\x00\x02\x02", 0o600)

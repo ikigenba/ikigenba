@@ -115,8 +115,6 @@ func (h *Host) runPartialRestore(ctx context.Context, s protocol.DesiredState, q
 		repo := h.resticCommand(s.Backup, credentials, protocol.FilesPrefix(q.Account), q.Account)
 		copyName, err = h.partialFilesRestore(ctx, repo, q, user, gid)
 	}
-	// A copy has been published once it has a name. A subsequent cleanup
-	// error fails the pass without discarding the published copy's result.
 	if copyName != "" {
 		result.State, result.Copy = protocol.StepDone, copyName
 	} else if err != nil {
@@ -148,7 +146,11 @@ func (h *Host) partialDatabaseRestore(ctx context.Context, b *protocol.Backup, q
 	if err != nil {
 		return "", err
 	}
-	defer func() { result = errors.Join(result, h.removeRestoreWork(work)) }()
+	defer func() {
+		if result != nil {
+			result = errors.Join(result, h.removeRestoreResidueEntry(work))
+		}
+	}()
 	output := work + "/database"
 	timestamp := q.AsOf.Add(time.Second).UTC().Format(time.RFC3339)
 	if err := h.restoreDatabase(ctx, b, credentials, q.Account, q.Path, output, []string{"-timestamp", timestamp}); err != nil {
@@ -160,7 +162,7 @@ func (h *Host) partialDatabaseRestore(ctx context.Context, b *protocol.Backup, q
 	if err := h.restoreDatabaseOwner(ctx, output, permissions); err != nil {
 		return "", err
 	}
-	if err := h.moveRestoreEntry(output, target, false); err != nil {
+	if err := h.publishPartialRestore(work, output, target); err != nil {
 		return "", err
 	}
 	return copyName, nil
@@ -222,7 +224,11 @@ func (h *Host) partialFilesRestore(ctx context.Context, repo backupRestic, q pro
 	if err != nil {
 		return "", err
 	}
-	defer func() { result = errors.Join(result, h.removeRestoreWork(work)) }()
+	defer func() {
+		if result != nil {
+			result = errors.Join(result, h.removeRestoreResidueEntry(work))
+		}
+	}()
 	restored := work + "/r"
 	if err := os.Mkdir(h.path(restored), 0o700); err != nil {
 		return "", hostError(restored, err)
@@ -257,7 +263,7 @@ func (h *Host) partialFilesRestore(ctx context.Context, repo backupRestic, q pro
 		}
 	} else if err != nil {
 		return "", err
-	} else if err := h.moveRestoreEntry(restored, target, false); err != nil {
+	} else if err := h.publishPartialRestore(work, restored, target); err != nil {
 		return "", err
 	}
 	return copyName, nil
@@ -274,5 +280,5 @@ func (h *Host) publishNewRestoredDir(ctx context.Context, permissions restorePer
 	if err := h.moveRestoreEntry(work+"/r", filepath.Join(from, filepath.Base(target)), false); err != nil {
 		return err
 	}
-	return h.moveRestoreEntry(from, parent, false)
+	return h.publishPartialRestore(work, from, parent)
 }

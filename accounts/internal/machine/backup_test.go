@@ -102,7 +102,7 @@ func TestBackupCopy(t *testing.T) {
 }
 
 func TestWalkUnrecordedCopy(t *testing.T) {
-	// R-NZ7S-KK3Z
+	// R-ZP88-TK1B
 	const text string = machine.WalkUnrecorded
 	if text == "" || strings.ContainsAny(text, "\r\n") {
 		t.Fatalf("invalid walk diagnostic %q", text)
@@ -173,7 +173,7 @@ func putCounts(puts []putCall) map[putCall]int {
 }
 
 func TestMemoryStream(t *testing.T) {
-	// R-YJ1G-3C32 R-YGLN-BSLO R-WYM8-ILND R-YQCU-DYJ8
+	// R-YJ1G-3C32 R-YGLN-BSLO R-ZRO1-L3IP R-YQCU-DYJ8
 	s := backupState()
 	now := fixtureTime.Add(250 * time.Millisecond).In(time.FixedZone("test", -3600))
 	var puts []putCall
@@ -249,7 +249,7 @@ func TestMemoryStream(t *testing.T) {
 }
 
 func TestMemorySnapshotSchedule(t *testing.T) {
-	// R-YK9C-H3TR R-YE5U-K94A R-WYM8-ILND
+	// R-8RX7-64FH R-YE5U-K94A R-ZRO1-L3IP
 	s := backupState()
 	now := fixtureTime.Add(time.Millisecond)
 	var puts []putCall
@@ -324,8 +324,111 @@ func TestMemorySnapshotSchedule(t *testing.T) {
 	}
 }
 
+func TestMemorySnapshotRetriesBeforeNextInterval(t *testing.T) {
+	// R-8RX7-64FH
+	for _, cause := range []string{"failing account", "missing account credentials", "missing backup settings"} {
+		t.Run(cause, func(t *testing.T) {
+			s := backupState()
+			now := fixtureTime
+			var accountPuts int
+			m := backupMachine(&now, nil, func(c protocol.Credentials, key string) error {
+				if c == s.Backup.Accounts[0].Credentials && key == protocol.FilesPrefix("acme")+"/config" {
+					accountPuts++
+				}
+				return nil
+			})
+			apply(t, m, s)
+			runPass(t, m.Backup, s)
+			original := inspect(t, m, s).Backups[0]
+			if original.Snapshot != now || original.Error != "" || accountPuts != 1 {
+				t.Fatalf("initial snapshot: %+v, puts %d", original, accountPuts)
+			}
+
+			blocked := s
+			switch cause {
+			case "failing account":
+				m.FailBackups("acme", true)
+			case "missing account credentials":
+				backup := *s.Backup
+				backup.Accounts = nil
+				blocked.Backup = &backup
+			case "missing backup settings":
+				blocked.Backup = nil
+			}
+			now = fixtureTime.Add(time.Minute)
+			runPass(t, m.Backup, blocked)
+			if got := inspect(t, m, s).Backups[0]; got.Error == "" || got.Snapshot != original.Snapshot ||
+				!slices.Equal(got.Snapshots, original.Snapshots) || accountPuts != 1 {
+				t.Fatalf("blocked backup: %+v, puts %d", got, accountPuts)
+			}
+
+			m.FailBackups("acme", false)
+			now = fixtureTime.Add(2 * time.Minute)
+			runPass(t, m.Stream, s)
+			runPass(t, m.Backup, s)
+			want := []int64{now.Unix(), fixtureTime.Unix()}
+			if got := inspect(t, m, s).Backups[0]; got.Error != "" || got.Snapshot != now ||
+				!slices.Equal(got.Snapshots, want) || accountPuts != 2 {
+				t.Fatalf("retry before the interval: %+v, puts %d", got, accountPuts)
+			}
+			now = fixtureTime.Add(3 * time.Minute)
+			runPass(t, m.Backup, s)
+			if got := inspect(t, m, s).Backups[0]; !slices.Equal(got.Snapshots, want) || accountPuts != 2 {
+				t.Fatalf("backup repeated after healing: %+v, puts %d", got, accountPuts)
+			}
+		})
+	}
+}
+
+func TestMemoryRestoredAccountDropsSnapshotRetry(t *testing.T) {
+	// R-8RX7-64FH
+	s := backupState()
+	now := fixtureTime
+	var snapshotPuts int
+	m := backupMachine(&now, nil, func(_ protocol.Credentials, key string) error {
+		if key == protocol.FilesPrefix("acme")+"/config" {
+			snapshotPuts++
+		}
+		return nil
+	})
+	apply(t, m, s)
+	runPass(t, m.Backup, s)
+	missing := s
+	badBackup := *s.Backup
+	badBackup.Accounts = nil
+	missing.Backup = &badBackup
+	now = now.Add(time.Minute)
+	runPass(t, m.Backup, missing)
+	if got := inspect(t, m, s).Backups[0].Error; got != machine.NoCredentials {
+		t.Fatalf("withheld backup error = %q, want %q", got, machine.NoCredentials)
+	}
+
+	restore := s
+	restore.DataVolume = "replacement-volume"
+	restore.Accounts = nil
+	restoreBackup := *s.Backup
+	restoreBackup.Restore = &protocol.HostRestore{ID: "replacement", Accounts: []protocol.RestoreAccount{{Slug: "acme"}}}
+	restore.Backup = &restoreBackup
+	apply(t, m, restore)
+	runPass(t, m.Backup, restore)
+	now = now.Add(backupDelay)
+	runPass(t, m.Backup, restore)
+	if got := inspect(t, m, restore).Backups[0]; got.Restored.State != protocol.StepDone || got.Error != "" {
+		t.Fatalf("restored backup: %+v", got)
+	}
+
+	s.DataVolume, missing.DataVolume = restore.DataVolume, restore.DataVolume
+	apply(t, m, s)
+	runPass(t, m.Stream, missing)
+	runPass(t, m.Stream, s)
+	runPass(t, m.Backup, s)
+	if got := inspect(t, m, s).Backups[0]; got.Error != "" || got.Snapshot != fixtureTime || snapshotPuts != 1 {
+		t.Fatalf("post-restore backup before the interval: %+v, puts %d", got, snapshotPuts)
+	}
+}
+
 func TestMemoryInspectDatabaseAggregate(t *testing.T) {
-	// R-WYM8-ILND
+	// R-ZRO1-L3IP
 	s := backupState()
 	disks := machine.NewDisks()
 	early, late := fixtureTime, fixtureTime.Add(time.Minute)

@@ -23,13 +23,6 @@ import (
 
 const sqliteHeader = "SQLite format 3\x00"
 
-const backupWalkFallbackDir = BackupDir + "/walk"
-
-type backupWalkFallback struct {
-	backupWalk
-	Token string `json:",omitempty"`
-}
-
 func openBackupDirectory(fd int, name string) (*os.File, error) {
 	child, err := unix.Openat(fd, name, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {
@@ -172,152 +165,92 @@ func backupDBHeader(fd int, name string) (database, wal bool, err error) {
 	return true, n == len(header) && header[18] == 2 && header[19] == 2, nil
 }
 
-func (h *Host) pruneBackupWalks(slugs []string) {
+func (h *Host) pruneBackupWalks(s protocol.DesiredState) {
 	h.backupFactsMu.Lock()
 	defer h.backupFactsMu.Unlock()
-	for slug := range h.backupWalks {
-		if _, active := slices.BinarySearch(slugs, slug); !active {
+	if h.backupInitialGID == nil {
+		// Any placement added after this state has a greater GID. A legacy
+		// record left by an old placement cannot belong to that account.
+		var highest int64
+		for _, account := range s.Accounts {
+			highest = max(highest, account.GID)
+		}
+		h.backupInitialGID = &highest
+	}
+	for slug, walk := range h.backupWalks {
+		index := slices.IndexFunc(s.Accounts, func(a protocol.Account) bool { return a.Slug == slug })
+		switch {
+		case index < 0:
 			delete(h.backupWalks, slug)
+		case s.Accounts[index].State != protocol.AccountActive || s.Accounts[index].GID != walk.gid:
+			// Keep the saved identity and any withholding for the same
+			// account, but require a new walk on reactivation.
+			walk.inactive = true
+			h.backupWalks[slug] = walk
 		}
 	}
 }
 
-func (h *Host) recordBackupWalk(slug string, walk backupWalk, directoryReady bool) error {
+func (h *Host) recordBackupWalk(account protocol.Account, walk backupWalk, directoryReady bool) (backupWalk, error) {
 	h.backupFactsMu.Lock()
 	defer h.backupFactsMu.Unlock()
-	// A finished walk supersedes its predecessor even if the write fails.
+
+	slug := account.Slug
 	previous, attempted := h.backupWalks[slug]
-	limited := walk.Error == machine.DataTooLarge
-	publication := backupWalkPublication{readiness: walk.readiness()}
-	if limited {
-		publication = backupWalkPublication{
-			readiness:            previous.readiness,
-			fallback:             previous.fallback,
-			fallbackFromPrevious: !attempted || previous.fallbackFromPrevious,
-		}
+	replaced := attempted && previous.gid != account.GID
+	if replaced {
+		previous = backupWalkPublication{ignoreLegacy: true}
 	}
+	publication := previous
+	publication.gid, publication.inactive = account.GID, false
+	publication.blocked = true
+	limited := walk.Error == machine.DataTooLarge
+	publication.readiness = walk.readiness()
+	// A finished walk supersedes its predecessor for restic even if
+	// its publication fails. Keep the last saved identity for discovery.
 	h.backupWalks[slug] = publication
 	if !directoryReady {
-		return nil
+		return walk, nil
 	}
-	if limited {
-		return h.recordLimitedBackupWalk(slug, publication)
-	}
-	facts := h.readAccountBackup(slug)
-	for i := range walk.Databases {
-		db := &walk.Databases[i]
-		idx, found := slices.BinarySearchFunc(facts.Walk.Databases, db.Path, func(d backupDatabase, path string) int {
-			return cmp.Compare(d.Path, path)
-		})
-		if found && facts.Walk.Databases[idx].WAL == db.WAL {
-			db.Database = facts.Walk.Databases[idx].Database
-		}
-	}
-	fallback, fallbackErr := h.saveBackupWalkFallback(slug, walk)
-	h.backupWalks[slug] = backupWalkPublication{readiness: walk.readiness(), fallback: fallback}
-	// A primary publication must never be newer than its recovery copy.
-	if fallbackErr != nil {
-		return fallbackErr
-	}
-	facts.Walk = walk
-	facts.WalkRecorded = true
-	return h.publishBackupWalk(slug, facts)
-}
 
-func (h *Host) recordLimitedBackupWalk(slug string, publication backupWalkPublication) error {
 	path := backupStatusDir + "/" + slug + ".json"
 	facts, err := loadBackupFacts[backupAccountFacts](h, path)
-	if errors.Is(err, fs.ErrNotExist) {
-		err = nil
+	if facts.WalkGID == nil && !h.legacyWalkBelongsTo(account) {
+		facts.clearWalk()
 	}
-	var walk backupWalk
-	var retained bool
-	var fallbackErr error
-	if publication.fallbackFromPrevious {
-		fallback, readErr := h.loadBackupWalkFallback(slug)
-		fallbackErr = readErr
-		missingWalk := !facts.WalkRecorded && facts.Walk.Error == machine.DataTooLarge
-		if errors.Is(readErr, fs.ErrNotExist) {
-			fallbackErr = nil
-			if err == nil && !missingWalk {
-				// Older releases have only the primary status file.
-				if facts.WalkRecorded {
-					walk = facts.Walk
-				}
-				publication.fallback, fallbackErr = h.saveBackupWalkFallback(slug, walk)
-			}
-		} else if readErr == nil && (!missingWalk || fallback.Token != facts.RejectedRecoveryToken) {
-			walk = fallback.backupWalk
-			publication.fallback, fallbackErr = walk.digest()
+	facts.clearWalkForOtherPlacement(account.GID)
+	if limited {
+		retained := facts.WalkRecorded && (previous.identity.token == "" || facts.matchesWalk(previous.identity))
+		// A first, limited walk keeps an empty set. A missing or unreadable
+		// known publication cannot be used as that empty set.
+		first := previous.identity.token == "" && !facts.WalkRecorded && facts.Walk.Error == "" &&
+			(err == nil || errors.Is(err, fs.ErrNotExist))
+		if retained {
+			walk = facts.Walk
+			walk.Error = machine.DataTooLarge
 		}
-		if publication.fallback != (backupWalkDigest{}) && fallbackErr == nil {
-			publication.fallbackFromPrevious = false
-			publication.readiness = walk.readiness()
-			h.backupWalks[slug] = publication
-			retained = true
-		}
+		facts.WalkRecorded = retained || first
+		publication.blocked = previous.blocked || !facts.WalkRecorded
 	} else {
-		walk, retained, fallbackErr = h.readBackupWalkFallback(slug, facts, publication.fallback)
-	}
-	if !retained {
-		// Report the new bound without making stale paths available to
-		// restic. Keep the fallback marker so a later pass can recover it.
-		facts.Walk = backupWalk{Error: machine.DataTooLarge}
-		facts.WalkRecorded, facts.WalkToken = false, ""
-		if fallback, loadErr := h.loadBackupWalkFallback(slug); loadErr == nil {
-			facts.RejectedRecoveryToken = fallback.Token
+		for i := range walk.Databases {
+			db := &walk.Databases[i]
+			idx, found := slices.BinarySearchFunc(facts.Walk.Databases, db.Path, func(d backupDatabase, path string) int {
+				return cmp.Compare(d.Path, path)
+			})
+			if found && facts.Walk.Databases[idx].WAL == db.WAL {
+				db.Database = facts.Walk.Databases[idx].Database
+			}
 		}
-		return errors.Join(err, fallbackErr, saveBackupFacts(h, path, facts))
+		facts.WalkRecorded = true
+		publication.blocked = false
 	}
-	walk.Error = machine.DataTooLarge
-	facts.Walk, facts.WalkRecorded = walk, true
-	return errors.Join(err, fallbackErr, h.publishBackupWalk(slug, facts))
-}
-
-func (h *Host) saveBackupWalkFallback(slug string, walk backupWalk) (backupWalkDigest, error) {
-	walk.Error = ""
-	digest, err := walk.digest()
-	if err != nil {
-		return backupWalkDigest{}, err
-	}
-	path := backupWalkFallbackDir + "/" + slug + ".json"
-	temp, err := h.stageBackupPublication(path, func(token string) ([]byte, error) {
-		return json.Marshal(backupWalkFallback{backupWalk: walk, Token: token})
-	})
-	if err != nil {
-		return digest, err
-	}
-	defer func() { _ = os.Remove(temp) }()
-	if err := os.Rename(temp, h.path(path)); err != nil {
-		return digest, hostError(path, err)
-	}
-	return digest, nil
-}
-
-func (h *Host) loadBackupWalkFallback(slug string) (backupWalkFallback, error) {
-	return loadBackupFacts[backupWalkFallback](h, backupWalkFallbackDir+"/"+slug+".json")
-}
-
-func (h *Host) readBackupWalkFallback(slug string, facts backupAccountFacts, expected backupWalkDigest) (backupWalk, bool, error) {
-	if expected == (backupWalkDigest{}) {
-		return backupWalk{}, false, nil
-	}
-	if facts.WalkRecorded {
-		walk := facts.Walk
-		walk.Error = ""
-		if digest, err := walk.digest(); err == nil && digest == expected {
-			return walk, true, nil
-		}
-	}
-	walk, err := h.loadBackupWalkFallback(slug)
-	if errors.Is(err, fs.ErrNotExist) {
-		return backupWalk{}, false, nil
-	}
-	if err != nil {
-		return backupWalk{}, false, err
-	}
-	digest, err := walk.digest()
-	return walk.backupWalk, digest == expected && err == nil, err
+	publication.readiness = walk.readiness()
+	attempt := h.backupWalks[slug]
+	attempt.readiness = publication.readiness
+	h.backupWalks[slug] = attempt
+	facts.Walk, facts.WalkGID = walk, &account.GID
+	publication.ignoreLegacy = false
+	return walk, h.publishBackupWalk(slug, facts, publication)
 }
 
 func (h *Host) stageBackupPublication(path string, marshal func(token string) ([]byte, error)) (string, error) {
@@ -344,11 +277,10 @@ func (h *Host) stageBackupPublication(path string, marshal func(token string) ([
 	})
 }
 
-func (h *Host) publishBackupWalk(slug string, facts backupAccountFacts) error {
+func (h *Host) publishBackupWalk(slug string, facts backupAccountFacts, publication backupWalkPublication) error {
 	path := backupStatusDir + "/" + slug + ".json"
 	temp, err := h.stageBackupPublication(path, func(token string) ([]byte, error) {
 		facts.WalkToken = token
-		facts.RejectedRecoveryToken = ""
 		return json.Marshal(facts)
 	})
 	if err != nil {
@@ -362,8 +294,7 @@ func (h *Host) publishBackupWalk(slug string, facts backupAccountFacts) error {
 	if err := os.Rename(temp, h.path(path)); err != nil {
 		return hostError(path, err)
 	}
-	publication := h.backupWalks[slug]
-	publication.identity, publication.readiness = identity, facts.Walk.readiness()
+	publication.identity = identity
 	h.backupWalks[slug] = publication
 	return nil
 }

@@ -171,6 +171,7 @@ type Host struct {
 	litestreamInstall installAttempt
 	backupFactsMu     sync.Mutex
 	backupWalks       map[string]backupWalkPublication
+	backupInitialGID  *int64
 	lockedBackupRepos map[string]error
 
 	previousCPU     cpuTimes

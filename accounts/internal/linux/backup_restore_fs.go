@@ -195,3 +195,92 @@ func (h *Host) removeRestoreWork(path string) error {
 	}
 	return nil
 }
+
+func (h *Host) publishPartialRestore(work, source, target string) error {
+	if err := h.removeRestoreResidue(work, filepath.Base(source)); err != nil {
+		return err
+	}
+	if err := h.moveRestoreEntry(source, target, false); err != nil {
+		return err
+	}
+	// The rename publishes the result. The source was the only entry
+	// left in work, so only an empty directory remains to remove.
+	_ = os.Remove(h.path(work))
+	return nil
+}
+
+func (h *Host) removeRestoreResidue(work, keep string) error {
+	for {
+		// Removing entries can invalidate a directory offset. Read each
+		// batch from a newly opened handle.
+		dir, err := h.openRestoreDir(work, false)
+		if err != nil {
+			return err
+		}
+		names, readErr := dir.Readdirnames(ReadBatch)
+		_ = dir.Close()
+		if readErr != nil && readErr != io.EOF {
+			return hostError(work, readErr)
+		}
+		removed := false
+		for _, name := range names {
+			if name == keep {
+				continue
+			}
+			if err := h.removeRestoreResidueEntry(filepath.Join(work, name)); err != nil {
+				return err
+			}
+			removed = true
+		}
+		if !removed {
+			return nil
+		}
+	}
+}
+
+func (h *Host) removeRestoreResidueEntry(path string) error {
+	for {
+		err := h.removeRestoreWork(path)
+		if !errors.Is(err, fs.ErrPermission) {
+			return err
+		}
+		pathErr, ok := errors.AsType[*fs.PathError](err)
+		if !ok {
+			return err
+		}
+		rel, relErr := filepath.Rel(h.path(path), pathErr.Path)
+		if relErr != nil || !filepath.IsLocal(rel) {
+			return err
+		}
+		blocked := filepath.Join(path, rel)
+		stat, statErr := h.restoreEntry(blocked)
+		if rel != "." && (statErr != nil || stat.Mode&unix.S_IFMT != unix.S_IFDIR) {
+			blocked = filepath.Dir(blocked)
+		}
+		if modeErr := h.makeRestoreResidueAccessible(blocked); modeErr != nil {
+			return errors.Join(err, modeErr)
+		}
+	}
+}
+
+func (h *Host) makeRestoreResidueAccessible(path string) error {
+	parent, err := h.openRestoreDir(filepath.Dir(path), false)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = parent.Close() }()
+	fd, name := int(parent.Fd()), filepath.Base(path)
+	var stat unix.Stat_t
+	if err := unix.Fstatat(fd, name, &stat, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return hostError(path, err)
+	}
+	if stat.Mode&unix.S_IFMT != unix.S_IFDIR || stat.Mode&0o700 == 0o700 {
+		return hostError(path, fs.ErrPermission)
+	}
+	// A command can leave a private directory that an ordinary user
+	// cannot traverse until its mode is corrected. Never chmod a link.
+	if err := unix.Fchmodat(fd, name, 0o700, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return hostError(path, err)
+	}
+	return nil
+}

@@ -81,21 +81,18 @@ func (h *Host) backupFinals(ctx context.Context, s protocol.DesiredState) (backu
 	runs.Accounts = make(map[string]bool)
 	allSettled := true
 	var passErr error
-	for _, slug := range backupAccountSlugs(s) {
-		facts, walk, readiness := h.accountBackupForPass(slug)
+	for _, account := range backupActiveAccounts(s) {
+		slug := account.Slug
+		facts, walk, readiness := h.accountBackupForPass(account)
 		if facts.Operation.finalSettled(id, lock) {
 			continue
 		}
-		synced := readiness.syncedAfter(lock.at)
-		if walk == walkNotAttempted {
-			synced = facts.syncedAfter(lock.at)
-		}
-		settled, err := h.finalizeAccountBackup(ctx, s, slug, facts, walk, synced, lock)
+		settled, err := h.finalizeAccountBackup(ctx, s, account, facts, walk, readiness.syncedAfter(lock.at), lock)
 		passErr = errors.Join(passErr, err)
 		// An unavailable walk can also withhold an independent scheduled
 		// command when an unsynced final reaches its deadline.
 		if settled {
-			_, currentWalk, currentReadiness := h.accountBackupForPass(slug)
+			_, currentWalk, currentReadiness := h.accountBackupForPass(account)
 			runs.Accounts[slug] = currentWalk != walkUnrecorded || currentReadiness.syncedAfter(lock.at)
 		}
 		allSettled = allSettled && settled
@@ -116,7 +113,8 @@ func (facts backupAccountFacts) syncedAfter(at time.Time) bool {
 	})
 }
 
-func (h *Host) finalizeAccountBackup(ctx context.Context, s protocol.DesiredState, slug string, facts backupAccountFacts, walk backupWalkState, synced bool, lock backupCloseLock) (bool, error) {
+func (h *Host) finalizeAccountBackup(ctx context.Context, s protocol.DesiredState, account protocol.Account, facts backupAccountFacts, walk backupWalkState, synced bool, lock backupCloseLock) (bool, error) {
+	slug := account.Slug
 	credentials, present := accountBackupCredentials(s.Backup, slug)
 	now := h.env.Now()
 	waiting := now.Before(lock.at.Add(FinalSyncTimeout))
@@ -132,7 +130,7 @@ func (h *Host) finalizeAccountBackup(ctx context.Context, s protocol.DesiredStat
 	case present && synced:
 		check := backupCheckDue(facts, now, s.Backup.Settings)
 		var interrupted error
-		interrupted, backupErr = h.backupAccount(ctx, s, slug, credentials, facts, true, check, &lock)
+		interrupted, backupErr = h.backupAccount(ctx, s, account, credentials, facts, true, check, &lock)
 		switch {
 		case errors.Is(interrupted, errResticWalkUnavailable):
 			return h.deferAccountFinal(slug, s.Backup.Close, lock, machine.WalkUnrecorded, backupErr)

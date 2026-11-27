@@ -12,8 +12,14 @@ import (
 const backupFailed = "simulated backup failure"
 
 type memoryBackup struct {
-	facts        protocol.AccountBackup
-	finalVersion int64
+	facts         protocol.AccountBackup
+	finalVersion  int64
+	retrySnapshot bool
+}
+
+func (b *memoryBackup) clearError() {
+	b.facts.Error = ""
+	b.retrySnapshot = false
 }
 
 // backupSelection retains only what State needs to project the last pass's facts.
@@ -112,10 +118,12 @@ func credentialsFor(b *protocol.Backup, slug string) protocol.Credentials {
 	return protocol.Credentials{}
 }
 
-func (m *Memory) noCredentials(s protocol.DesiredState) {
+func (m *Memory) noCredentials(s protocol.DesiredState, withholdingSnapshot bool) {
 	for _, a := range s.Accounts {
 		if a.State == protocol.AccountActive {
-			m.accountBackup(a.Slug).facts.Error = NoCredentials
+			backup := m.accountBackup(a.Slug)
+			backup.facts.Error = NoCredentials
+			backup.retrySnapshot = backup.retrySnapshot || withholdingSnapshot
 		}
 	}
 }
@@ -139,7 +147,7 @@ func (m *Memory) Stream(ctx context.Context, s protocol.DesiredState) error {
 		return err
 	}
 	if !backupReady(s.Backup) {
-		m.noCredentials(s)
+		m.noCredentials(s, false)
 		return nil
 	}
 	disk := m.disk
@@ -149,14 +157,14 @@ func (m *Memory) Stream(ctx context.Context, s protocol.DesiredState) error {
 		if a.State != protocol.AccountActive {
 			continue
 		}
-		backup := &m.accountBackup(a.Slug).facts
+		backup := m.accountBackup(a.Slug)
 		c := credentialsFor(s.Backup, a.Slug)
 		if c.AccessKeyID == "" {
-			backup.Error = NoCredentials
+			backup.facts.Error = NoCredentials
 			continue
 		}
-		if backup.Error == NoCredentials {
-			backup.Error = ""
+		if backup.facts.Error == NoCredentials && !backup.retrySnapshot {
+			backup.clearError()
 		}
 		if disk != nil {
 			m.streamAccount(disk, a.Slug, c, now, failing[a.Slug])
@@ -228,7 +236,7 @@ func (m *Memory) Backup(ctx context.Context, s protocol.DesiredState) error {
 		}
 	}
 	if !backupReady(s.Backup) {
-		m.noCredentials(s)
+		m.noCredentials(s, true)
 		return nil
 	}
 	now := m.cfg.Now()
@@ -253,16 +261,19 @@ func (m *Memory) takeSnapshots(s protocol.DesiredState, failing map[string]bool,
 		if a.State != protocol.AccountActive {
 			continue
 		}
-		facts := &m.accountBackup(a.Slug).facts
+		backup := m.accountBackup(a.Slug)
+		facts := &backup.facts
 		c := credentialsFor(b, a.Slug)
 		switch {
 		case c.AccessKeyID == "":
 			facts.Error = NoCredentials
+			backup.retrySnapshot = true
 		case failing[a.Slug]:
 			facts.Error = backupFailed
+			backup.retrySnapshot = true
 		default:
-			if due(facts.Snapshot, now, interval) {
-				m.takeSnapshot(facts, c, at)
+			if facts.Error != "" || due(facts.Snapshot, now, interval) {
+				m.takeSnapshot(backup, c, at)
 			}
 			if due(facts.Checked, now, checks) {
 				facts.Checked = at
@@ -284,12 +295,15 @@ func due(last, now time.Time, interval time.Duration) bool {
 	return last.IsZero() || !now.Before(last.Add(interval))
 }
 
-func (m *Memory) takeSnapshot(facts *protocol.AccountBackup, c protocol.Credentials, at time.Time) bool {
+func (m *Memory) takeSnapshot(backup *memoryBackup, c protocol.Credentials, at time.Time) bool {
+	facts := &backup.facts
 	if err := m.put(c, protocol.FilesPrefix(facts.Account)+"/config"); err != nil {
 		facts.Error = err.Error()
+		backup.retrySnapshot = true
 		return false
 	}
-	facts.Snapshot, facts.Error = at, ""
+	facts.Snapshot = at
+	backup.clearError()
 	facts.Snapshots = slices.Insert(facts.Snapshots[:min(len(facts.Snapshots), protocol.MaxSnapshots-1)], 0, at.Unix())
 	return true
 }

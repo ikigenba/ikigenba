@@ -19,6 +19,7 @@ type backupWalkEntries struct {
 	remaining int
 	batch     [ReadBatch]fs.DirEntry
 	requested int
+	maxBatch  int
 	read      int
 }
 
@@ -26,6 +27,7 @@ func (*backupWalkEntries) Fd() uintptr { return 0 }
 
 func (d *backupWalkEntries) ReadDir(count int) ([]fs.DirEntry, error) {
 	d.requested = count
+	d.maxBatch = max(d.maxBatch, count)
 	actual := min(count, d.remaining)
 	d.remaining -= actual
 	d.read += actual
@@ -36,6 +38,7 @@ func (d *backupWalkEntries) ReadDir(count int) ([]fs.DirEntry, error) {
 }
 
 func TestBackupWalkReadsOnlyOneEntryOverVisitLimit(t *testing.T) {
+	// R-ZYZF-VPYV
 	for _, count := range []int{MaxVisit, MaxVisit + ReadBatch} {
 		dir := backupWalkEntries{remaining: count}
 		for i := range dir.batch {
@@ -43,6 +46,9 @@ func TestBackupWalkReadsOnlyOneEntryOverVisitLimit(t *testing.T) {
 		}
 		var walker backupWalker
 		err := walker.directory(&dir, "data", 0)
+		if dir.maxBatch > ReadBatch {
+			t.Fatalf("largest directory batch = %d, limit %d", dir.maxBatch, ReadBatch)
+		}
 		if count == MaxVisit {
 			if err != nil || dir.requested != 1 || dir.read != MaxVisit {
 				t.Fatalf("walk at limit read %d entries and last requested %d, error %v", dir.read, dir.requested, err)

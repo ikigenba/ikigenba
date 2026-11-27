@@ -85,7 +85,7 @@ func (m *Memory) finishAccount(b *memoryBackup, c protocol.Credentials, id strin
 		b.facts.Error = NoCredentials
 	case failing:
 		b.facts.Error = backupFailed
-	case m.takeSnapshot(&b.facts, c, at):
+	case m.takeSnapshot(b, c, at):
 		b.facts.Final = done(id, at)
 		return
 	}
@@ -125,7 +125,8 @@ func (m *Memory) restoreHost(disk *memoryDisk, b *protocol.Backup, failing map[s
 	disk.mu.Lock()
 	defer disk.mu.Unlock()
 	for _, a := range q.Accounts {
-		facts := &m.accountBackup(a.Slug).facts
+		backup := m.accountBackup(a.Slug)
+		facts := &backup.facts
 		if facts.Restored.ID == id && facts.Restored.State == protocol.StepDone {
 			if _, restored := disk.restored[a.Slug]; restored {
 				continue
@@ -144,7 +145,7 @@ func (m *Memory) restoreHost(disk *memoryDisk, b *protocol.Backup, failing map[s
 				disk.addDatabase(a.Slug, path, true)
 			}
 			facts.Restored = done(id, at)
-			facts.Error = ""
+			backup.clearError()
 		}
 	}
 }

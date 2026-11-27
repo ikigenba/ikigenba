@@ -101,7 +101,7 @@ func (f *hardeningFixture) prepareWholeRestore(state protocol.DesiredState) {
 }
 
 func TestWholeRestoreWaitsForApplyAndChecksInputs(t *testing.T) {
-	// R-W2WU-KKDB R-Z2JU-7NY6
+	// R-0M5J-5D22 R-Z2JU-7NY6
 	for _, tc := range []struct {
 		name string
 		edit func(*hardeningFixture, *protocol.DesiredState)
@@ -212,7 +212,7 @@ func TestWholeRestoreWaitsForApplyAndChecksInputs(t *testing.T) {
 }
 
 func TestBackupClearsRestoreMarkerWithoutFollowingLinks(t *testing.T) {
-	// R-ZKUB-Y82L R-Z9QB-9I9J
+	// R-ZKUB-Y82L R-0H9X-MA3A
 	t.Run("linked data directory", func(t *testing.T) {
 		f := newBackupPassFixture(t)
 		unrelated := "/unrelated-restore/" + filepath.Base(linux.RestoreMarker)
@@ -245,7 +245,7 @@ func TestBackupClearsRestoreMarkerWithoutFollowingLinks(t *testing.T) {
 }
 
 func TestWholeRestoreSelectsNewestTargetsAndRecoversAfterRestart(t *testing.T) {
-	// R-W7SG-3NC3 R-VZ95-F958 R-VVLG-9XX5 R-W90C-HF2S R-VRXR-4MP2 R-ZJMF-KGBW R-ZKUB-Y82L
+	// R-0NDF-J4SR R-0OLB-WWJG R-0PT8-AOA5 R-0UOT-TR8X R-0X4M-LAQB R-ZJMF-KGBW R-ZKUB-Y82L
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := wholeRestoreState()
@@ -404,7 +404,7 @@ func TestWholeRestoreSelectsNewestTargetsAndRecoversAfterRestart(t *testing.T) {
 }
 
 func TestWholeRestoreRemovesLitestreamConfigOnFailure(t *testing.T) {
-	// R-VRXR-4MP2
+	// R-0X4M-LAQB
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := wholeRestoreState()
@@ -458,7 +458,7 @@ func TestWholeRestoreRemovesLitestreamConfigOnFailure(t *testing.T) {
 }
 
 func TestWholeRestoreWithNoSnapshots(t *testing.T) {
-	// R-W2WU-KKDB R-W7SG-3NC3 R-VZ95-F958 R-VVLG-9XX5
+	// R-0M5J-5D22 R-0NDF-J4SR R-0OLB-WWJG R-0PT8-AOA5
 	for _, status := range []int{0, 10} {
 		t.Run(fmt.Sprintf("exit %d", status), func(t *testing.T) {
 			f := newHardeningFixture(t)
@@ -569,7 +569,7 @@ func (f *hardeningFixture) checkRestoreLitestream(c linux.Command, state protoco
 }
 
 func TestWholeRestoreRetriesUnexpectedExitThreeTimes(t *testing.T) {
-	// R-W0H1-T0VX
+	// R-0R14-OG0U
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := wholeRestoreState()
@@ -623,7 +623,7 @@ func TestWholeRestoreRetriesUnexpectedExitThreeTimes(t *testing.T) {
 }
 
 func TestWholeRestoreBoundsManifest(t *testing.T) {
-	// R-WW6F-R25Z
+	// R-0TGX-FZI8
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := wholeRestoreState()
@@ -711,7 +711,7 @@ func writeOlderRestoreSnapshots(f *hardeningFixture, c linux.Command) {
 }
 
 func TestWholeRestoreRefusesOccupiedTargetsAndRetriesRemainingMoves(t *testing.T) {
-	// R-VZ95-F958 R-VVLG-9XX5
+	// R-0OLB-WWJG R-0PT8-AOA5
 	for _, occupiedInitially := range []bool{true, false} {
 		t.Run(fmt.Sprintf("occupied initially %t", occupiedInitially), func(t *testing.T) {
 			f := newHardeningFixture(t)
@@ -788,7 +788,7 @@ func partialRestoreState() protocol.DesiredState {
 }
 
 func TestPartialDatabaseRestoreNamesCopiesAndKeepsResults(t *testing.T) {
-	// R-VY19-1HEJ R-ZB34-W251 R-VWTC-NPNU R-VRXR-4MP2 R-ZIEJ-6OL7
+	// R-0VWQ-7IZM R-ZB34-W251 R-0YCI-Z2H0 R-0X4M-LAQB R-ZIEJ-6OL7
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := partialRestoreState()
@@ -921,7 +921,7 @@ func (f *hardeningFixture) forbidRestoreWork() {
 }
 
 func TestPartialDatabaseRestoreRefusesSymlinkAndCollision(t *testing.T) {
-	// R-7VGU-VQLI
+	// R-0YCI-Z2H0 R-7VGU-VQLI
 	for _, linked := range []bool{true, false} {
 		t.Run(fmt.Sprintf("linked data directory %t", linked), func(t *testing.T) {
 			f := newHardeningFixture(t)
@@ -973,47 +973,104 @@ func TestPartialDatabaseRestoreRefusesSymlinkAndCollision(t *testing.T) {
 	}
 }
 
-func TestPartialDatabaseRestoreKeepsPublishedResultOnCleanupError(t *testing.T) {
-	// R-VWTC-NPNU
-	f := newHardeningFixture(t)
-	f.putBackupProgramStamps()
-	f.backupDirs("/srv/acme/data")
-	state := partialRestoreState()
-	state.Backup.Restores = []protocol.RestoreRequest{
-		{ID: "database_copy", Account: "acme", Kind: protocol.RestoreDatabase, Path: "data/app.db", AsOf: restoreAsOf},
-	}
-	calls := 0
-	var residue string
-	f.executeBackupFixtures(func(c linux.Command) (linux.Result, error) {
-		f.checkRestoreLitestream(c, state, "-timestamp")
-		calls++
-		output := strings.TrimPrefix(c.Args[7], f.root)
-		f.put(output, "published data", 0o600)
-		residue = filepath.Join(filepath.Dir(output), "residue")
-		f.put(residue+"/part", "staging residue", 0o600)
-		f.setMode(residue, 0)
-		t.Cleanup(func() {
-			if _, err := os.Lstat(f.path(residue)); !errors.Is(err, os.ErrNotExist) {
-				f.setMode(residue, 0o700)
+func TestPartialRestoresRemoveWorkResidue(t *testing.T) {
+	// R-0YCI-Z2H0 R-0ZKF-CU7P
+	for _, tc := range []struct {
+		kind   string
+		path   string
+		copy   string
+		file   string
+		mode   os.FileMode
+		status int
+	}{
+		{protocol.RestoreDatabase, "data/app.db", "data/app.restored-20261118T120000Z.db", "", 0o660, 0},
+		{protocol.RestoreDatabase, "data/app.db", "data/app.restored-20261118T120000Z.db", "", 0o660, 1},
+		{protocol.RestoreFiles, "", "restored/20261118T120000Z", "/document", 0o600, 0},
+		{protocol.RestoreFiles, "", "restored/20261118T120000Z", "/document", 0o600, 1},
+	} {
+		t.Run(fmt.Sprintf("%s exit %d", tc.kind, tc.status), func(t *testing.T) {
+			f := newHardeningFixture(t)
+			f.putBackupProgramStamps()
+			f.backupDirs("/srv/acme/data")
+			const unrelated = "/unrelated"
+			f.put(unrelated, "unchanged", 0o600)
+			state := partialRestoreState()
+			state.Backup.Restores = []protocol.RestoreRequest{
+				{ID: "copy_request", Account: "acme", Kind: tc.kind, Path: tc.path, AsOf: restoreAsOf},
 			}
+			calls := 0
+			f.executeBackupFixtures(func(c linux.Command) (linux.Result, error) {
+				var output string
+				if tc.kind == protocol.RestoreDatabase {
+					f.checkRestoreLitestream(c, state, "-timestamp")
+					output = c.Args[7]
+				} else {
+					f.checkRestoreRestic(c, state, "acme")
+					switch c.Args[3] {
+					case "snapshots":
+						restoreStdout(t, c, `[{"id":"copy","time":"2026-11-18T12:00:00Z"}]`)
+						return linux.Result{}, nil
+					case "restore":
+						output = c.Args[6]
+					default:
+						t.Fatalf("unexpected files restore command %v", c.Args)
+					}
+				}
+				calls++
+				output = strings.TrimPrefix(output, f.root)
+				f.put(output+tc.file, "restored data", 0o600)
+				work := filepath.Dir(output)
+				for i := range linux.ReadBatch + 1 {
+					f.put(filepath.Join(work, fmt.Sprintf("leftover-%d", i)), "staging residue", 0o600)
+				}
+				blocked := []string{filepath.Join(work, "residue", "deep"), filepath.Join(work, "residue", "other")}
+				for _, dir := range blocked {
+					f.put(dir+"/part", "staging residue", 0o600)
+				}
+				if err := os.Symlink(f.path(unrelated), f.path(blocked[0]+"/link")); err != nil {
+					t.Fatal(err)
+				}
+				f.setMode(blocked[0], 0)
+				f.setMode(blocked[1], 0o500)
+				t.Cleanup(func() {
+					for _, dir := range blocked {
+						if _, err := os.Lstat(f.path(dir)); err == nil {
+							f.setMode(dir, 0o700)
+						}
+					}
+				})
+				return linux.Result{ExitCode: tc.status}, nil
+			})
+			if tc.status == 0 {
+				f.backup(state)
+			} else {
+				f.failedBackupPass(state)
+			}
+			f.host = linux.New(f.env)
+			f.backup(state)
+			got := f.backupReport(state).Restores
+			if len(got) != 1 || got[0].ID != "copy_request" || calls != 1 {
+				t.Fatalf("restore reports %+v and ran %d times", got, calls)
+			}
+			if tc.status == 0 {
+				if want := (protocol.RestoreResult{ID: "copy_request", State: protocol.StepDone, Copy: tc.copy}); got[0] != want {
+					t.Fatalf("successful restore reports %+v", got[0])
+				}
+				f.expectFile("/srv/acme/"+tc.copy+tc.file, "restored data", tc.mode)
+			} else {
+				if got[0].State != protocol.StepFailed || got[0].Copy != "" || !strings.Contains(got[0].Error, "exit status 1") {
+					t.Fatalf("failed restore reports %+v", got[0])
+				}
+				f.expectAbsent("/srv/acme/" + tc.copy)
+			}
+			f.expectFile(unrelated, "unchanged", 0o600)
+			f.forbidRestoreWork()
 		})
-		return linux.Result{}, nil
-	})
-	_ = f.host.Backup(t.Context(), state)
-	f.expectMode(residue, 0)
-	f.host = linux.New(f.env)
-	f.backup(state)
-	want := []protocol.RestoreResult{
-		{ID: "database_copy", State: protocol.StepDone, Copy: "data/app.restored-20261118T120000Z.db"},
 	}
-	if got := f.backupReport(state).Restores; !slices.Equal(got, want) || calls != 1 {
-		t.Fatalf("published restore reports %+v and ran %d times", got, calls)
-	}
-	f.expectFile("/srv/acme/"+want[0].Copy, "published data", 0o660)
 }
 
 func TestPartialFilesRestoreEscapesPatternAndCopiesIntoHome(t *testing.T) {
-	// R-VT5N-IEFR R-VRXR-4MP2 R-W90C-HF2S R-ZB34-W251
+	// R-0ZKF-CU7P R-0X4M-LAQB R-0UOT-TR8X R-ZB34-W251
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := partialRestoreState()
@@ -1064,7 +1121,7 @@ func TestPartialFilesRestoreEscapesPatternAndCopiesIntoHome(t *testing.T) {
 }
 
 func TestPartialFilesRestoreSkipsOccupiedTimestampDirectory(t *testing.T) {
-	// R-VT5N-IEFR
+	// R-0ZKF-CU7P
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := partialRestoreState()
@@ -1177,7 +1234,7 @@ func TestWholeRestoreStatePrunesAbsentPartialRequest(t *testing.T) {
 }
 
 func TestWholeRestoreRetriesTargetThatWasNeverMoved(t *testing.T) {
-	// R-VVLG-9XX5
+	// R-0PT8-AOA5
 	f := newHardeningFixture(t)
 	f.putBackupProgramStamps()
 	state := wholeRestoreState()

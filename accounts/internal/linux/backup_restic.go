@@ -223,12 +223,13 @@ func (h *Host) Backup(ctx context.Context, s protocol.DesiredState) error {
 	}
 	finals, passErr := h.backupFinals(ctx, s)
 	passErr = firstBackupError(passErr, firstBackupError(pruneErr, cleanupErr))
-	for _, slug := range backupAccountSlugs(s) {
+	for _, account := range backupActiveAccounts(s) {
+		slug := account.Slug
 		creds, ok := accountBackupCredentials(b, slug)
 		if !ok || finals.Accounts[slug] {
 			continue
 		}
-		facts, walk, _ := h.accountBackupForPass(slug)
+		facts, walk, _ := h.accountBackupForPass(account)
 		if walk == walkNotAttempted {
 			continue
 		}
@@ -242,7 +243,7 @@ func (h *Host) Backup(ctx context.Context, s protocol.DesiredState) error {
 			passErr = firstBackupError(passErr, h.recordUnkeptWalk(slug))
 			continue
 		}
-		_, err := h.backupAccount(ctx, s, slug, creds, facts, snapshot, check, nil)
+		_, err := h.backupAccount(ctx, s, account, creds, facts, snapshot, check, nil)
 		passErr = firstBackupError(passErr, err)
 	}
 	if !finals.Host {
@@ -255,11 +256,12 @@ func (h *Host) recordUnkeptWalk(slug string) error {
 	return h.updateAccountBackup(slug, func(facts *backupAccountFacts) { facts.Error = machine.WalkUnrecorded })
 }
 
-func (h *Host) backupAccount(ctx context.Context, s protocol.DesiredState, slug string, c protocol.Credentials, facts backupAccountFacts, snapshot, check bool, final *backupCloseLock) (interrupted error, result error) {
+func (h *Host) backupAccount(ctx context.Context, s protocol.DesiredState, account protocol.Account, c protocol.Credentials, facts backupAccountFacts, snapshot, check bool, final *backupCloseLock) (interrupted error, result error) {
+	slug := account.Slug
 	repo := h.resticCommand(s.Backup, c, protocol.FilesPrefix(slug), slug)
 	var ran bool
 	repo.prepare = func(args []string) ([]string, error) {
-		prepared, err := h.prepareAccountRestic(ctx, s, slug, args, final)
+		prepared, err := h.prepareAccountRestic(ctx, s, account, args, final)
 		switch {
 		case errors.Is(err, errResticWalkUnavailable):
 			interrupted = errResticWalkUnavailable
@@ -305,9 +307,10 @@ func (h *Host) backupAccount(ctx context.Context, s protocol.DesiredState, slug 
 	return interrupted, errors.Join(partial, err, saveErr)
 }
 
-func (h *Host) prepareAccountRestic(ctx context.Context, s protocol.DesiredState, slug string, args []string, final *backupCloseLock) ([]string, error) {
+func (h *Host) prepareAccountRestic(ctx context.Context, s protocol.DesiredState, account protocol.Account, args []string, final *backupCloseLock) ([]string, error) {
+	slug := account.Slug
 	for {
-		facts, walk, readiness := h.accountBackupForPass(slug)
+		facts, walk, readiness := h.accountBackupForPass(account)
 		if walk != walkKept {
 			return nil, unavailableResticWalk(final, readiness)
 		}
@@ -324,7 +327,7 @@ func (h *Host) prepareAccountRestic(ctx context.Context, s protocol.DesiredState
 		prepared := slices.Concat(args, h.backupAccountArgs(s, slug, manifest, paths))
 		// A new walk can finish while the manifest is being written. Use
 		// that walk before launching the snapshot, without locking restic.
-		latest, walk, readiness := h.accountBackupForPass(slug)
+		latest, walk, readiness := h.accountBackupForPass(account)
 		if walk != walkKept {
 			return nil, unavailableResticWalk(final, readiness)
 		}
