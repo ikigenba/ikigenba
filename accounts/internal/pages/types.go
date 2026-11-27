@@ -185,7 +185,7 @@ type AboutData struct {
 	Description, DefaultType                            string
 	DefaultRootGB, DefaultDataGB                        int
 	BackupEveryMinutes                                  int
-	BackupHourly, BackupDaily, BackupMonthly            int
+	BackupHourly, BackupDaily, BackupWeekly             int
 	BackupWindowDays                                    int
 	BackupFilesStaleMinutes, BackupDatabaseStaleMinutes int
 }

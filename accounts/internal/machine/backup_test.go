@@ -102,7 +102,7 @@ func TestBackupCopy(t *testing.T) {
 }
 
 func TestWalkUnrecordedCopy(t *testing.T) {
-	// R-6G13-YK7P
+	// R-7PVK-OWD7
 	const text string = machine.WalkUnrecorded
 	if text == "" || strings.ContainsAny(text, "\r\n") {
 		t.Fatalf("invalid walk diagnostic %q", text)
@@ -173,7 +173,7 @@ func putCounts(puts []putCall) map[putCall]int {
 }
 
 func TestMemoryStream(t *testing.T) {
-	// R-YJ1G-3C32 R-YGLN-BSLO R-6IGW-Q3P3 R-YQCU-DYJ8
+	// R-YJ1G-3C32 R-YGLN-BSLO R-7SBD-GFUL R-YQCU-DYJ8
 	s := backupState()
 	now := fixtureTime.Add(250 * time.Millisecond).In(time.FixedZone("test", -3600))
 	var puts []putCall
@@ -249,7 +249,7 @@ func TestMemoryStream(t *testing.T) {
 }
 
 func TestMemoryBackupFactsAfterRemovalOrGIDChange(t *testing.T) {
-	// R-5E88-3O86
+	// R-6O2O-U0DO
 	for _, variant := range []string{
 		"removed in stream", "removed in backup", "absent in stream", "absent in backup",
 		"removed without backup settings", "removed during restore", "changed gid in backup", "changed gid in stream",
@@ -358,7 +358,7 @@ func TestMemoryBackupFactsAfterRemovalOrGIDChange(t *testing.T) {
 }
 
 func TestMemoryStreamPutCannotRestoreRetiredFacts(t *testing.T) {
-	// R-5E88-3O86
+	// R-6O2O-U0DO
 	s := backupState()
 	s.Accounts[0].GID = 20001
 	removed := s
@@ -391,7 +391,7 @@ func TestMemoryStreamPutCannotRestoreRetiredFacts(t *testing.T) {
 }
 
 func TestMemoryRestoreKeepsFactsOnlyForItsAccountGID(t *testing.T) {
-	// R-5E88-3O86
+	// R-6O2O-U0DO
 	s := backupState()
 	const gid = 20001
 	s.Accounts[0].GID = gid
@@ -432,7 +432,7 @@ func TestMemoryRestoreKeepsFactsOnlyForItsAccountGID(t *testing.T) {
 }
 
 func TestMemorySnapshotSchedule(t *testing.T) {
-	// R-8RX7-64FH R-YE5U-K94A R-6IGW-Q3P3
+	// R-8RX7-64FH R-YE5U-K94A R-7SBD-GFUL
 	s := backupState()
 	now := fixtureTime.Add(time.Millisecond)
 	var puts []putCall
@@ -611,7 +611,7 @@ func TestMemoryRestoredAccountDropsSnapshotRetry(t *testing.T) {
 }
 
 func TestMemoryInspectDatabaseAggregate(t *testing.T) {
-	// R-6IGW-Q3P3
+	// R-7SBD-GFUL
 	s := backupState()
 	disks := machine.NewDisks()
 	early, late := fixtureTime, fixtureTime.Add(time.Minute)

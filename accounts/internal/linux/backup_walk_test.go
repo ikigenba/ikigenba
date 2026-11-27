@@ -38,7 +38,7 @@ func (d *backupWalkEntries) ReadDir(count int) ([]fs.DirEntry, error) {
 }
 
 func TestBackupWalkReadsOnlyOneEntryOverVisitLimit(t *testing.T) {
-	// R-6PSB-0Q59
+	// R-80UO-4U1G
 	for _, count := range []int{MaxVisit, MaxVisit + ReadBatch} {
 		dir := backupWalkEntries{remaining: count}
 		for i := range dir.batch {

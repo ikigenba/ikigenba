@@ -68,7 +68,7 @@ func TestBanLimits(t *testing.T) {
 	}
 }
 
-// R-CEUB-229G, R-CJPW-L588, R-CPTE-HZXP, R-U0RX-JI8F, R-U37Q-B1PT, R-X5Z0-MBL9.
+// R-CEUB-229G, R-CJPW-L588, R-8BTR-KRPP, R-U0RX-JI8F, R-U37Q-B1PT, R-X5Z0-MBL9.
 func TestWireObjects(t *testing.T) {
 	// Struct conversion checks the ordered Go fields independently of their JSON tags.
 	_ = struct {

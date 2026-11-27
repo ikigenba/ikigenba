@@ -56,7 +56,7 @@ func TestBackupConstants(t *testing.T) {
 	}
 }
 
-// R-CG27-FU05, R-CHA3-TLQU, R-CII0-7DHJ, R-CM5P-COPM, R-CNDL-QGGB, R-COLI-4870, R-CPTE-HZXP.
+// R-CG27-FU05, R-8ALV-6ZZ0, R-CII0-7DHJ, R-CM5P-COPM, R-CNDL-QGGB, R-COLI-4870, R-8BTR-KRPP.
 func TestBackupWireObjects(t *testing.T) {
 	// Struct conversion checks the ordered Go fields independently of their JSON tags.
 	_ = struct {
@@ -74,6 +74,7 @@ func TestBackupWireObjects(t *testing.T) {
 		EveryMinutes         int
 		Hourly               int
 		Daily                int
+		Weekly               int
 		Monthly              int
 		WindowDays           int
 		FilesStaleMinutes    int
@@ -147,10 +148,10 @@ func TestBackupWireObjects(t *testing.T) {
 		Error string
 	}(RestoreResult{})
 	when := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
-	every, hourly, daily, monthly, window, filesStale, dbStale, checkDays := 60, 24, 7, 1, 35, 120, 10, 7
+	every, hourly, daily, weekly, monthly, window, filesStale, dbStale, checkDays := 60, 24, 7, 5, 0, 35, 120, 10, 7
 	total, failures := 3, 1
 	var gid int64 = 20001
-	settings := Settings{every, hourly, daily, monthly, window, filesStale, dbStale, checkDays}
+	settings := Settings{every, hourly, daily, weekly, monthly, window, filesStale, dbStale, checkDays}
 	credentials := Credentials{"backup-key", "backup-secret", "backup-token", when}
 	accountCredentials := AccountCredentials{"acme", credentials}
 	restoreAccount := RestoreAccount{"acme", gid, []string{"data/example.db"}}
@@ -163,7 +164,7 @@ func TestBackupWireObjects(t *testing.T) {
 	host := HostBackup{when, "host fault", step, step}
 	result := RestoreResult{"restore-part", StepFailed, "restored/example.txt", "restore fault"}
 	const stamp = `"2026-11-18T12:00:00Z"`
-	const settingsJSON = `{"every_minutes":60,"hourly":24,"daily":7,"monthly":1,"window_days":35,"files_stale_minutes":120,"database_stale_minutes":10,"check_days":7}`
+	const settingsJSON = `{"every_minutes":60,"hourly":24,"daily":7,"weekly":5,"monthly":0,"window_days":35,"files_stale_minutes":120,"database_stale_minutes":10,"check_days":7}`
 	const credentialsJSON = `{"access_key_id":"backup-key","secret_access_key":"backup-secret","session_token":"backup-token","expires":` + stamp + `}`
 	const accountCredentialsJSON = `{"account":"acme","credentials":` + credentialsJSON + `}`
 	const restoreAccountJSON = `{"slug":"acme","gid":20001,"databases":["data/example.db"]}`
@@ -182,7 +183,7 @@ func TestBackupWireObjects(t *testing.T) {
 		{hostRestore, hostRestoreJSON},
 		{request, requestJSON},
 		{backup, `{"bucket":"example-bucket","region":"us-east-1","settings":` + settingsJSON + `,"host":` + credentialsJSON + `,"accounts":[` + accountCredentialsJSON + `],"host_prefix":"hosts/host01/1/","close":"close-host","restore":` + hostRestoreJSON + `,"restores":[` + requestJSON + `]}`},
-		{Backup{}, `{"bucket":"","region":"","settings":{"every_minutes":0,"hourly":0,"daily":0,"monthly":0,"window_days":0,"files_stale_minutes":0,"database_stale_minutes":0,"check_days":0},"host":{"access_key_id":"","secret_access_key":"","session_token":"","expires":"0001-01-01T00:00:00Z"},"accounts":null,"host_prefix":"","close":"","restore":null,"restores":null}`},
+		{Backup{}, `{"bucket":"","region":"","settings":{"every_minutes":0,"hourly":0,"daily":0,"weekly":0,"monthly":0,"window_days":0,"files_stale_minutes":0,"database_stale_minutes":0,"check_days":0},"host":{"access_key_id":"","secret_access_key":"","session_token":"","expires":"0001-01-01T00:00:00Z"},"accounts":null,"host_prefix":"","close":"","restore":null,"restores":null}`},
 		{step, stepJSON},
 		{db, dbJSON},
 		{account, `{"account":"acme","snapshot":` + stamp + `,"snapshots":[10],"checked":` + stamp + `,"error":"account fault","databases":[` + dbJSON + `],"database_total":3,"database_errors":1,"synced":` + stamp + `,"written":` + stamp + `,"final":` + stepJSON + `,"restored":` + stepJSON + `}`},

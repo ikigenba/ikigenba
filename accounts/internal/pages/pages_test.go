@@ -181,7 +181,7 @@ func TestPageNamesAndTimeLayouts(t *testing.T) {
 	}
 }
 
-// R-2QRO-TAYI R-CDGQ-KT3P R-CEOM-YKUE R-CFWJ-CCL3 R-CH4F-Q4BS R-CICC-3W2H R-CM01-97AK R-CJK8-HNT6 R-CVUA-IWJR
+// R-2QRO-TAYI R-CDGQ-KT3P R-CEOM-YKUE R-CFWJ-CCL3 R-CH4F-Q4BS R-CICC-3W2H R-CM01-97AK R-8862-FGHM R-CVUA-IWJR
 func TestPageDataShapes(t *testing.T) {
 	t.Helper()
 	_ = struct {
@@ -256,9 +256,9 @@ func TestPageDataShapes(t *testing.T) {
 		Account, Kind, Path, AsOf, AsOfText, Copy, State, Reason, Asked, AskedText string
 	}(pages.RestoreRow{})
 	_ = struct {
-		Banner                                                                                                                                                            page.Banner
-		Description, DefaultType                                                                                                                                          string
-		DefaultRootGB, DefaultDataGB, BackupEveryMinutes, BackupHourly, BackupDaily, BackupMonthly, BackupWindowDays, BackupFilesStaleMinutes, BackupDatabaseStaleMinutes int
+		Banner                                                                                                                                                           page.Banner
+		Description, DefaultType                                                                                                                                         string
+		DefaultRootGB, DefaultDataGB, BackupEveryMinutes, BackupHourly, BackupDaily, BackupWeekly, BackupWindowDays, BackupFilesStaleMinutes, BackupDatabaseStaleMinutes int
 	}(pages.AboutData{})
 	const databaseRows, restoreRows int = pages.MaxDatabaseRows, pages.MaxRestoreRows
 	if databaseRows != 50 || restoreRows != 25 {
@@ -527,7 +527,7 @@ func TestPageDecisionOrder(t *testing.T) {
 	}
 }
 
-// R-SU41-STSX R-CWZ4-P4YT R-ZI18-EL12 R-SWJU-KDAB
+// R-SU41-STSX R-89DY-T88B R-ZI18-EL12 R-SWJU-KDAB
 func TestInformationPagesAndHead(t *testing.T) {
 	f := setup(t)
 	for _, registered := range []bool{false, true} {

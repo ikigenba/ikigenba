@@ -10,15 +10,20 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/paging"
 )
 
-// R-WDHE-RPV7 R-VV6X-15QS R-VWET-EXHH
-func TestBackupSettingsAreDefaultedAndReadOnly(t *testing.T) {
-	d, s, _ := fixture(t)
-	want := store.BackupSettings{EveryMinutes: 60, Hourly: 24, Daily: 7, Monthly: 1, WindowDays: 35,
+// R-84ID-A59J
+func TestDefaultBackupSettings(t *testing.T) {
+	want := store.BackupSettings{EveryMinutes: 60, Hourly: 24, Daily: 7, Weekly: 5, Monthly: 0, WindowDays: 35,
 		FilesStaleMinutes: 120, DatabaseStaleMinutes: 10, CheckDays: 7}
 	first := store.DefaultBackupSettings()
 	eq(t, first, want)
 	first.EveryMinutes = 42
 	eq(t, store.DefaultBackupSettings(), want)
+}
+
+// R-VV6X-15QS R-VWET-EXHH
+func TestBackupSettingsAreDefaultedAndReadOnly(t *testing.T) {
+	d, s, _ := fixture(t)
+	want := store.DefaultBackupSettings()
 	eq(t, value(t, result(s.BackupSettings(ctx))), want)
 	h := readyHost(t, s)
 	_, closing := closeHost(t, s, h.Name)
@@ -26,11 +31,11 @@ func TestBackupSettingsAreDefaultedAndReadOnly(t *testing.T) {
 	eq(t, value(t, result(s.BackupSettings(ctx))), want)
 	checkErr(t, d.Write(ctx, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, `INSERT INTO backup_settings
-			(scope, every_minutes, hourly, daily, monthly, window_days, files_stale_minutes, database_stale_minutes, check_days)
-			VALUES ('', 30, 16, 5, 2, 50, 90, 12, 6), ('elsewhere', 95, 1, 1, 1, 1, 1, 1, 1)`)
+			(scope, every_minutes, hourly, daily, weekly, monthly, window_days, files_stale_minutes, database_stale_minutes, check_days)
+			VALUES ('', 30, 16, 5, 8, 2, 50, 90, 12, 6), ('elsewhere', 95, 1, 1, 1, 1, 1, 1, 1, 1)`)
 		return err
 	}), nil)
-	want = store.BackupSettings{EveryMinutes: 30, Hourly: 16, Daily: 5, Monthly: 2, WindowDays: 50,
+	want = store.BackupSettings{EveryMinutes: 30, Hourly: 16, Daily: 5, Weekly: 8, Monthly: 2, WindowDays: 50,
 		FilesStaleMinutes: 90, DatabaseStaleMinutes: 12, CheckDays: 6}
 	eq(t, value(t, result(s.BackupSettings(ctx))), want)
 	_, opening := openHost(t, s, h.Name)

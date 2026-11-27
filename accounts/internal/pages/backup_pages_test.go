@@ -17,7 +17,7 @@ import (
 )
 
 var otherBackupSettings = store.BackupSettings{
-	EveryMinutes: 30, Hourly: 16, Daily: 5, Monthly: 2, WindowDays: 50,
+	EveryMinutes: 30, Hourly: 16, Daily: 5, Weekly: 9, Monthly: 2, WindowDays: 50,
 	FilesStaleMinutes: 90, DatabaseStaleMinutes: 12, CheckDays: 6,
 }
 
@@ -26,9 +26,9 @@ func writePageBackupSettings(t *testing.T, f *fixture, b store.BackupSettings) {
 	ctx := t.Context()
 	if err := f.d.Write(ctx, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, `INSERT INTO backup_settings
-			(scope, every_minutes, hourly, daily, monthly, window_days, files_stale_minutes, database_stale_minutes, check_days)
-			VALUES ('', ?, ?, ?, ?, ?, ?, ?, ?)`,
-			b.EveryMinutes, b.Hourly, b.Daily, b.Monthly, b.WindowDays, b.FilesStaleMinutes, b.DatabaseStaleMinutes, b.CheckDays)
+			(scope, every_minutes, hourly, daily, weekly, monthly, window_days, files_stale_minutes, database_stale_minutes, check_days)
+			VALUES ('', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			b.EveryMinutes, b.Hourly, b.Daily, b.Weekly, b.Monthly, b.WindowDays, b.FilesStaleMinutes, b.DatabaseStaleMinutes, b.CheckDays)
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -39,12 +39,12 @@ func aboutData(banner page.Banner, b store.BackupSettings) pages.AboutData {
 	return pages.AboutData{
 		Banner: banner, Description: pages.Description, DefaultType: valid.DefaultType,
 		DefaultRootGB: valid.DefaultRootGB, DefaultDataGB: valid.DefaultDataGB,
-		BackupEveryMinutes: b.EveryMinutes, BackupHourly: b.Hourly, BackupDaily: b.Daily, BackupMonthly: b.Monthly,
+		BackupEveryMinutes: b.EveryMinutes, BackupHourly: b.Hourly, BackupDaily: b.Daily, BackupWeekly: b.Weekly,
 		BackupWindowDays: b.WindowDays, BackupFilesStaleMinutes: b.FilesStaleMinutes, BackupDatabaseStaleMinutes: b.DatabaseStaleMinutes,
 	}
 }
 
-// R-CWZ4-P4YT R-CN7X-MZ19
+// R-89DY-T88B R-CN7X-MZ19
 func TestAboutReadsStoredSettingsWithOrWithoutHosts(t *testing.T) {
 	f := setup(t)
 	writePageBackupSettings(t, f, otherBackupSettings)

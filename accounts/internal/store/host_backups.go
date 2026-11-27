@@ -335,8 +335,8 @@ func (s *recordReader) BackupSteps(ctx context.Context, opID string) ([]BackupSt
 func (s *recordReader) BackupSettings(ctx context.Context) (BackupSettings, error) {
 	return read(ctx, s, true, func(q query) (BackupSettings, error) {
 		b := DefaultBackupSettings()
-		err := q.row(`SELECT every_minutes, hourly, daily, monthly, window_days, files_stale_minutes, database_stale_minutes, check_days
-			FROM backup_settings WHERE scope = ''`).Scan(&b.EveryMinutes, &b.Hourly, &b.Daily, &b.Monthly, &b.WindowDays,
+		err := q.row(`SELECT every_minutes, hourly, daily, weekly, monthly, window_days, files_stale_minutes, database_stale_minutes, check_days
+			FROM backup_settings WHERE scope = ''`).Scan(&b.EveryMinutes, &b.Hourly, &b.Daily, &b.Weekly, &b.Monthly, &b.WindowDays,
 			&b.FilesStaleMinutes, &b.DatabaseStaleMinutes, &b.CheckDays)
 		return b, ignoreNoRows(err)
 	})

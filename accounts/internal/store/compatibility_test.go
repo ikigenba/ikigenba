@@ -264,6 +264,7 @@ func TestAdditiveMigrations(t *testing.T) {
 	hostRecordsSchema := value(t, result(fs.ReadFile(migrations, "0005_host_records.sql")))
 	keptSchema := value(t, result(fs.ReadFile(migrations, "0006_kept_volumes.sql")))
 	backupSchema := value(t, result(fs.ReadFile(migrations, "0007_host_backups.sql")))
+	weeklySchema := value(t, result(fs.ReadFile(migrations, "0008_weekly_retention.sql")))
 	for _, table := range tableNames(string(old) + string(newSchema) + string(bansSchema) + string(inviteSchema) +
 		string(hostRecordsSchema) + string(keptSchema) + string(backupSchema)) {
 		extra.WriteString("ALTER TABLE " + table + " ADD COLUMN future_note TEXT;\n")
@@ -276,7 +277,8 @@ ALTER TABLE hosts ADD COLUMN record_reason TEXT;
 	expanded := fstest.MapFS{"0001_accounts.sql": {Data: old}, "0002_hosts.sql": {Data: newSchema},
 		"0003_bans.sql": {Data: bansSchema}, "0004_invites.sql": {Data: inviteSchema},
 		"0005_host_records.sql": {Data: hostRecordsSchema}, "0006_kept_volumes.sql": {Data: keptSchema},
-		"0007_host_backups.sql": {Data: backupSchema}, "0008_expand.sql": {Data: []byte(extra.String())}}
+		"0007_host_backups.sql": {Data: backupSchema}, "0008_weekly_retention.sql": {Data: weeklySchema},
+		"0009_expand.sql": {Data: []byte(extra.String())}}
 	cfg.Rand = new(counterRandom)
 	_, withExtra := open(t, filepath.Join(t.TempDir(), "expand.db"), expanded, cfg)
 	for _, s := range []*store.Store{baseline, withoutLegacy, withExtra} {
@@ -298,6 +300,7 @@ ALTER TABLE hosts ADD COLUMN record_reason TEXT;
 		w, cancel := s.Watch(host)
 		eq(t, exercise(ctx, s, host, opID), want)
 		eq(t, inviteExercise(ctx, s, host), wantInvites)
+		eq(t, value(t, result(s.BackupSettings(ctx))), value(t, result(baseline.BackupSettings(ctx))))
 		closed(t, w, true)
 		cancel()
 	}

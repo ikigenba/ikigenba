@@ -14,7 +14,7 @@ import (
 )
 
 func TestMemoryCloseFinals(t *testing.T) {
-	// R-8T53-JW66 R-6IGW-Q3P3
+	// R-8T53-JW66 R-7SBD-GFUL
 	s := backupState()
 	now := fixtureTime
 	var accountPuts int
@@ -154,7 +154,7 @@ func TestMemoryCloseFinalRetryAfterConcurrentApply(t *testing.T) {
 }
 
 func TestMemoryWholeHostRestore(t *testing.T) {
-	// R-Z3RQ-LFOV R-YFDQ-Y0UZ R-6IGW-Q3P3
+	// R-Z3RQ-LFOV R-YFDQ-Y0UZ R-7SBD-GFUL
 	s := backupState()
 	s.Accounts = nil
 	now := fixtureTime
@@ -257,7 +257,7 @@ func TestMemoryWholeHostRestore(t *testing.T) {
 }
 
 func TestMemoryPartialRestores(t *testing.T) {
-	// R-6H90-CBYE R-YQCU-DYJ8 R-6IGW-Q3P3
+	// R-7R3H-2O3W R-YQCU-DYJ8 R-7SBD-GFUL
 	s := backupState()
 	now := fixtureTime.Add(250 * time.Millisecond)
 	s.Accounts = append(s.Accounts, protocol.Account{Slug: "beta", State: protocol.AccountActive})
@@ -388,7 +388,7 @@ func TestMemoryPartialRestores(t *testing.T) {
 }
 
 func TestMemoryPartialRestoreWaitsForEligibleAccount(t *testing.T) {
-	// R-6H90-CBYE
+	// R-7R3H-2O3W
 	s := backupState()
 	now := fixtureTime
 	m := backupMachine(&now, nil, nil)
@@ -435,7 +435,7 @@ func TestMemoryPartialRestoreWaitsForEligibleAccount(t *testing.T) {
 }
 
 func TestMemoryRestoreCopyPathsStayOnSharedDisk(t *testing.T) {
-	// R-6H90-CBYE
+	// R-7R3H-2O3W
 	s := backupState()
 	disks := machine.NewDisks()
 	firstNow, secondNow := fixtureTime, fixtureTime

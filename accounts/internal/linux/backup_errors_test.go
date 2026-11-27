@@ -182,7 +182,7 @@ func TestBackupRedactsWrappedExecutionFailures(t *testing.T) {
 }
 
 func TestStreamPassErrorsPersistByMethod(t *testing.T) {
-	// R-59CM-KL9E R-5VAT-GGLW R-5RN4-B5DT
+	// R-6KEZ-OP5L R-755A-6SRE R-72PH-F9A0
 	f := newBackupPassFixture(t)
 	f.put("/srv/acme/data/app.db", walSQLite, 0o600)
 	f.state.Accounts = append(f.state.Accounts, protocol.Account{Slug: "bravo", GID: 20002, State: protocol.AccountActive})
@@ -244,7 +244,7 @@ func TestStreamPassErrorsPersistByMethod(t *testing.T) {
 }
 
 func TestStreamCleanupFailuresOnlyReportForBackedUpAccounts(t *testing.T) {
-	// R-59CM-KL9E R-5P7B-JLWF
+	// R-6KEZ-OP5L R-709O-NPSM
 	for _, tc := range []struct {
 		name   string
 		gate   bool
@@ -298,7 +298,7 @@ func TestStreamCleanupFailuresOnlyReportForBackedUpAccounts(t *testing.T) {
 }
 
 func TestBackupPassErrorRequiresAnAccountFilesystemFailure(t *testing.T) {
-	// R-59CM-KL9E R-5RN4-B5DT
+	// R-6KEZ-OP5L R-72PH-F9A0
 	f := newBackupPassFixture(t)
 	f.put("/srv/acme/data/app.db", walSQLite, 0o600)
 	f.put(dataPrivateKey, "host private", 0o600)
@@ -357,7 +357,7 @@ func TestBackupPassErrorRequiresAnAccountFilesystemFailure(t *testing.T) {
 }
 
 func TestFilesRestoreSharesBackupPassError(t *testing.T) {
-	// R-59CM-KL9E
+	// R-6KEZ-OP5L
 	f := newBackupPassFixture(t)
 	const cache = linux.ResticCache + "/acme"
 	f.put(cache, "blocked cache", 0o600)
@@ -386,7 +386,7 @@ func TestFilesRestoreSharesBackupPassError(t *testing.T) {
 }
 
 func TestStreamPassErrorNamesUnreadableDatabasePath(t *testing.T) {
-	// R-59CM-KL9E
+	// R-6KEZ-OP5L
 	f := newBackupPassFixture(t)
 	const blocked = "/srv/acme/data/app.db"
 	f.put(blocked, walSQLite, 0o000)
@@ -406,7 +406,7 @@ func TestStreamPassErrorNamesUnreadableDatabasePath(t *testing.T) {
 }
 
 func TestBackupInspectErrorPrecedence(t *testing.T) {
-	// R-5RN4-B5DT
+	// R-72PH-F9A0
 	f := newBackupPassFixture(t)
 	f.put("/srv/acme/data/app.db", walSQLite, 0o600)
 	f.stream()
@@ -453,7 +453,7 @@ func TestBackupInspectErrorPrecedence(t *testing.T) {
 }
 
 func TestBackupCommandErrorKeepsBoundedUTF8Prefix(t *testing.T) {
-	// R-5P7B-JLWF R-59CM-KL9E
+	// R-709O-NPSM R-6KEZ-OP5L
 	for _, stream := range []bool{false, true} {
 		label := "restic forget"
 		if stream {

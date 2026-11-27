@@ -66,7 +66,7 @@ func about(w http.ResponseWriter, r *http.Request, cfg Config, banner page.Banne
 		Banner: banner, Description: Description, DefaultType: valid.DefaultType,
 		DefaultRootGB: valid.DefaultRootGB, DefaultDataGB: valid.DefaultDataGB,
 		BackupEveryMinutes: settings.EveryMinutes, BackupHourly: settings.Hourly,
-		BackupDaily: settings.Daily, BackupMonthly: settings.Monthly, BackupWindowDays: settings.WindowDays,
+		BackupDaily: settings.Daily, BackupWeekly: settings.Weekly, BackupWindowDays: settings.WindowDays,
 		BackupFilesStaleMinutes: settings.FilesStaleMinutes, BackupDatabaseStaleMinutes: settings.DatabaseStaleMinutes,
 	})
 }

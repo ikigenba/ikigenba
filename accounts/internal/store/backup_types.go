@@ -41,7 +41,7 @@ var (
 
 // BackupSettings controls schedules, retention, and health thresholds.
 type BackupSettings struct {
-	EveryMinutes, Hourly, Daily, Monthly, WindowDays, FilesStaleMinutes, DatabaseStaleMinutes, CheckDays int
+	EveryMinutes, Hourly, Daily, Weekly, Monthly, WindowDays, FilesStaleMinutes, DatabaseStaleMinutes, CheckDays int
 }
 
 // AccountBackup contains the latest recorded backup facts for an account.
@@ -96,7 +96,7 @@ type Replacement struct {
 
 // DefaultBackupSettings returns the service defaults for backup policy.
 func DefaultBackupSettings() BackupSettings {
-	return BackupSettings{EveryMinutes: 60, Hourly: 24, Daily: 7, Monthly: 1, WindowDays: 35,
+	return BackupSettings{EveryMinutes: 60, Hourly: 24, Daily: 7, Weekly: 5, Monthly: 0, WindowDays: 35,
 		FilesStaleMinutes: 120, DatabaseStaleMinutes: 10, CheckDays: 7}
 }
 

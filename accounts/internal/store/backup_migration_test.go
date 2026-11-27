@@ -57,6 +57,56 @@ CREATE INDEX backups_deletes_due ON backups_deletes(next_try, account) WHERE sta
 CREATE TABLE kept_causes (volume TEXT PRIMARY KEY, cause TEXT NOT NULL) WITHOUT ROWID;
 `
 
+// R-85Q9-NX08
+func TestWeeklyRetentionMigrationContents(t *testing.T) {
+	body := value(t, result(fs.ReadFile(accounts.Migrations(), "0008_weekly_retention.sql")))
+	eq(t, string(body), "ALTER TABLE backup_settings ADD COLUMN weekly INTEGER NOT NULL DEFAULT 5;\n"+
+		"UPDATE backup_settings SET weekly = 5, monthly = 0;\n")
+}
+
+// R-86Y6-1OQX
+func TestWeeklyRetentionMigrationUpgradesBackupSettings(t *testing.T) {
+	migrations := accounts.Migrations()
+	earlier, _ := earlierMigrations(t)
+	for _, name := range []string{"0006_kept_volumes.sql", "0007_host_backups.sql"} {
+		earlier[name] = &fstest.MapFile{Data: value(t, result(fs.ReadFile(migrations, name)))}
+	}
+	for _, tc := range []struct {
+		name    string
+		monthly int
+		want    store.BackupSettings
+	}{
+		{"previous defaults", 1, store.BackupSettings{EveryMinutes: 60, Hourly: 24, Daily: 7, Weekly: 5,
+			WindowDays: 35, FilesStaleMinutes: 120, DatabaseStaleMinutes: 10, CheckDays: 7}},
+		{"custom settings", 9, store.BackupSettings{EveryMinutes: 30, Hourly: 16, Daily: 6, Weekly: 5,
+			WindowDays: 42, FilesStaleMinutes: 90, DatabaseStaleMinutes: 12, CheckDays: 4}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := store.Config{Now: func() time.Time { return baseTime }, Rand: new(counterRandom)}
+			path := filepath.Join(t.TempDir(), "record.db")
+			d, _ := open(t, path, earlier, cfg)
+			want := tc.want
+			checkErr(t, d.Write(ctx, func(tx *sql.Tx) error {
+				_, err := tx.ExecContext(ctx, `INSERT INTO backup_settings
+					(scope, every_minutes, hourly, daily, monthly, window_days, files_stale_minutes, database_stale_minutes, check_days)
+					VALUES ('', ?, ?, ?, ?, ?, ?, ?, ?)`, want.EveryMinutes, want.Hourly, want.Daily, tc.monthly, want.WindowDays,
+					want.FilesStaleMinutes, want.DatabaseStaleMinutes, want.CheckDays)
+				return err
+			}), nil)
+			checkErr(t, d.Close(), nil)
+
+			d, s := open(t, path, migrations, cfg)
+			eq(t, value(t, result(s.BackupSettings(ctx))), want)
+			want.Weekly = 13
+			checkErr(t, d.Write(ctx, func(tx *sql.Tx) error {
+				_, err := tx.ExecContext(ctx, "UPDATE backup_settings SET weekly = ? WHERE scope = ''", want.Weekly)
+				return err
+			}), nil)
+			eq(t, value(t, result(s.BackupSettings(ctx))), want)
+		})
+	}
+}
+
 // R-VTZ0-NE03 R-UM0R-2K4G
 func TestBackupRowsStayWithTheHostSequenceDuringRollback(t *testing.T) {
 	rand := new(counterRandom)

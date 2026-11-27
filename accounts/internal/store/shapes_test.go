@@ -280,9 +280,9 @@ const (
 	_ namedString = store.DeleteBackupsFailed
 )
 
-// R-5AGX-A2SG
+// R-83AG-WDIU
 var _ struct {
-	EveryMinutes, Hourly, Daily, Monthly, WindowDays, FilesStaleMinutes, DatabaseStaleMinutes, CheckDays int
+	EveryMinutes, Hourly, Daily, Weekly, Monthly, WindowDays, FilesStaleMinutes, DatabaseStaleMinutes, CheckDays int
 } = store.BackupSettings{}
 
 var _ func() store.BackupSettings = store.DefaultBackupSettings

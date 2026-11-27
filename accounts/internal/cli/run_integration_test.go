@@ -1597,7 +1597,7 @@ func TestRunInjectedBanner(t *testing.T) {
 	defaults := store.DefaultBackupSettings()
 	set.Write(want, req, 200, "about", pages.AboutData{
 		Banner: b, Description: pages.Description, DefaultType: valid.DefaultType, DefaultRootGB: valid.DefaultRootGB, DefaultDataGB: valid.DefaultDataGB,
-		BackupEveryMinutes: defaults.EveryMinutes, BackupHourly: defaults.Hourly, BackupDaily: defaults.Daily, BackupMonthly: defaults.Monthly,
+		BackupEveryMinutes: defaults.EveryMinutes, BackupHourly: defaults.Hourly, BackupDaily: defaults.Daily, BackupWeekly: defaults.Weekly,
 		BackupWindowDays: defaults.WindowDays, BackupFilesStaleMinutes: defaults.FilesStaleMinutes, BackupDatabaseStaleMinutes: defaults.DatabaseStaleMinutes,
 	})
 	if code != 200 || body != want.Body.String() {

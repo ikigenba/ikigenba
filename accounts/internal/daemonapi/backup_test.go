@@ -68,7 +68,7 @@ func (s desiredBackup) Desired(ctx context.Context, name string) (protocol.Desir
 	return state, err
 }
 
-// R-KWPE-A1KF, R-L1KZ-T4J7, R-OGXL-J7GO.
+// R-8E9K-CB73, R-8FHG-Q2XS, R-OGXL-J7GO.
 func TestBackupOverlayWithoutAccess(t *testing.T) {
 	d, st, host := fixtureStore(t)
 	ctx := t.Context()
@@ -93,10 +93,12 @@ func TestBackupOverlayWithoutAccess(t *testing.T) {
 
 	host.Version = before.Version
 	pending := startPoll(t, s, stamps.signed(ctx, http.MethodGet, pollingRequest(host, s.Digest()), nil), wait)
-	row := store.BackupSettings{EveryMinutes: 15, Hourly: 25, Daily: 8, Monthly: 2, WindowDays: 36, FilesStaleMinutes: 121, DatabaseStaleMinutes: 11, CheckDays: 9}
+	row := store.BackupSettings{EveryMinutes: 15, Hourly: 25, Daily: 8, Weekly: 6, Monthly: 2, WindowDays: 36, FilesStaleMinutes: 121, DatabaseStaleMinutes: 11, CheckDays: 9}
 	if err := d.Write(ctx, func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, "INSERT INTO backup_settings VALUES ('', ?, ?, ?, ?, ?, ?, ?, ?)",
-			row.EveryMinutes, row.Hourly, row.Daily, row.Monthly, row.WindowDays, row.FilesStaleMinutes, row.DatabaseStaleMinutes, row.CheckDays)
+		_, err := tx.ExecContext(ctx, `INSERT INTO backup_settings
+			(scope, every_minutes, hourly, daily, weekly, monthly, window_days, files_stale_minutes, database_stale_minutes, check_days)
+			VALUES ('', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			row.EveryMinutes, row.Hourly, row.Daily, row.Weekly, row.Monthly, row.WindowDays, row.FilesStaleMinutes, row.DatabaseStaleMinutes, row.CheckDays)
 		return err
 	}); err != nil {
 		t.Fatal(err)

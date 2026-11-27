@@ -150,8 +150,15 @@ func (r backupRestic) snapshot(ctx context.Context, host string, args []string) 
 }
 
 func (r backupRestic) forget(ctx context.Context, name string, s protocol.Settings) error {
-	_, err := r.run(ctx, []string{"forget", "--host", name, "--group-by", "host", "--keep-hourly", strconv.Itoa(s.Hourly),
-		"--keep-daily", strconv.Itoa(s.Daily), "--keep-monthly", strconv.Itoa(s.Monthly), "--prune"}, nil, 0)
+	args := []string{"forget", "--host", name, "--group-by", "host",
+		"--keep-hourly", strconv.Itoa(s.Hourly), "--keep-daily", strconv.Itoa(s.Daily)}
+	if s.Weekly > 0 {
+		args = append(args, "--keep-weekly", strconv.Itoa(s.Weekly))
+	}
+	if s.Monthly > 0 {
+		args = append(args, "--keep-monthly", strconv.Itoa(s.Monthly))
+	}
+	_, err := r.run(ctx, append(args, "--prune"), nil, 0)
 	return err
 }
 

@@ -61,6 +61,7 @@ type Settings struct {
 	EveryMinutes         int `json:"every_minutes"`
 	Hourly               int `json:"hourly"`
 	Daily                int `json:"daily"`
+	Weekly               int `json:"weekly"`
 	Monthly              int `json:"monthly"`
 	WindowDays           int `json:"window_days"`
 	FilesStaleMinutes    int `json:"files_stale_minutes"`
