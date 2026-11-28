@@ -504,10 +504,41 @@ func TestSandboxListsSeededAccountFolder(t *testing.T) {
 	// Start a separate look after the MCP response and wait until it finishes.
 	clock.advance(sim.WatchInterval)
 	nextLook <- clock.now()
-	waitForLook()
+	nextLook = waitForLook()
 
+	var want strings.Builder
+	for _, file := range embeddedRegularFiles(t, accounts.Seed()) {
+		fmt.Fprintf(&want, "%s %s file %s\n", hostName, accountName, file)
+	}
+	fmt.Fprintf(&want, "%s %s commit %s %s@%s.%s %s\n", hostName, accountName, accountName,
+		accountName, hostName, settings.SandboxHosts.Domain, machine.SeedMessage)
+	assertSandboxSeedListing(t, path, want.String())
+
+	// R-GTX9-TPKF
+	const userName = "alice"
+	run.call(tools.ToolAddUser, tools.UserKeyArgs{Account: accountName, User: userName, Key: validKey()}, nil)
+	driveUntil(t, clock, func() bool {
+		var listed tools.UserList
+		run.call(tools.ToolUsers, tools.UsersArgs{}, &listed)
+		return len(listed.Users) == 1 && listed.Users[0].User == userName &&
+			listed.Users[0].Account == accountName && !listed.Users[0].Pending
+	})
+	clock.advance(sim.WatchInterval)
+	nextLook <- clock.now()
+	waitForLook()
+	for _, file := range embeddedRegularFiles(t, accounts.Home()) {
+		fmt.Fprintf(&want, "%s %s home %s %s\n", hostName, accountName, userName, file)
+	}
+	assertSandboxSeedListing(t, path, want.String())
+	if run.stop() != cli.ExitSuccess {
+		t.Fatal(run.err.String())
+	}
+}
+
+func embeddedRegularFiles(t *testing.T, source fs.FS) []string {
+	t.Helper()
 	var files []string
-	err := fs.WalkDir(accounts.Seed(), ".", func(path string, entry fs.DirEntry, err error) error {
+	err := fs.WalkDir(source, ".", func(path string, entry fs.DirEntry, err error) error {
 		if err == nil && entry.Type().IsRegular() {
 			files = append(files, path)
 		}
@@ -517,18 +548,14 @@ func TestSandboxListsSeededAccountFolder(t *testing.T) {
 		t.Fatal(err)
 	}
 	slices.Sort(files)
-	var want strings.Builder
-	for _, file := range files {
-		fmt.Fprintf(&want, "%s %s file %s\n", hostName, accountName, file)
-	}
-	fmt.Fprintf(&want, "%s %s commit %s %s@%s.%s %s\n", hostName, accountName, accountName,
-		accountName, hostName, settings.SandboxHosts.Domain, machine.SeedMessage)
+	return files
+}
+
+func assertSandboxSeedListing(t *testing.T, path, want string) {
+	t.Helper()
 	got, err := os.ReadFile(filepath.Clean(path))
-	if err != nil || string(got) != want.String() {
-		t.Fatalf("seed listing after the look = %q, err = %v; want %q", got, err, want.String())
-	}
-	if run.stop() != cli.ExitSuccess {
-		t.Fatal(run.err.String())
+	if err != nil || string(got) != want {
+		t.Fatalf("seed listing after the look = %q, err = %v; want %q", got, err, want)
 	}
 }
 

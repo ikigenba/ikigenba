@@ -128,6 +128,7 @@ func TestMemoryApplyAndSnapshot(t *testing.T) {
 		Folders: []string{"alpaca", "zebra"}, Applies: 1,
 		Hostname: "host01.hosts.example.com",
 		Seeds:    m.State().Seeds, // Seeding is covered by TestMemorySeeds.
+		Homes:    m.State().Homes, // Home recording is covered by TestMemoryHomes.
 	}
 	got := m.State()
 	if !reflect.DeepEqual(got, want) {
@@ -164,6 +165,7 @@ func TestMemoryApplyAndSnapshot(t *testing.T) {
 	want.Users = want.Users[:2]
 	want.Users[0].Locked, want.Users[1].Locked = true, true
 	want.Users[1].Keys = []string{"new"}
+	want.Homes = want.Homes[:2]
 	want.Applies++
 	if got := m.State(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("reconciled state = %+v, want %+v", got, want)
@@ -174,7 +176,7 @@ func TestMemoryApplyAndSnapshot(t *testing.T) {
 	}
 }
 
-// R-XS4Z-8B6G
+// R-GNTR-WUUY
 func TestSnapshotShape(_ *testing.T) {
 	var _ struct {
 		Accounts  []machine.Account
@@ -189,6 +191,7 @@ func TestSnapshotShape(_ *testing.T) {
 		Backups   []protocol.AccountBackup
 		Restored  []string
 		Restores  []protocol.RestoreResult
+		Homes     []machine.Home
 	} = fixedMachine().State()
 	var _ struct {
 		Slug string
@@ -206,6 +209,10 @@ func TestSnapshotShape(_ *testing.T) {
 		Commits                int
 		Author, Email, Message string
 	} = machine.Seed{}
+	var _ struct {
+		User, Account string
+		Files         []string
+	} = machine.Home{}
 }
 
 // R-YFDQ-Y0UZ R-H6HF-3CTF

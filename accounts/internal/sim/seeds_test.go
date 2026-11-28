@@ -20,15 +20,21 @@ import (
 )
 
 func TestSeedListing(t *testing.T) {
-	// R-DC3W-JAJR
+	// R-GRHH-2631
 	path := filepath.Join(t.TempDir(), "listing")
 	b := newSandbox(t, "", path, 2, nil)
 	first := b.hosts[0]
 	// Reverse instance order by tag and make the first machine's desired hostname distinct from its tag.
 	must(t, b.cloud.TagResource(t.Context(), first.ID, cloud.Tags{cloud.TagHost: "host03"}))
-	applySeedState(b, 1, "yard", "barn")
+	state := seedState(b, 1, "yard", "barn")
+	state.Users = []protocol.User{
+		{Name: "bob", Account: "barn", UID: 4242, State: protocol.UserActive},
+		{Name: "alice", Account: "yard", UID: 4343, State: protocol.UserActive},
+	}
+	b.applyState(1, state)
 	b.look()
-	previous := seedListing(t, "host03", "host01", "barn", "yard")
+	previous := seedListing(t, "host03", "host01", "barn", "yard") +
+		homeListing(t, "host03", "yard", "alice") + homeListing(t, "host03", "barn", "bob")
 	assertSeedListing(t, path, previous)
 
 	reader, err := os.Open(filepath.Clean(path))
@@ -126,22 +132,33 @@ func assertListingRename(t *testing.T, watch int, destination string, dotFile bo
 }
 
 func TestSeedListingStreamsOneHostAndLineAtATime(t *testing.T) {
-	// R-DC3W-JAJR
-	type hostSeed struct {
-		id, tag string
-		seed    machine.Seed
-		lines   []string
+	// R-GRHH-2631
+	type hostListing struct {
+		id, tag  string
+		snapshot machine.Snapshot
+		lines    []string
 	}
-	hosts := []hostSeed{
+	hosts := []hostListing{
 		{
 			id: "second-instance", tag: "host01",
-			seed:  machine.Seed{Account: "acme", Files: []string{"a", "b"}, Author: "acme", Email: "acme@example.test", Message: machine.SeedMessage},
-			lines: []string{"host01 acme file a\n", "host01 acme file b\n", "host01 acme commit acme acme@example.test " + machine.SeedMessage + "\n"},
+			snapshot: machine.Snapshot{
+				Seeds: []machine.Seed{{Account: "acme", Files: []string{"a", "b"}, Author: "acme", Email: "acme@example.test", Message: machine.SeedMessage}},
+				Homes: []machine.Home{
+					{Account: "acme", User: "alice", Files: []string{"notes", "notes/config"}},
+					{Account: "acme", User: "bob", Files: []string{"notes"}},
+				},
+			},
+			lines: []string{
+				"host01 acme file a\n", "host01 acme file b\n", "host01 acme commit acme acme@example.test " + machine.SeedMessage + "\n",
+				"host01 acme home alice notes\n", "host01 acme home alice notes/config\n", "host01 acme home bob notes\n",
+			},
 		},
 		{
 			id: "first-instance", tag: "host02",
-			seed:  machine.Seed{Account: "barn", Files: []string{"c"}, Author: "barn", Email: "barn@example.test", Message: machine.SeedMessage},
-			lines: []string{"host02 barn file c\n", "host02 barn commit barn barn@example.test " + machine.SeedMessage + "\n"},
+			snapshot: machine.Snapshot{
+				Homes: []machine.Home{{Account: "barn", User: "carol", Files: []string{"config"}}},
+			},
+			lines: []string{"host02 barn home carol config\n"},
 		},
 	}
 	running := make(map[string]string, len(hosts))
@@ -160,7 +177,7 @@ func TestSeedListingStreamsOneHostAndLineAtATime(t *testing.T) {
 		host := hosts[nextHost]
 		nextHost++
 		pending = host.lines
-		return machine.Snapshot{Seeds: []machine.Seed{host.seed}}
+		return host.snapshot
 	}
 	write := seedWriterFunc(func(line []byte) (int, error) {
 		if len(pending) == 0 || string(line) != pending[0] {
@@ -176,15 +193,15 @@ func TestSeedListingStreamsOneHostAndLineAtATime(t *testing.T) {
 }
 
 func TestSeedListingDisabled(t *testing.T) {
-	// R-R4Q6-2ILZ
+	// R-GSPD-FXTQ
 	b := newSandbox(t, "", "", 1, nil)
-	applySeedState(b, 1, "acme")
+	applySeedStateWithHome(b)
 	b.look()
 	assertSeedDirectory(t, filepath.Dir(b.banFile))
 }
 
-func TestSeedListingAbsentWithoutSeeds(t *testing.T) {
-	// R-R4Q6-2ILZ
+func TestSeedListingAbsentWithoutSeedsOrHomes(t *testing.T) {
+	// R-GRHH-2631 R-GSPD-FXTQ
 	dir := t.TempDir()
 	path := filepath.Join(dir, "listing")
 	must(t, os.WriteFile(path, []byte("previous listing\n"), 0o600))
@@ -192,9 +209,11 @@ func TestSeedListingAbsentWithoutSeeds(t *testing.T) {
 	expectAbsent(t, path)
 	assertSeedDirectory(t, dir)
 
-	applySeedState(b, 1, "acme")
+	state := seedState(b, 1)
+	state.Users = []protocol.User{{Name: "alice", Account: "acme", UID: 4242, State: protocol.UserActive}}
+	b.applyState(1, state)
 	b.look()
-	assertSeedListing(t, path, seedListing(t, "host01", "host01", "acme"))
+	assertSeedListing(t, path, homeListing(t, "host01", "acme", "alice"))
 	must(t, b.cloud.StopInstance(t.Context(), b.hosts[0].ID))
 	b.clock.advance(memory.StopDelay)
 	b.look()
@@ -203,7 +222,7 @@ func TestSeedListingAbsentWithoutSeeds(t *testing.T) {
 }
 
 func TestSeedListingLeavesNonregularPath(t *testing.T) {
-	// R-R4Q6-2ILZ
+	// R-GSPD-FXTQ
 	dir := t.TempDir()
 	path := filepath.Join(dir, "listing")
 	target := filepath.Join(dir, "target")
@@ -226,7 +245,7 @@ func TestSeedListingLeavesNonregularPath(t *testing.T) {
 		assertSeedDirectory(t, dir, "listing", "target")
 	}
 	assertLink()
-	applySeedState(b, 1, "acme")
+	applySeedStateWithHome(b)
 	b.look()
 	assertLink()
 }
@@ -256,6 +275,17 @@ func TestLoopsShareDisks(t *testing.T) {
 
 func applySeedState(b *sandboxBox, host int, slugs ...string) {
 	b.t.Helper()
+	b.applyState(host, seedState(b, host, slugs...))
+}
+
+func applySeedStateWithHome(b *sandboxBox) {
+	b.t.Helper()
+	state := seedState(b, 1, "acme")
+	state.Users = []protocol.User{{Name: "alice", Account: "acme", UID: 4242, State: protocol.UserActive}}
+	b.applyState(1, state)
+}
+
+func seedState(b *sandboxBox, host int, slugs ...string) protocol.DesiredState {
 	state := protocol.DesiredState{
 		Protocol: protocol.Version, Host: b.hosts[host-1].Tags[cloud.TagHost], Domain: seedDomain,
 		Version: 1, Daemon: "same", DataVolume: "vol-" + b.hosts[host-1].ID, DataGB: 100, RootGB: 20,
@@ -265,19 +295,12 @@ func applySeedState(b *sandboxBox, host int, slugs ...string) {
 			Slug: slug, GID: int64(4040 + i), State: protocol.AccountActive,
 		})
 	}
-	b.applyState(host, state)
+	return state
 }
 
 func seedListing(t *testing.T, tag, host string, slugs ...string) string {
 	t.Helper()
-	var files []string
-	must(t, fs.WalkDir(accounts.Seed(), ".", func(path string, d fs.DirEntry, err error) error {
-		if err == nil && d.Type().IsRegular() {
-			files = append(files, path)
-		}
-		return err
-	}))
-	slices.Sort(files)
+	files := listingFiles(t, accounts.Seed())
 	var want strings.Builder
 	for _, slug := range slugs {
 		for _, path := range files {
@@ -286,6 +309,28 @@ func seedListing(t *testing.T, tag, host string, slugs ...string) string {
 		want.WriteString(tag + " " + slug + " commit " + slug + " " + slug + "@" + host + "." + seedDomain + " " + machine.SeedMessage + "\n")
 	}
 	return want.String()
+}
+
+func homeListing(t *testing.T, tag, account, user string) string {
+	t.Helper()
+	var want strings.Builder
+	for _, path := range listingFiles(t, accounts.Home()) {
+		want.WriteString(tag + " " + account + " home " + user + " " + path + "\n")
+	}
+	return want.String()
+}
+
+func listingFiles(t *testing.T, template fs.FS) []string {
+	t.Helper()
+	var files []string
+	must(t, fs.WalkDir(template, ".", func(path string, d fs.DirEntry, err error) error {
+		if err == nil && d.Type().IsRegular() {
+			files = append(files, path)
+		}
+		return err
+	}))
+	slices.Sort(files)
+	return files
 }
 
 func assertSeedListing(t *testing.T, path, want string) {

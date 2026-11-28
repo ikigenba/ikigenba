@@ -34,7 +34,7 @@ func (h *Host) stageAccountFolder(ctx context.Context, account protocol.Account,
 		return err
 	}
 	marker := filepath.Join(full, SeedMarker)
-	if err := h.seedTee(ctx, account.Slug, marker, strings.NewReader(pendingSeed(account.GID))); err != nil {
+	if err := h.teeAs(ctx, account.Slug, marker, strings.NewReader(pendingSeed(account.GID))); err != nil {
 		return err
 	}
 	if err := os.Rename(full, h.path(path)); err != nil {
@@ -64,7 +64,7 @@ func (h *Host) seedAccountFolder(ctx context.Context, s protocol.DesiredState, a
 			return err
 		}
 	}
-	return h.seedTee(ctx, account.Slug, filepath.Join(full, SeedMarker), strings.NewReader("done\n"))
+	return h.teeAs(ctx, account.Slug, filepath.Join(full, SeedMarker), strings.NewReader("done\n"))
 }
 
 func accountHostName(s protocol.DesiredState) string {
@@ -120,16 +120,6 @@ func openSeedAt(dir *os.File, name string, flags int) (*os.File, error) {
 	return os.NewFile(uintptr(fd), name), nil
 }
 
-func (h *Host) seedTee(ctx context.Context, slug, path string, contents io.Reader) error {
-	_, err := h.query(ctx, Command{
-		Name:   "runuser",
-		Args:   []string{"-u", slug, "--", "tee", path},
-		Stdin:  contents,
-		Stdout: io.Discard,
-	}, 0)
-	return err
-}
-
 func (h *Host) commitSeed(ctx context.Context, slug, hostname, path string) error {
 	source := accounts.Seed()
 	if err := h.copySeed(ctx, slug, path, source); err != nil {
@@ -164,7 +154,7 @@ func (h *Host) copySeed(ctx context.Context, slug, path string, source fs.FS) er
 				return hostError(target, err)
 			}
 			defer func() { _ = body.Close() }()
-			return h.seedTee(ctx, slug, h.path(target), body)
+			return h.teeAs(ctx, slug, h.path(target), body)
 		}
 	})
 }

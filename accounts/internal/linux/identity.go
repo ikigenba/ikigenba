@@ -318,12 +318,16 @@ func (h *Host) ensureUser(ctx context.Context, u protocol.User) error {
 		}
 	}
 	if !local.account {
+		home := filepath.Join("/home", u.Name)
 		args := []string{"--uid", id, "--gid", u.Name, "--groups", groups, "--create-home",
-			"--home-dir", h.path(filepath.Join("/home", u.Name)), "--skel", h.path(SkelDir), "--key", "HOME_MODE=0700", "--shell", "/bin/bash"}
+			"--home-dir", h.path(home), "--skel", h.path(SkelDir), "--key", "HOME_MODE=0700", "--shell", "/bin/bash"}
 		if u.State == protocol.UserLocked {
 			args = append(args, "--expiredate", "1")
 		}
 		if _, err := h.run(ctx, "useradd", append(args, u.Name)...); err != nil {
+			return err
+		}
+		if err := h.populateHome(ctx, u, home); err != nil {
 			return err
 		}
 	} else if !local.inShell || !local.groupOfAccount {

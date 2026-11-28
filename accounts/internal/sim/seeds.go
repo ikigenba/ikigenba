@@ -72,15 +72,15 @@ func streamSeedListing(w io.Writer, running map[string]string, snapshot func(id 
 		return cmp.Or(cmp.Compare(running[a], running[b]), cmp.Compare(a, b))
 	})
 	for _, id := range ids {
-		if err := writeSeedLines(w, running[id], snapshot(id).Seeds); err != nil {
+		if err := writeListingLines(w, running[id], snapshot(id)); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func writeSeedLines(w io.Writer, host string, seeds []machine.Seed) error {
-	for _, seed := range seeds {
+func writeListingLines(w io.Writer, host string, snapshot machine.Snapshot) error {
+	for _, seed := range snapshot.Seeds {
 		for _, file := range seed.Files {
 			if _, err := fmt.Fprintf(w, "%s %s file %s\n", host, seed.Account, file); err != nil {
 				return err
@@ -88,6 +88,13 @@ func writeSeedLines(w io.Writer, host string, seeds []machine.Seed) error {
 		}
 		if _, err := fmt.Fprintf(w, "%s %s commit %s %s %s\n", host, seed.Account, seed.Author, seed.Email, seed.Message); err != nil {
 			return err
+		}
+	}
+	for _, home := range snapshot.Homes {
+		for _, file := range home.Files {
+			if _, err := fmt.Fprintf(w, "%s %s home %s %s\n", host, home.Account, home.User, file); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

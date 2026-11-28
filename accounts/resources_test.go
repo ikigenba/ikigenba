@@ -23,6 +23,8 @@ func TestEmbeddedResources(t *testing.T) {
 			"0001_accounts.sql", "0002_hosts.sql", "0003_bans.sql", "0004_invites.sql",
 			"0005_host_records.sql", "0006_kept_volumes.sql", "0007_host_backups.sql", "0008_weekly_retention.sql",
 		}},
+		// R-GGID-M8ES
+		{"home", accounts.Home, []string{"AGENTS.md"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for range 2 {
@@ -54,11 +56,11 @@ func TestEmbeddedResources(t *testing.T) {
 	}
 }
 
-// R-ZZWT-ASA7
+// R-GFAH-8GO3
 func TestEmbeddedSeed(t *testing.T) {
 	want := map[string]fs.FileMode{
 		".": fs.ModeDir, ".gitignore": 0, "AGENTS.md": 0,
-		"data": fs.ModeDir, "data/.keep": 0, "setup.md": 0,
+		"data": fs.ModeDir, "data/.keep": 0,
 	}
 	check := func(seed func() fs.FS) {
 		t.Helper()

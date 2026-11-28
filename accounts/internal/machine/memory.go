@@ -57,6 +57,12 @@ type Seed struct {
 	Author, Email, Message string
 }
 
+// Home records the template paths installed for a simulated user.
+type Home struct {
+	User, Account string
+	Files         []string
+}
+
 // Snapshot describes the current contents of a simulated host.
 type Snapshot struct {
 	Accounts  []Account
@@ -71,6 +77,7 @@ type Snapshot struct {
 	Backups   []protocol.AccountBackup
 	Restored  []string
 	Restores  []protocol.RestoreResult
+	Homes     []Home
 }
 
 // Memory is an in-memory machine for tests and sandbox hosts.
@@ -264,7 +271,7 @@ func (m *Memory) Apply(ctx context.Context, s protocol.DesiredState) error {
 			if _, exists := m.disk.folders[account.Slug]; !exists {
 				m.disk.folders[account.Slug] = struct{}{}
 				m.disk.seeds[account.Slug] = Seed{
-					Account: account.Slug, Files: seedFiles(), Commits: 1,
+					Account: account.Slug, Files: templateFiles(accounts.Seed()), Commits: 1,
 					Author: account.Slug, Email: account.Slug + "@" + host, Message: SeedMessage,
 				}
 			}
@@ -275,10 +282,17 @@ func (m *Memory) Apply(ctx context.Context, s protocol.DesiredState) error {
 	named := make(map[string]struct{}, len(s.Users))
 	for _, user := range s.Users {
 		named[user.Name] = struct{}{}
+		_, held := m.users[user.Name]
 		switch user.State {
 		case protocol.UserActive, protocol.UserLocked:
+			if _, exists := m.disk.homes[user.Name]; !held && !exists {
+				m.disk.homes[user.Name] = Home{User: user.Name, Account: user.Account, Files: templateFiles(accounts.Home())}
+			}
 			m.users[user.Name] = User{Name: user.Name, Account: user.Account, UID: user.UID, Locked: user.State == protocol.UserLocked, Keys: slices.Clone(user.Keys)}
 		case protocol.UserDeleted:
+			if held {
+				delete(m.disk.homes, user.Name)
+			}
 			delete(m.users, user.Name)
 		}
 	}
@@ -305,9 +319,9 @@ func (m *Memory) Apply(ctx context.Context, s protocol.DesiredState) error {
 	return nil
 }
 
-func seedFiles() []string {
+func templateFiles(template fs.FS) []string {
 	var paths []string
-	err := fs.WalkDir(accounts.Seed(), ".", func(path string, entry fs.DirEntry, err error) error {
+	err := fs.WalkDir(template, ".", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -317,7 +331,7 @@ func seedFiles() []string {
 		return nil
 	})
 	if err != nil {
-		panic(err) // The seed is an embedded file system.
+		panic(err) // Templates are embedded file systems.
 	}
 	slices.Sort(paths)
 	return paths

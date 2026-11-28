@@ -25,6 +25,7 @@ type memoryDisk struct {
 	restoreID string
 	folders   map[string]struct{}
 	seeds     map[string]Seed
+	homes     map[string]Home
 	databases map[string]map[string]*memoryDatabase
 	replicas  map[string]*memoryReplicas
 	restored  map[string]struct{}
@@ -65,6 +66,7 @@ func (d *Disks) disk(volume string, owner *byte, restoreID string) *memoryDisk {
 	if disk == nil {
 		disk = &memoryDisk{
 			owner: owner, restoreID: restoreID, folders: make(map[string]struct{}), seeds: make(map[string]Seed),
+			homes:     make(map[string]Home),
 			databases: make(map[string]map[string]*memoryDatabase), restored: make(map[string]struct{}),
 			replicas: make(map[string]*memoryReplicas),
 			copies:   make(map[copyScope]*memoryCopies),
@@ -87,9 +89,14 @@ func (d *memoryDisk) snapshot(out *Snapshot) {
 	for slug := range d.restored {
 		out.Restored = append(out.Restored, slug)
 	}
+	for _, home := range d.homes {
+		home.Files = slices.Clone(home.Files)
+		out.Homes = append(out.Homes, home)
+	}
 	slices.Sort(out.Folders)
 	slices.SortFunc(out.Seeds, func(a, b Seed) int { return cmp.Compare(a.Account, b.Account) })
 	slices.Sort(out.Restored)
+	slices.SortFunc(out.Homes, func(a, b Home) int { return cmp.Compare(a.User, b.User) })
 }
 
 func (d *memoryDisk) addDatabase(account, path string, wal bool) {

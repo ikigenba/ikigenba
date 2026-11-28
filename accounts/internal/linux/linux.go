@@ -274,6 +274,16 @@ func (h *Host) run(ctx context.Context, program string, args ...string) (Result,
 	return h.query(ctx, Command{Name: program, Args: args}, 0)
 }
 
+func (h *Host) teeAs(ctx context.Context, user, path string, contents io.Reader) error {
+	_, err := h.query(ctx, Command{
+		Name:   "runuser",
+		Args:   []string{"-u", user, "--", "tee", path},
+		Stdin:  contents,
+		Stdout: io.Discard,
+	}, 0)
+	return err
+}
+
 func (h *Host) query(ctx context.Context, c Command, allowed ...int) (Result, error) {
 	res, err := h.env.Execute(ctx, c)
 	if redact := backupDiagnosticRedactor(ctx); redact != nil {

@@ -15,11 +15,14 @@ var etc embed.FS
 //go:embed migrations/0001_accounts.sql migrations/0002_hosts.sql migrations/0003_bans.sql migrations/0004_invites.sql migrations/0005_host_records.sql migrations/0006_kept_volumes.sql migrations/0007_host_backups.sql migrations/0008_weekly_retention.sql
 var migrations embed.FS
 
-// SeedVersion identifies the team template tag embedded in Seed.
-const SeedVersion = "v1"
+// SeedVersion identifies the team template tag embedded in Seed and Home.
+const SeedVersion = "v2"
 
-//go:embed seed/.gitignore seed/AGENTS.md seed/setup.md seed/data/.keep
+//go:embed seed/.gitignore seed/AGENTS.md seed/data/.keep
 var seed embed.FS
+
+//go:embed home/AGENTS.md
+var home embed.FS
 
 // Assets returns page templates rooted at their directory.
 func Assets() fs.FS { return sub(assets, "assets") }
@@ -30,8 +33,11 @@ func Etc() fs.FS { return sub(etc, "etc") }
 // Migrations returns database migrations rooted at their directory.
 func Migrations() fs.FS { return sub(migrations, "migrations") }
 
-// Seed returns the team template files rooted at their directory.
+// Seed returns the account folder template files rooted at their directory.
 func Seed() fs.FS { return sub(seed, "seed") }
+
+// Home returns the user home template files rooted at their directory.
+func Home() fs.FS { return sub(home, "home") }
 
 func sub(files embed.FS, dir string) fs.FS {
 	root, err := fs.Sub(files, dir)
