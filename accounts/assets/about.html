@@ -16,12 +16,20 @@
      (int, how old an account's last file snapshot may be, or how long a
      database's newest write may go unstreamed, before the account is
      flagged, in minutes, 120
-     and 10); each a setting accounts holds and sends to every host. Hooks: title "About accounts"; h1 with text "About
+     and 10); each a setting accounts holds and sends to every host;
+     .TemplateURL (string, the team template's repository, the https URL
+     a host clones when it creates an account's folder or a user's home,
+     "https://github.com/ikigenba/team-template" until an agent changes
+     it) and .TemplateRef (string, the branch or tag a host checks out,
+     "main" until an agent changes it), the setting accounts holds and
+     sends to every host. Hooks: title "About accounts"; h1 with text "About
      accounts"; dl#about.kv holding dt "Name" then dd#about-name
      (.Banner.Service), dt "Version" then dd#about-version (.Banner.Release
      and .Banner.Commit, present even when empty), and dt "Description" then
-     dd#about-description (.Description); then section#how.card with h2 "How
-     it works" and seven p: "accounts runs SSH as a service. It keeps a
+     dd#about-description (.Description), and dt "Team template" then
+     dd#about-template (.TemplateURL in a code element, then " at ", then
+     .TemplateRef in a code element); then section#how.card with h2 "How
+     it works" and eight p: "accounts runs SSH as a service. It keeps a
      fleet of machines, hosts, each named for the lowest number no
      live host holds, host01, host02 and on, so a deleted host's name is
      taken again,
@@ -65,6 +73,15 @@
      often is banned from a host for 10 minutes; the host reports its
      bans, an agent can lift one, and each host keeps an allowlist of
      addresses and networks it never bans, loopback always among them.";
+     "A new account's folder starts as a git repository holding the team
+     template's seed/ folder as its first commit, and a new user's home
+     starts with the template's home/ folder, their name and account
+     filled in. The host clones the template from <.TemplateURL> at
+     <.TemplateRef> when it creates them, so a change pushed to the
+     template applies to the next account and user made; an agent can
+     point accounts at another repository, branch or tag with the tools.
+     Nothing already made is changed, and each account and user records
+     the template commit it started from.";
      "A user may be an admin of their account, a flag the tools set and clear. A person joins an account by
      an invite: a link an agent makes with the tools, shown once, and
      shares itself over whatever channel it has; accounts sends no mail.
@@ -113,8 +130,8 @@
      backups and restores, kept volumes, accounts and users." (host01,
      host02, /home, /srv, <host>.<hosts domain>, .DefaultType,
      /srv/<account>, <account>.<hosts domain>,
-     ssh <user>@<account>.<hosts domain> and data/ each in a code
-     element).
+     ssh <user>@<account>.<hosts domain>, data/, seed/, home/,
+     .TemplateURL and .TemplateRef each in a code element).
      No section of the landing page's. No script but appkit's
      /_appkit/feedback.js. */}}
 {{define "about"}}<!doctype html>
@@ -129,6 +146,7 @@
 <dt>Name</dt><dd id="about-name">{{.Banner.Service}}</dd>
 <dt>Version</dt><dd id="about-version">{{if .Banner.Release}}{{.Banner.Release}}{{if .Banner.Commit}} ({{.Banner.Commit}}){{end}}{{else}}{{.Banner.Commit}}{{end}}</dd>
 <dt>Description</dt><dd id="about-description">{{.Description}}</dd>
+<dt>Team template</dt><dd id="about-template"><code>{{.TemplateURL}}</code> at <code>{{.TemplateRef}}</code></dd>
 </dl>
 </section>
 <section id="how" class="card" aria-labelledby="how-title">
@@ -136,6 +154,7 @@
 <p>accounts runs SSH as a service. It keeps a fleet of machines, hosts, each named for the lowest number no live host holds, <code>host01</code>, <code>host02</code> and on, so a deleted host's name is taken again, each with an Elastic IP, a data volume holding <code>/home</code> and <code>/srv</code>, and SSH host keys kept on that volume, so a host keeps its address, its data and its identity across stop, start and resize. A host takes its full name, <code>&lt;host&gt;.&lt;hosts domain&gt;</code>, as its hostname, and that DNS name points at its Elastic IP. A host starts on the type and sizes the tools choose, a <code>{{.DefaultType}}</code> with a {{.DefaultRootGB}} GB root and a {{.DefaultDataGB}} GB data volume when they choose none; changing its type stops and starts it, and volumes only grow. Long operations run in the background: a host shows provisioning, running, stopping, stopped, starting, resizing, deleting, closing, opening, replacing, restoring or failed with its reason, and a failed operation can be retried.</p>
 <p>An account is one business, placed on one host. Its slug names a Linux group, a service account of the same name and the folder <code>/srv/&lt;account&gt;</code>, which every user of the account writes to and nobody else reads, and reserves the DNS name <code>&lt;account&gt;.&lt;hosts domain&gt;</code>, which points at its host. Each account runs in a slice of its own with an equal share of the host's CPU and a memory ceiling, so one busy business slows only itself. Account slugs and user names are unique across every host. An account with users cannot be removed, and removing an empty one leaves its folder on the data volume; a host with accounts cannot be deleted, and deleting an empty one keeps its data volume unless the delete is told to delete it with the host, which needs the host closed and fully backed up first, unless the agent says the host is lost, and cannot be undone. A kept volume is listed until an agent deletes it with the tools; it never joins a later host, not even one that takes the same name.</p>
 <p>A user is a person in exactly one account, with a login name, one or more ed25519 public keys and a state, active or locked. They sign in with <code>ssh &lt;user&gt;@&lt;account&gt;.&lt;hosts domain&gt;</code> and a key, never a password, and get a home readable by them alone. Locking a user ends their access and keeps their home; only a locked user can be deleted, which removes their home. Each host runs a daemon that fetches what the host should hold and makes it so, and reports back each cycle; a change shows as pending until the host reports it applied. A host keeps working with what it last applied when accounts cannot be reached. An address that fails to sign in too often is banned from a host for 10 minutes; the host reports its bans, an agent can lift one, and each host keeps an allowlist of addresses and networks it never bans, loopback always among them.</p>
+<p>A new account's folder starts as a git repository holding the team template's <code>seed/</code> folder as its first commit, and a new user's home starts with the template's <code>home/</code> folder, their name and account filled in. The host clones the template from <code>{{.TemplateURL}}</code> at <code>{{.TemplateRef}}</code> when it creates them, so a change pushed to the template applies to the next account and user made; an agent can point accounts at another repository, branch or tag with the tools. Nothing already made is changed, and each account and user records the template commit it started from.</p>
 <p>A user may be an admin of their account, a flag the tools set and clear. A person joins an account by an invite: a link an agent makes with the tools, shown once, and shares itself over whatever channel it has; accounts sends no mail. Opening the link shows a page, open to anyone who holds it, that takes a user name and one public key; joining creates the user at once and uses the invite up, while opening it or a refused attempt does not. An invite lasts 72 hours and can be revoked before then; an account holds at most 20 unused invites. An invite makes an ordinary user unless the space made it an admin invite.</p>
 <p>Every host also carries tools of its own, a local MCP server that Claude Code on the host already knows, for the people who sign in there. With them every user lists, adds and removes their own keys, though never their last one, so a key is rotated by adding the new one, signing in with it and removing the old. An admin also runs their own account from the host: lists its users, makes, lists and revokes invites, which always make an ordinary user, locks, unlocks and deletes a user, only a locked one, and makes a user an admin or an ordinary user again, but never locks, deletes or demotes themselves. The host passes each request to accounts, which decides and keeps every record; the change then reaches the host like any other, and a lock or delete made there ends the user's sessions.</p>
 <p>Every account is backed up to S3 with nothing to set up, and its backups are kept by account, not by host. Its files, the account folder with its git history and every user's home, are snapshotted every {{.BackupEveryMinutes}} minutes, and {{.BackupHourly}} hourly, {{.BackupDaily}} daily and {{.BackupWeekly}} weekly snapshots are kept; the account's snapshots are checked for integrity weekly. Every SQLite database under the account's <code>data/</code> folder is streamed as it is written and can be brought back to any second in the last {{.BackupWindowDays}} days. An account is flagged when its last snapshot is more than {{.BackupFilesStaleMinutes}} minutes old or a database's newest write has not been streamed for more than {{.BackupDatabaseStaleMinutes}} minutes. An agent can close a host, which locks every user out, ends their sessions and takes a final backup of every account, and open it again; put a host on a new machine, keeping its data volume or restoring everything from backup, with nobody let in until the restore is complete; and restore a database or files as of an earlier time, as a copy beside the original that the team swaps in itself. Removing an account leaves its backups, and its name cannot be used again until an agent deletes them.</p>

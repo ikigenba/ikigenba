@@ -101,6 +101,18 @@
      .Created); and .RestoreTotal (int, how many restores the host's
      accounts have had asked for, which exceeds len .Restores when the
      list was cut).
+     .Seeds (a slice, one per account placed on the host, sorted by slug;
+     empty when none is), each with .Account (string, the slug) and
+     .Commit (string, the team template commit the account's folder was
+     seeded from, 40 or 64 lowercase hex digits, as the host reported it;
+     empty when it has reported none, as for an account made before the
+     host cloned the template). .Homes (a slice, one per user of those
+     accounts, sorted by name; empty when none), each with .User (string,
+     the user's name), .Account (string, the user's account's slug) and
+     .Commit (string, the template commit the user's home file came from,
+     as the host reported it; empty when it has reported none, as for a
+     user made before the host cloned the template or whose home was
+     already there).
      Bytes and counts are shown as the plain integer, never a humanised
      size; load averages to two decimals and percents to one, by printf
      here. Kinds and words for state, the delete's choice and health are
@@ -247,6 +259,25 @@
      (time[datetime=<.Asked>], text .AskedText); then, when .RestoreTotal
      exceeds len .Restores, p#restore-total.muted (text "Showing the
      newest <len .Restores> of <.RestoreTotal> restores.").
+     section#template.card with h2 "Team template" and a p in its header
+     (text "The team template commit each account's folder was seeded
+     from and each user's home file came from, as the host reported
+     them. An account or user made before the host cloned the template
+     shows none."), then either, when .Seeds is empty, p#no-seeds.muted
+     (text "No account is placed on this host."), or div.table-scroll
+     holding table#seed-list whose th read Account, Commit, with one
+     tr[data-account=<.Account>] per element of .Seeds, in its order,
+     holding td.seed-account (.Account in a code element) and
+     td.seed-commit (.Commit in a code element; when empty,
+     td.seed-commit.muted with text "none"); then, when .Seeds is not
+     empty, h3 "Users" and either, when .Homes is empty,
+     p#no-homes.muted (text "No user in these accounts."), or
+     div.table-scroll holding table#home-list whose th read User,
+     Account, Commit, with one tr[data-user=<.User>] per element of
+     .Homes, in its order, holding td.home-user (.User in a code
+     element), td.home-account (.Account in a code element) and
+     td.home-commit (.Commit in a code element; when empty,
+     td.home-commit.muted with text "none").
      section#report.card with h2 "Latest report" and a p in its header
      (text "What the host's daemon reported at the end of its last cycle.
      Reports are kept as the latest only."), then, when .Report is nil,
@@ -419,6 +450,35 @@
 </div>
 {{else}}<p id="no-restores" class="muted">No restore has been asked for on this host.</p>
 {{end}}{{if gt .RestoreTotal (len .Restores)}}<p id="restore-total" class="muted">Showing the newest {{len .Restores}} of {{.RestoreTotal}} restores.</p>
+{{end}}</section>
+<section id="template" class="card" aria-labelledby="template-title">
+<header><div><h2 id="template-title">Team template</h2><p>The team template commit each account's folder was seeded from and each user's home file came from, as the host reported them. An account or user made before the host cloned the template shows none.</p></div></header>
+{{if .Seeds}}<div class="table-scroll">
+<table id="seed-list">
+<thead><tr><th>Account</th><th>Commit</th></tr></thead>
+<tbody>
+{{range .Seeds}}<tr data-account="{{.Account}}">
+<td class="seed-account"><code>{{.Account}}</code></td>
+{{if .Commit}}<td class="seed-commit"><code>{{.Commit}}</code></td>{{else}}<td class="seed-commit muted">none</td>{{end}}
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+<h3>Users</h3>
+{{if .Homes}}<div class="table-scroll">
+<table id="home-list">
+<thead><tr><th>User</th><th>Account</th><th>Commit</th></tr></thead>
+<tbody>
+{{range .Homes}}<tr data-user="{{.User}}">
+<td class="home-user"><code>{{.User}}</code></td>
+<td class="home-account"><code>{{.Account}}</code></td>
+{{if .Commit}}<td class="home-commit"><code>{{.Commit}}</code></td>{{else}}<td class="home-commit muted">none</td>{{end}}
+</tr>
+{{end}}</tbody>
+</table>
+</div>
+{{else}}<p id="no-homes" class="muted">No user in these accounts.</p>
+{{end}}{{else}}<p id="no-seeds" class="muted">No account is placed on this host.</p>
 {{end}}</section>
 <section id="report" class="card" aria-labelledby="report-title">
 <header><div><h2 id="report-title">Latest report</h2><p>What the host's daemon reported at the end of its last cycle. Reports are kept as the latest only.</p></div></header>
