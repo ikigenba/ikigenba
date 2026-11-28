@@ -39,7 +39,7 @@ The release holds five members of accounts' directory:
 - `etc/nginx.conf`, holding the bytes of `cli.NginxConf`.
 - `share/icon.svg`, unchanged.
 
-The two files under `etc/` are what the root package's `Etc` embeds (`D01-layout-and-run-seam`, R-C7K6-723O). The templates and the migrations ship inside the binary (`D01-layout-and-run-seam`, R-7QD1-Z5PQ and R-822K-ILS5; the migrations' bytes are `D04-store`'s). The database is not in the release: accounts creates `state/accounts.db` on its first start, and in a sandbox also `state/sandbox-cloud.json` (`D01-layout-and-run-seam`, R-ESG4-8UGU and R-Y9CP-KR8R).
+The two files under `etc/` are what the root package's `Etc` embeds (`D01-layout-and-run-seam`, R-C7K6-723O). The templates and the migrations ship inside the binary (`D01-layout-and-run-seam`, R-7QD1-Z5PQ and R-VRO9-5HEU; the migrations' bytes are `D04-store`'s). The database is not in the release: accounts creates `state/accounts.db` on its first start, and in a sandbox also `state/sandbox-cloud.json` (`D01-layout-and-run-seam`, R-ESG4-8UGU and R-Y9CP-KR8R).
 
 The tarball, its member list and its name are devctl's, and no test reads the checkout. So the release's members are outside what a requirement can state; a developer checks them with `tar`.
 
@@ -54,7 +54,7 @@ In order, the manifest says:
 - the app is `accounts`
 - its description is `pages.Description` (`D06-pages`, new words)
 - it is not the default app
-- it is an MCP service, so the gateway offers the thirty-six tools (`D07-tools`, R-GPMX-YWDP)
+- it is an MCP service, so the gateway offers the thirty-eight tools (`D07-tools`, R-W1FG-7NCE)
 - it admits guests (`guests = true`)
 - it holds no secrets (`secrets = []`)
 - a `[database]` table names `sqlite` and `state/accounts.db`
@@ -202,7 +202,7 @@ The timings are `D16-sandbox`'s: about 40 s of `provisioning`, 5 s for a DNS cha
    - `GET /`, `/tools` and `/about` are fetched with the token, and without it (sent to sign in).
    - `POST /mcp` without a credential gets 401 from nginx.
    - `/events` and `/declarations` answer 404.
-   - The gateway's `describe` of accounts lists the thirty-six tools (`D07-tools`, R-GPMX-YWDP), `kept_volumes` and `delete_kept_volume` right after `delete_host`, and `close_host`, `open_host`, `replace_host`, `backup_status`, `restore_points`, `restore_database`, `restore_files` and `delete_account_backups` right after `disallow_ip`.
+   - The gateway's `describe` of accounts lists the thirty-eight tools (`D07-tools`, R-W1FG-7NCE), `kept_volumes` and `delete_kept_volume` right after `delete_host`, `close_host`, `open_host`, `replace_host`, `backup_status`, `restore_points`, `restore_database`, `restore_files` and `delete_account_backups` right after `disallow_ip`, and `team_template` and `set_team_template` last.
    - `/about` shows the backup settings, the defaults (`D04-store`), and `backup_status` lists no account.
    - `kept_volumes` lists none.
    - `curl` of `/accountsd` without a token gets bytes equal to `<data>/bin/accountsd`.
@@ -418,6 +418,17 @@ The home-file release (team template `v2`, `D15-machine`'s The home folder's fil
 4. A new account's folder holds `v2`'s seed, with no `setup.md`; an account folder and a user's home that existed before the deploy are unchanged.
 5. After `replace_host` from backup, a home whose `AGENTS.md` the person had edited keeps the edited file.
 
+The team template release (`D15-machine`'s The team template clone) adds one migration, `0009_team_template.sql`, which only expands (`D04-store`), and no precondition beyond what the hosts already need: each host reaches GitHub over HTTPS, as it does to install restic and Litestream, and the template repository, `https://github.com/ikigenba/team-template`, is public. The release-106 daemon on each host updates itself within one cycle of the deploy; an account or user it creates in those minutes is seeded from its embedded `v2` and shows no commit, which is accepted. Its checks run on `us` after the deploy, on a throwaway host and account as above:
+
+1. `team_template` answers `https://github.com/ikigenba/team-template` and `main`, and the about page shows them.
+2. A new account's folder holds the repository's `seed/` at the tip of `main` as its first commit, and `account` answers `template` with that tip's commit, the commit `git ls-remote https://github.com/ikigenba/team-template main` names; the host page's Team template section shows it.
+3. A user added to it gets `~/AGENTS.md` from the repository's `home/` with `<user>` and `<account>` filled in, owned by the user, mode `0644`, and `users` and the host page answer the same commit for the user.
+4. `set_team_template` `ref` `v2` answers `v2`, and the next account made is seeded from the tag `v2` and shows its commit; the account made before still shows its own, and its folder is unchanged.
+5. `set_team_template` `ref` set to a branch the repository does not hold, then `create_account`: the account stays `pending`, `host` shows the report's `error` naming the URL, the ref and git's `fatal: Remote branch … not found in upstream origin`, and no `/srv/<account>` or `/srv/.<account>.seed` exists; `set_team_template` `ref` `main` again, and at the next cycle the account turns `active` and is seeded.
+6. After each of these, `/var/lib/accountsd/template` is a root-owned `0711` directory holding nothing, and while a clone runs `ps` shows `git` as `nobody`, never as root.
+7. With the ref set to the missing branch again, `replace_host` from the volume of the throwaway host succeeds and makes no clone, since every folder and home is already there; then the ref is set back to `main`.
+8. An account and a user made before the deploy show no commit and are unchanged.
+
 No test can make the following checks, so they are made here:
 
 - an SSH session's processes sit in `acct-<account>-<user>.slice` with the slice's properties: on `host01`, `/proc/<pid>/cgroup` of a signed-in session's shell, and of a background child it started, names a cgroup at or below `/acct.slice/<AccountSlice(a)>/<PersonSlice(a, u)>/`, `a` the account and `u` the user, in every one of at least 30 sign-ins with and without a terminal, with no process of theirs left in a logind `session-<n>.scope`, so the limits of the account's and the person's slice files bound it (`D15-machine`; the PAM mechanism is unproven until here, coordinator decision Q2; the seam requirements prove only the files, the link and `Session`'s command)
@@ -453,10 +464,12 @@ No test can make the following checks, so they are made here:
 - **The host-names release adds no requirement here.** Its walk and its checks are prose, as the rest of the finish line is, and none of the four requirements below is changed by it: the manifest is unchanged, since the release adds no tool, no setting and no secret, and so is the fragment.
 - **The operator policy needs no change for host names.** The operator role already allows a host's record (host-names "What was observed"). infra's `iam.tf` is precedent for why: its right on the hosts zone is A records matching `*.<hosts domain>`, less the site names, which would admit `<host>.<hosts domain>` as it admits `<account>.<hosts domain>`. The exact scope is left to the finish line's check that Route 53 accepts the host's record under the operator policy. The comments in infra that said only account names are written are corrected by the delivery (host-names log P3).
 - **The host-numbers release adds no requirement here.** Its walk, its precondition and its checks are prose. The manifest is unchanged: two new tools change what the gateway lists, not the manifest's text, and there is no new setting or secret. The fragment is unchanged.
-- **The host-backups release adds no requirement here.** Its preconditions, its compatibility with the release before, its walk and its checks are prose. The manifest is unchanged (R-DJ7M-H4AO): eight new tools change what the gateway lists, not the manifest's text; there is no new setting, secret, environment key or event; and `memory_max = "256M"` holds, since the S3 and STS clients are small and every new operation holds a page, one report body or one credential set per account at a time. The fragment is unchanged. The tool count, thirty-six, is stated here only in prose; `D07-tools` states it as a requirement (R-GPMX-YWDP).
+- **The host-backups release adds no requirement here.** Its preconditions, its compatibility with the release before, its walk and its checks are prose. The manifest is unchanged (R-DJ7M-H4AO): eight new tools change what the gateway lists, not the manifest's text; there is no new setting, secret, environment key or event; and `memory_max = "256M"` holds, since the S3 and STS clients are small and every new operation holds a page, one report body or one credential set per account at a time. The fragment is unchanged. The tool count, thirty-six, is stated here only in prose; `D07-tools` states it as a requirement (R-W1FG-7NCE).
 - **Rollback costs of the host-backups release are accepted** (host-backups plan pick 16), on the precedent of the host-numbers release's `delete_data`; they are listed under Releases above. Rejected: keeping the new kinds in `operations`, which would fail a host whose hours-long restore a rollback caught.
 - **The protocol's `backup` member is a recorded departure, like `domain`** (`D11-protocol`): absence means no backups, and the daemon ships with accounts.
 - **The operator policy gains `ec2:DeleteVolume` on `Kind=host-data` volumes, and nothing wider** (host-numbers Sequence step 1, log P1). One right serves both a delete told not to keep the data and `delete_kept_volume`. It overturns the ssh-hosts rule that no tool deletes a data volume (host-numbers outcome 15), as the reuse of host numbers overturns the rule that a host name is never reused (host-numbers outcome 6): a host's number is free again once its delete has finished (`D04-store`).
+
+- **The team template release adds no requirement here.** Its migration is `D04-store`'s, its compatibility `D11-protocol`'s, and its checks are prose above. The manifest is unchanged (R-DJ7M-H4AO): two new tools change what the gateway lists, not the manifest's text; the new event `template.changed` is the trail's (`D08-trail`); and `memory_max` holds, since the service adds one settings row and the daemon, which is not under it, holds the clone on disk.
 
 ## Consumer usage
 
