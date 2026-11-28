@@ -410,6 +410,14 @@ The host-backups release adds the twelve checks of its own Finish line. They run
 
 The report gives what each tool answered and the evidence for each item.
 
+The home-file release (team template `v2`, `D15-machine`'s The home folder's file) adds no precondition and no migration. Its checks run on `us` after the next suite release is deployed, on a throwaway host and account as above:
+
+1. A user enrolled through an invite link sees the joined page give the host, the user, port 22 and the starting folder `/home/<user>`, as well as the `ssh` command, and connects with exactly those.
+2. That user's `~/AGENTS.md` holds the template's `home/AGENTS.md` with `<user>` and `<account>` filled in and nothing else changed. It is owned by the user and the user's group, mode `0644`, and `~` is not a git repository.
+3. A user added locked (`useradd --expiredate 1`) gets the same file, which proves that `runuser` runs for an expired account on the hosts' image.
+4. A new account's folder holds `v2`'s seed, with no `setup.md`; an account folder and a user's home that existed before the deploy are unchanged.
+5. After `replace_host` from backup, a home whose `AGENTS.md` the person had edited keeps the edited file.
+
 No test can make the following checks, so they are made here:
 
 - an SSH session's processes sit in `acct-<account>-<user>.slice` with the slice's properties: on `host01`, `/proc/<pid>/cgroup` of a signed-in session's shell, and of a background child it started, names a cgroup at or below `/acct.slice/<AccountSlice(a)>/<PersonSlice(a, u)>/`, `a` the account and `u` the user, in every one of at least 30 sign-ins with and without a terminal, with no process of theirs left in a logind `session-<n>.scope`, so the limits of the account's and the person's slice files bound it (`D15-machine`; the PAM mechanism is unproven until here, coordinator decision Q2; the seam requirements prove only the files, the link and `Session`'s command)
