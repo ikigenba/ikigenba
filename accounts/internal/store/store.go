@@ -106,7 +106,7 @@ type Account struct {
 	Change, Operation            string
 	Users, Invites               int
 	Created                      time.Time
-	CreatedBy                    string
+	CreatedBy, Template          string
 }
 
 // Key is an authorized public key and its original line.
@@ -121,7 +121,7 @@ type User struct {
 	Pending             bool
 	Keys                []Key
 	LastSignIn, Created time.Time
-	CreatedBy           string
+	CreatedBy, Template string
 }
 
 // Report is a host's latest accepted report.

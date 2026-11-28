@@ -39,7 +39,7 @@ func (f guardedSeedFile) Read(p []byte) (int, error) {
 }
 
 func TestSeedFilesReadDuringTee(t *testing.T) {
-	// R-KR34-ANBD
+	// R-X38C-2JBX
 	const folder = "/srv/citron"
 	const file = "sample"
 	const content = "seed bytes\n"

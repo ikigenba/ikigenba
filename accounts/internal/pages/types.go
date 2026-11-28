@@ -107,7 +107,15 @@ type HostData struct {
 	DatabaseCount int
 	Restores      []RestoreRow
 	RestoreTotal  int
+	Seeds         []SeedRow
+	Homes         []HomeRow
 }
+
+// SeedRow identifies the template commit an account folder was seeded from.
+type SeedRow struct{ Account, Commit string }
+
+// HomeRow identifies the template commit a user's home file came from.
+type HomeRow struct{ User, Account, Commit string }
 
 // HostView describes the host and its resources.
 type HostView struct {
@@ -188,6 +196,7 @@ type AboutData struct {
 	BackupHourly, BackupDaily, BackupWeekly             int
 	BackupWindowDays                                    int
 	BackupFilesStaleMinutes, BackupDatabaseStaleMinutes int
+	TemplateURL, TemplateRef                            string
 }
 
 // NotFoundData supplies the unknown-page footer.

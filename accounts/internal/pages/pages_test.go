@@ -181,7 +181,7 @@ func TestPageNamesAndTimeLayouts(t *testing.T) {
 	}
 }
 
-// R-2QRO-TAYI R-CDGQ-KT3P R-CEOM-YKUE R-CFWJ-CCL3 R-CH4F-Q4BS R-CICC-3W2H R-CM01-97AK R-8862-FGHM R-CVUA-IWJR
+// R-2QRO-TAYI R-CDGQ-KT3P R-CEOM-YKUE R-WM5Q-PQY7 R-WNDN-3IOW R-CH4F-Q4BS R-CICC-3W2H R-CM01-97AK R-WII1-KFQ4 R-CVUA-IWJR
 func TestPageDataShapes(t *testing.T) {
 	t.Helper()
 	_ = struct {
@@ -231,7 +231,11 @@ func TestPageDataShapes(t *testing.T) {
 		DatabaseCount int
 		Restores      []pages.RestoreRow
 		RestoreTotal  int
+		Seeds         []pages.SeedRow
+		Homes         []pages.HomeRow
 	}(pages.HostData{})
+	_ = struct{ Account, Commit string }(pages.SeedRow{})
+	_ = struct{ User, Account, Commit string }(pages.HomeRow{})
 	_ = struct {
 		Name, DNSName, State, Reason, OnDelete, Health, Type  string
 		RootGB, DataGB                                        int
@@ -259,6 +263,7 @@ func TestPageDataShapes(t *testing.T) {
 		Banner                                                                                                                                                           page.Banner
 		Description, DefaultType                                                                                                                                         string
 		DefaultRootGB, DefaultDataGB, BackupEveryMinutes, BackupHourly, BackupDaily, BackupWeekly, BackupWindowDays, BackupFilesStaleMinutes, BackupDatabaseStaleMinutes int
+		TemplateURL, TemplateRef                                                                                                                                         string
 	}(pages.AboutData{})
 	const databaseRows, restoreRows int = pages.MaxDatabaseRows, pages.MaxRestoreRows
 	if databaseRows != 50 || restoreRows != 25 {
@@ -281,7 +286,7 @@ func TestPageDataShapes(t *testing.T) {
 	}(pages.ReportView{})
 }
 
-// R-A8L8-1TI4 R-A9T4-FL8T R-ATBI-JX3X R-CY71-2WPI R-CVUA-IWJR R-AICF-3ZFO R-AJKB-HR6D R-AM04-9ANR R-7E62-5GAS R-7FDY-J81H
+// R-A8L8-1TI4 R-A9T4-FL8T R-ATBI-JX3X R-CY71-2WPI R-WPTF-V26A R-CVUA-IWJR R-AICF-3ZFO R-AJKB-HR6D R-AM04-9ANR R-7E62-5GAS R-7FDY-J81H
 func TestTemplateSet(t *testing.T) {
 	t.Chdir(t.TempDir())
 	independent, err := page.Templates().ParseFS(accounts.Assets(), "*.html")
@@ -380,8 +385,12 @@ func TestTemplateSet(t *testing.T) {
 		}
 		check("landing", pages.LandingData{b, true, "work.test", hosts, "hp", "hprev", "hnext", volumes, "vp", "vprev", "vnext", accountsRows, "ap", "aprev", "anext", users, "up", "uprev", "unext"})
 		check("tools", pages.ToolsData{b, rows})
-		check("about", aboutData(b, store.DefaultBackupSettings()))
-		check("about", aboutData(b, otherBackupSettings))
+		for _, settings := range []store.BackupSettings{store.DefaultBackupSettings(), otherBackupSettings} {
+			about := aboutData(b, settings)
+			check("about", about)
+			about.TemplateURL, about.TemplateRef = "https://chosen.example.test/team", "release/v2"
+			check("about", about)
+		}
 	}
 	checkJoinTemplates(t, check)
 	for _, tc := range []struct {
@@ -431,13 +440,23 @@ func checkHostTemplateLists(check func(string, any), data pages.HostData, report
 				data.DatabaseCount += len(backup.Databases)
 			}
 			data.Restores, data.RestoreTotal = []pages.RestoreRow{}, 0
-			check("host", data)
+			checkTemplateCommits(check, data)
 			data.Restores, data.RestoreTotal = populated.Restores, len(populated.Restores)
-			check("host", data)
+			checkTemplateCommits(check, data)
 			data.RestoreTotal++
-			check("host", data)
+			checkTemplateCommits(check, data)
 		}
 	}
+}
+
+func checkTemplateCommits(check func(string, any), data pages.HostData) {
+	const commit = "0123456789abcdef0123456789abcdef01234567"
+	data.Seeds, data.Homes = []pages.SeedRow{}, []pages.HomeRow{}
+	check("host", data)
+	data.Seeds = []pages.SeedRow{{"chosen-seeded", commit}, {"chosen-unseeded", ""}}
+	check("host", data)
+	data.Homes = []pages.HomeRow{{"chosen-seeded-user", "chosen-seeded", commit}, {"chosen-unseeded-user", "chosen-unseeded", ""}}
+	check("host", data)
 }
 
 func checkJoinTemplates(t *testing.T, check func(string, any)) {

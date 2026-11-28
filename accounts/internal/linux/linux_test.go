@@ -181,7 +181,7 @@ func (b *endlessBytes) Read(p []byte) (int, error) {
 }
 
 func TestInstallDaemon(t *testing.T) {
-	// R-D5KG-I4O1 R-CH20-784X
+	// R-D5KG-I4O1 R-XP6I-YEOF
 	f := newHardeningFixture(t)
 	const staging = "/usr/local/bin/.accountsd.new"
 	const body = "\x7fELFhost replacement"
@@ -212,7 +212,7 @@ func TestInstallDaemon(t *testing.T) {
 }
 
 func TestInspectHost(t *testing.T) {
-	// R-5DW4-003H R-D0OU-Z1P9 R-D1WR-CTFY R-D34N-QL6N R-D4CK-4CXC R-CH20-784X
+	// R-5DW4-003H R-D0OU-Z1P9 R-D1WR-CTFY R-D34N-QL6N R-D4CK-4CXC R-XP6I-YEOF
 	f := newHardeningFixture(t)
 	const cgroups = "/sys/fs/cgroup/acct.slice/"
 	for path, text := range map[string]string{
@@ -524,7 +524,7 @@ func hardeningPaths() []string {
 }
 
 func TestApplyChangesOnlyManagedFilesWithUsersAndData(t *testing.T) {
-	// R-ZWIA-KLSM R-ZNYZ-W7LR R-CH20-784X
+	// R-ZWIA-KLSM R-ZNYZ-W7LR R-XP6I-YEOF
 	f := newHardeningFixture(t)
 	const unitDir = "/etc/systemd/system/"
 	const folder = "/srv/citron"

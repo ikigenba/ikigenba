@@ -31,6 +31,7 @@ import (
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
 	"github.com/ikigenba/ikigenba/accounts/internal/join"
 	"github.com/ikigenba/ikigenba/accounts/internal/pages"
+	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
 	"github.com/ikigenba/ikigenba/accounts/internal/server"
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 	"github.com/ikigenba/ikigenba/accounts/internal/tools"
@@ -525,7 +526,7 @@ func invitePath(t *testing.T, invite tools.InviteMade) string {
 	return link.RequestURI()
 }
 
-// R-14LR-87RE R-HQRI-V1CD R-IJ8P-GADI R-1P7E-LHJI R-EH3H-OOMA
+// R-14LR-87RE R-HQRI-V1CD R-IJ8P-GADI R-EH3H-OOMA
 func TestInviteAndEnrollmentTrail(t *testing.T) {
 	run := startIntegration(t, integrationOptions{})
 	run.call(tools.ToolCreateHost, struct{}{}, nil)
@@ -1086,6 +1087,7 @@ func changeCalls(key string) []catalogCall {
 		{tools.ToolRestoreDatabase, map[string]any{"account": "acme", "path": "data/app.db", "as_of": fixedTime.Format(time.RFC3339)}},
 		{tools.ToolRestoreFiles, map[string]any{"account": "acme", "snapshot": fixedTime.Format(time.RFC3339)}},
 		{tools.ToolDeleteAccountBackups, map[string]any{"account": "absent"}},
+		{tools.ToolSetTeamTemplate, map[string]any{"ref": "v2"}},
 	}
 }
 func readCalls() []catalogCall {
@@ -1093,6 +1095,7 @@ func readCalls() []catalogCall {
 		{"hosts", map[string]any{}}, {"host", map[string]any{"host": "host01"}}, {"accounts", map[string]any{}},
 		{"account", map[string]any{"account": "acme"}}, {"users", map[string]any{}},
 		{tools.ToolKeptVolumes, map[string]any{}},
+		{tools.ToolTeamTemplate, map[string]any{}},
 	}
 }
 
@@ -1112,7 +1115,7 @@ func addressCalls() []catalogCall {
 	}
 }
 
-// R-1P7E-LHJI R-EH3H-OOMA R-IJ8P-GADI
+// R-WEUC-F4I1 R-EH3H-OOMA R-IJ8P-GADI
 func TestRunTrail(t *testing.T) {
 	r := startIntegration(t, integrationOptions{})
 	type requestRecord struct {
@@ -1126,8 +1129,9 @@ func TestRunTrail(t *testing.T) {
 	reads := append(readCalls(), backupReadCalls()...)
 	for i, c := range append(changing, reads...) {
 		caller.RequestID = fmt.Sprintf("tool-%d", i)
-		if _, err := r.callAs(c.name, c.args, caller); err != nil {
-			t.Fatal(c.name, err)
+		result, err := r.callAs(c.name, c.args, caller)
+		if err != nil || c.name == tools.ToolSetTeamTemplate && result.IsError() {
+			t.Fatal(c.name, result, err)
 		}
 		requests[caller.RequestID] = requestRecord{"POST", "/mcp", caller.UserID, c.name, 200, i < len(changing)}
 	}
@@ -1175,6 +1179,7 @@ func TestRunTrail(t *testing.T) {
 			t.Fatal(id, events)
 		}
 		changeAt, toolAt := -1, -1
+		templateChanged := false
 		for i, event := range events {
 			if event.User != request.user || event.RequestID != id {
 				t.Fatal(id, event)
@@ -1201,7 +1206,12 @@ func TestRunTrail(t *testing.T) {
 				if !request.change {
 					t.Fatal(id, event)
 				}
+			case "template.changed":
+				templateChanged = true
 			}
+		}
+		if request.tool == tools.ToolSetTeamTemplate && !templateChanged {
+			t.Fatalf("%s: %s absent after changing the template", id, trail.EventTemplateChanged)
 		}
 		if request.change && (changeAt < 0 || toolAt <= changeAt) {
 			t.Fatal(id, events)
@@ -1210,7 +1220,7 @@ func TestRunTrail(t *testing.T) {
 }
 
 func eventNames() []string {
-	return strings.Fields("service.started service.stopping request.started request.finished tool.called change.finished operation.started operation.finished host.changed account.changed host.silent host.synced host.apply_failed resource.unexplained invite.created invite.revoked invite.used admin.changed volume.changed")
+	return strings.Fields("service.started service.stopping request.started request.finished tool.called change.finished operation.started operation.finished host.changed account.changed host.silent host.synced host.apply_failed resource.unexplained invite.created invite.revoked invite.used admin.changed volume.changed template.changed")
 }
 
 // R-7SSU-QP74
@@ -1599,6 +1609,7 @@ func TestRunInjectedBanner(t *testing.T) {
 		Banner: b, Description: pages.Description, DefaultType: valid.DefaultType, DefaultRootGB: valid.DefaultRootGB, DefaultDataGB: valid.DefaultDataGB,
 		BackupEveryMinutes: defaults.EveryMinutes, BackupHourly: defaults.Hourly, BackupDaily: defaults.Daily, BackupWeekly: defaults.Weekly,
 		BackupWindowDays: defaults.WindowDays, BackupFilesStaleMinutes: defaults.FilesStaleMinutes, BackupDatabaseStaleMinutes: defaults.DatabaseStaleMinutes,
+		TemplateURL: protocol.DefaultTemplateURL, TemplateRef: protocol.DefaultTemplateRef,
 	})
 	if code != 200 || body != want.Body.String() {
 		t.Fatal("injected banner did not reach rendered page")

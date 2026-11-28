@@ -720,6 +720,7 @@ func TestHostDetailsAndLatestReport(t *testing.T) {
 		{Account: "alpha", Health: store.BackupNone, Databases: []pages.DatabaseRow{}},
 		{Account: "zulu", Health: store.BackupNone, Databases: []pages.DatabaseRow{}},
 	}
+	seeds := []pages.SeedRow{{Account: "alpha"}, {Account: "zulu"}}
 	reportView := &pages.ReportView{
 		Received: "2026-11-17T14:05:09Z", ReceivedText: "2026-11-17 14:05:09 UTC", Hostname: reportedHostname, InstanceID: "reported-instance", Type: "reported-type",
 		AMI: "reported-ami", OS: "reported-os", Kernel: "reported-kernel", DaemonVersion: "reported-daemon", Booted: created, BootedText: createdSecond,
@@ -734,7 +735,7 @@ func TestHostDetailsAndLatestReport(t *testing.T) {
 		BanTotal: 300, Allowlist: []string{"192.0.2.7"},
 	}
 	for _, method := range []string{"GET", "HEAD"} {
-		same(t, answer(f, method, target, "viewer"), expected(f, method, target, "host", 200, pages.HostData{Banner: b, Host: view, Report: reportView, Backups: backups}))
+		same(t, answer(f, method, target, "viewer"), expected(f, method, target, "host", 200, pages.HostData{Banner: b, Host: view, Report: reportView, Backups: backups, Seeds: seeds}))
 	}
 	empty, create, err := st.CreateHost(t.Context(), hostSpec, caller)
 	if err != nil {
@@ -791,7 +792,7 @@ func TestHostDetailsAndLatestReport(t *testing.T) {
 			}
 			want := *emptyView
 			want.BanTotal = total
-			same(t, answer(f, "GET", target, "viewer"), expected(f, "GET", target, "host", 200, pages.HostData{Banner: b, Host: view, Report: &want, Backups: backups}))
+			same(t, answer(f, "GET", target, "viewer"), expected(f, "GET", target, "host", 200, pages.HostData{Banner: b, Host: view, Report: &want, Backups: backups, Seeds: seeds}))
 		})
 	}
 }

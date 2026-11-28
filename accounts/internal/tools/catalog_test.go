@@ -92,6 +92,8 @@ func catalog() []entry {
 		entryFor[tools.RestoreDatabaseArgs](tools.ToolRestoreDatabase, "restore_database", tools.DescribeRestoreDatabase, mcp.Additive, nil, []string{"account", "path", "as_of"}),
 		entryFor[tools.RestoreFilesArgs](tools.ToolRestoreFiles, "restore_files", tools.DescribeRestoreFiles, mcp.Additive, []string{"user", "path"}, []string{"account", "snapshot"}),
 		entryFor[tools.AccountArgs](tools.ToolDeleteAccountBackups, "delete_account_backups", tools.DescribeDeleteAccountBackups, mcp.Destructive, nil, account),
+		entryFor[tools.TeamTemplateArgs](tools.ToolTeamTemplate, "team_template", tools.DescribeTeamTemplate, mcp.Read, nil, nil),
+		entryFor[tools.SetTeamTemplateArgs](tools.ToolSetTeamTemplate, "set_team_template", tools.DescribeSetTeamTemplate, mcp.Additive, []string{"url", "ref"}, nil),
 	}
 }
 
@@ -159,8 +161,9 @@ func checkRequired(t *testing.T, s schema) {
 	}
 }
 
-// R-51DJ-TTH0 R-YDET-CHO2 R-YEMP-Q9ER R-CL1V-ZGDI R-GPMX-YWDP R-CNHO-QZUW R-COPL-4RLL R-CTL6-NUKD R-CUT3-1MB2 R-CW0Z-FE1R R-Z7CV-COS5 R-Z8KR-QGIU R-ZDGD-9JHM R-0SA4-9OIR R-0TI0-NG9G
+// R-51DJ-TTH0 R-YDET-CHO2 R-YEMP-Q9ER R-CL1V-ZGDI R-W1FG-7NCE R-CNHO-QZUW R-COPL-4RLL R-CTL6-NUKD R-CUT3-1MB2 R-CW0Z-FE1R R-Z7CV-COS5 R-Z8KR-QGIU R-ZDGD-9JHM R-0SA4-9OIR R-0TI0-NG9G
 // R-GQUU-CO4E R-GS2Q-QFV3 R-HMK8-APEG R-HNS4-OH55 R-HP01-28VU R-HQ7X-G0MJ R-HF8U-02YA R-HGGQ-DUOZ R-HHOM-RMFO R-0YDM-6J88 R-YFUM-415G R-0UPX-1805
+// R-VSW5-J95J R-VU41-X0W8 R-VXRR-2C4B R-W8QU-I9SK
 func TestCatalogAndSchemas(t *testing.T) {
 	const (
 		_ = tools.DescribeHosts
@@ -199,6 +202,10 @@ func TestCatalogAndSchemas(t *testing.T) {
 		_ = tools.DescribeRestoreDatabase
 		_ = tools.DescribeRestoreFiles
 		_ = tools.DescribeDeleteAccountBackups
+		_ = tools.ToolTeamTemplate
+		_ = tools.ToolSetTeamTemplate
+		_ = tools.DescribeTeamTemplate
+		_ = tools.DescribeSetTeamTemplate
 		_ = tools.ArgFrom
 		_ = tools.ArgLost
 		_ = tools.ArgPath
@@ -255,6 +262,7 @@ func schemaProbeClient(t *testing.T, writer *telemetry.Writer, entries []entry) 
 	return mcp.NewClient(mcp.ClientConfig{Endpoint: server.URL})
 }
 
+// R-W8QU-I9SK
 func TestMCPArgumentValidation(t *testing.T) {
 	f := setup(t)
 	f.serveLoopback()
@@ -267,6 +275,10 @@ func TestMCPArgumentValidation(t *testing.T) {
 	deletedHost, _ := f.seedHost(true)
 	volume := f.finishKeeping(f.host(deletedHost.Name)).Volume
 	beforeHost, beforeUser, beforeVolume := f.host(host.Name), f.user(account, username), f.keptOnRecord(volume)
+	beforeTemplate, err := f.st.TemplateSettings(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
 	entries := catalog()
 	probe := schemaProbeClient(t, f.w, entries)
 	for _, tool := range entries {
@@ -293,7 +305,13 @@ func TestMCPArgumentValidation(t *testing.T) {
 				case "keep_data", "lost":
 					wrong[n] = "false"
 					assertAppkitRefusal(t, f, probe, tool.wire, wrong)
+				case "ref":
+					wrong[n] = 2
+					assertAppkitRefusal(t, f, probe, tool.wire, wrong)
 				}
+			}
+			if tool.wire == tools.ToolTeamTemplate {
+				assertAppkitRefusal(t, f, probe, tool.wire, map[string]any{"ref": "v2"})
 			}
 			for _, n := range tool.required {
 				missing := maps.Clone(args)
@@ -302,8 +320,8 @@ func TestMCPArgumentValidation(t *testing.T) {
 			}
 		})
 	}
-	if len(f.cloud.lookups) != 0 || f.wakes != 0 {
-		t.Fatalf("invalid calls made %d cloud requests and %d wake calls", len(f.cloud.lookups), f.wakes)
+	if len(f.cloud.lookups) != 0 || len(f.cloud.backupLookups) != 0 || f.wakes != 0 {
+		t.Fatalf("invalid calls made %d DNS requests, %d backup requests and %d wake calls", len(f.cloud.lookups), len(f.cloud.backupLookups), f.wakes)
 	}
 
 	d, err := db.Open(t.Context(), db.Config{
@@ -326,6 +344,9 @@ func TestMCPArgumentValidation(t *testing.T) {
 	}
 	if after, err := reopened.KeptVolume(t.Context(), volume); err != nil || after != beforeVolume {
 		t.Errorf("kept volume after invalid calls: %+v, want %+v (%v)", after, beforeVolume, err)
+	}
+	if after, err := reopened.TemplateSettings(t.Context()); err != nil || after != beforeTemplate {
+		t.Errorf("team template after invalid calls: %+v, want %+v (%v)", after, beforeTemplate, err)
 	}
 }
 
@@ -374,6 +395,7 @@ func checkInput(t *testing.T, info mcp.ToolInfo, expected entry) {
 		"key": tools.ArgKey, "admin": tools.ArgAdmin, "invite": tools.ArgInvite, "type": tools.ArgType, "root_gb": tools.ArgRootGB, "data_gb": tools.ArgDataGB,
 		"keep_data": tools.ArgKeepData, "volume": tools.ArgVolume, "lost": tools.ArgLost,
 		"from": tools.ArgFrom, "path": tools.ArgPath, "as_of": tools.ArgAsOf, "snapshot": tools.ArgSnapshot,
+		"url": tools.ArgURL, "ref": tools.ArgRef,
 	}
 	var in schema
 	if err := json.Unmarshal(info.InputSchema, &in); err != nil {
@@ -382,6 +404,9 @@ func checkInput(t *testing.T, info mcp.ToolInfo, expected entry) {
 	fields := slices.Concat(expected.required, expected.optional)
 	if expected.wire == tools.ToolRestoreFiles {
 		fields = []string{"account", "user", "path", "snapshot"}
+	}
+	if len(fields) == 0 && len(in.Properties) == 0 && len(in.Required) == 0 {
+		return
 	}
 	if !slices.Equal(objectMembers(t, in.Properties), fields) || !slices.Equal(in.Required, expected.required) {
 		t.Fatalf("input schema %s", info.InputSchema)
@@ -444,6 +469,10 @@ func validArgs(expected entry) map[string]any {
 			args[n] = "data/test.db"
 		case "as_of", "snapshot":
 			args[n] = "2026-10-01T00:00:00Z"
+		case "url":
+			args[n] = "https://git.example.test/template"
+		case "ref":
+			args[n] = "v2"
 		}
 	}
 	return args
@@ -451,6 +480,7 @@ func validArgs(expected entry) map[string]any {
 
 // R-CDQH-OTXC R-YIAE-VKMU R-YJIB-9CDJ R-YKQ7-N448 R-YLY4-0VUX R-YN60-ENLM
 // R-GS2Q-QFV3 R-0YDM-6J88 R-HMK8-APEG R-HNS4-OH55 R-HP01-28VU R-HQ7X-G0MJ
+// R-VXRR-2C4B
 func TestInputTypes(t *testing.T) {
 	t.Helper()
 	// Conversion to an anonymous struct checks the declared field names, order and types.
@@ -513,6 +543,8 @@ func TestInputTypes(t *testing.T) {
 		RootGB, DataGB *int
 	}(tools.ResizeHostArgs{})
 	_ = struct{ Account, User string }(tools.UserArgs{})
+	_ = struct{}(tools.TeamTemplateArgs{})
+	_ = struct{ URL, Ref *string }(tools.SetTeamTemplateArgs{})
 	_ = struct{ Account, User, Key string }(tools.UserKeyArgs{})
 	_ = struct {
 		Account, User string

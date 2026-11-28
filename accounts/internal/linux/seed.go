@@ -12,7 +12,6 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/ikigenba/ikigenba/accounts"
 	"github.com/ikigenba/ikigenba/accounts/internal/machine"
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
 )
@@ -43,7 +42,7 @@ func (h *Host) stageAccountFolder(ctx context.Context, account protocol.Account,
 	return nil
 }
 
-func (h *Host) seedAccountFolder(ctx context.Context, s protocol.DesiredState, account protocol.Account, path string) error {
+func (h *Host) seedAccountFolder(ctx context.Context, s protocol.DesiredState, account protocol.Account, path string, clone *templateClone) error {
 	full := h.path(path)
 	pending, err := hasPendingSeed(full, pendingSeed(account.GID))
 	if err != nil {
@@ -60,9 +59,14 @@ func (h *Host) seedAccountFolder(ctx context.Context, s protocol.DesiredState, a
 		return err
 	}
 	if res.ExitCode == 1 {
+		ready, err := clone.ensure(ctx, h)
+		if !ready || err != nil {
+			return err
+		}
 		if err := h.commitSeed(ctx, account.Slug, accountHostName(s), path); err != nil {
 			return err
 		}
+		h.seedCommits[account.GID] = clone.commit
 	}
 	return h.teeAs(ctx, account.Slug, filepath.Join(full, SeedMarker), strings.NewReader("done\n"))
 }
@@ -121,7 +125,7 @@ func openSeedAt(dir *os.File, name string, flags int) (*os.File, error) {
 }
 
 func (h *Host) commitSeed(ctx context.Context, slug, hostname, path string) error {
-	source := accounts.Seed()
+	source := templateFiles(h.path(filepath.Join(CloneDir, "seed")))
 	if err := h.copySeed(ctx, slug, path, source); err != nil {
 		return err
 	}
@@ -160,14 +164,14 @@ func (h *Host) copySeed(ctx context.Context, slug, path string, source fs.FS) er
 }
 
 func (h *Host) addSeedFiles(ctx context.Context, slug, full string, source fs.FS) error {
-	base := []string{"-u", slug, "--", "git", "-C", full, "add", "--force", "--"}
+	base := []string{"-u", slug, "--", "git", "--literal-pathspecs", "-C", full, "add", "--force", "--"}
 	args := slices.Grow(base, ChownBatch)
 	prefix := len(base)
 	flush := func() error {
 		if len(args) == prefix {
 			return nil
 		}
-		_, err := h.run(ctx, "runuser", args...)
+		_, err := h.run(ctx, "runuser", slices.Clone(args)...)
 		args = args[:prefix]
 		return err
 	}

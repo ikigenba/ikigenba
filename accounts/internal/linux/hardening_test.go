@@ -23,11 +23,13 @@ type hardeningFixture struct {
 	commands []string
 	answer   func(string) (linux.Result, bool)
 	observe  func(linux.Command)
+	clone    func(context.Context, string, linux.Command) (linux.Result, error)
+	template map[string]string
 }
 
 func newHardeningFixture(t *testing.T) *hardeningFixture {
 	t.Helper()
-	f := &hardeningFixture{t: t, root: t.TempDir()}
+	f := &hardeningFixture{t: t, root: t.TempDir(), template: map[string]string{"seed/project": "seed fixture\n"}}
 	for path, contents := range map[string]string{
 		"/etc/group":                           "shell:x:990:\n",
 		"/etc/passwd":                          "",
@@ -44,7 +46,7 @@ func newHardeningFixture(t *testing.T) *hardeningFixture {
 	f.env = linux.Env{
 		Root: f.root,
 		Now:  func() time.Time { return time.Unix(1_000, 0) },
-		Execute: func(_ context.Context, c linux.Command) (linux.Result, error) {
+		Execute: func(ctx context.Context, c linux.Command) (linux.Result, error) {
 			call := strings.Join(append([]string{c.Name}, c.Args...), " ")
 			f.commands = append(f.commands, call)
 			if f.observe != nil {
@@ -54,6 +56,12 @@ func newHardeningFixture(t *testing.T) *hardeningFixture {
 				if result, ok := f.answer(call); ok {
 					return result, nil
 				}
+			}
+			if step := templateStep(c); step != "" {
+				if f.clone != nil {
+					return f.clone(ctx, step, c)
+				}
+				return f.playTemplate(step, c), nil
 			}
 			if call == "rpm -q cronie" || call == "rpm -q at" {
 				return linux.Result{ExitCode: 1}, nil

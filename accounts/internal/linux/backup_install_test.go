@@ -81,7 +81,7 @@ type backupInstaller func(context.Context, linux.Env, string, string) error
 const fixtureVersion = "1.2.3"
 
 func TestInstallBackupPrograms(t *testing.T) {
-	// R-Z64U-WWKX R-CJHS-YRMB R-CLXL-QB3P R-CI9W-KZVM
+	// R-Z64U-WWKX R-CJHS-YRMB R-CLXL-QB3P R-XCZJ-4P9H
 	const resticELF = "\x7fELFrestic-test\n"
 	const streamELF = "\x7fELFlitestream-test\n"
 	const resticArchive = "QlpoOTFBWSZTWedO3sMAAAfVgAAQAAIDBAogHACgADEDQNAgAMgs5fUG4ISx8XckU4UJDnTt7DA="

@@ -21,8 +21,12 @@ func (s *recordReader) Desired(ctx context.Context, host string) (protocol.Desir
 		if err != nil {
 			return protocol.DesiredState{}, err
 		}
+		template, err := readTemplateSettings(q)
+		if err != nil {
+			return protocol.DesiredState{}, err
+		}
 		d := protocol.DesiredState{Protocol: protocol.Version, Host: h.Name, Version: h.Version,
-			DataVolume: h.DataVolume, RootGB: h.RootGB, DataGB: h.DataGB,
+			DataVolume: h.DataVolume, RootGB: h.RootGB, DataGB: h.DataGB, TemplateURL: template.URL, TemplateRef: template.Ref,
 			Allowlist: h.Allowlist, Unban: unban, Accounts: []protocol.Account{}, Users: []protocol.User{}}
 		d.Backup = &protocol.Backup{HostPrefix: protocol.HostPrefix(h.Name, h.Seq)}
 		d.Backup.Restores, err = pendingRestores(q, h)
@@ -269,6 +273,9 @@ func (s *Store) RecordReport(ctx context.Context, host string, r protocol.Report
 		}
 		if err := w.exec("UPDATE hosts SET reported = ?, report_error = ?, attempted = ?, applied = ?, alarm = ? WHERE name = ?",
 			h.Reported.Unix(), h.ReportError, h.Attempted, h.Applied, h.Alarm, host); err != nil {
+			return Transition{}, err
+		}
+		if err := recordTemplateCommits(w.query, host, r); err != nil {
 			return Transition{}, err
 		}
 		if err := purgeUsers(w.query, host, h.Applied); err != nil {

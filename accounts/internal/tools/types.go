@@ -75,6 +75,9 @@ const (
 	ToolRestoreDatabase      = "restore_database"
 	ToolRestoreFiles         = "restore_files"
 	ToolDeleteAccountBackups = "delete_account_backups"
+
+	ToolTeamTemplate    = "team_template"
+	ToolSetTeamTemplate = "set_team_template"
 )
 
 // Tool and argument descriptions.
@@ -119,6 +122,9 @@ const (
 	DescribeRestoreFiles         string = "Restore files beside their originals."
 	DescribeDeleteAccountBackups string = "Permanently delete a removed account's backups.\nThis cannot be undone."
 
+	DescribeTeamTemplate    string = "Read the team template repository and ref used for new accounts and users."
+	DescribeSetTeamTemplate string = "Set the team template repository or ref used for new accounts and users."
+
 	ArgHost     string = "SSH host name."
 	ArgIP       string = "IP address or, for allowlist changes, a CIDR prefix."
 	ArgAccount  string = "SSH account slug."
@@ -137,6 +143,8 @@ const (
 	ArgPath     string = "Path relative to the account folder or the user's home."
 	ArgAsOf     string = "Database restore time in RFC 3339 format."
 	ArgSnapshot string = "File snapshot time in RFC 3339 format."
+	ArgURL      string = "HTTPS URL of the team template repository."
+	ArgRef      string = "Branch or tag of the team template repository."
 )
 
 // Refusal text returned to tool callers.
@@ -155,6 +163,8 @@ const (
 	SizeOutOfRange  string = "a volume size is outside the allowed range"
 	SizeShrinks     string = "volumes can only grow"
 	NothingToChange string = "there is no change to make"
+	InvalidURL      string = "the team template URL is invalid"
+	InvalidRef      string = "the team template ref is invalid"
 	HostBusy        string = "a host operation is already running"
 	HostFailed      string = "the host has failed"
 	HostNotFailed   string = "the host has not failed"
@@ -451,6 +461,7 @@ type AccountRead struct {
 	Invites   int        `json:"invites" mcp:"required"`
 	Created   string     `json:"created" mcp:"required"`
 	CreatedBy string     `json:"created_by" mcp:"required"`
+	Template  string     `json:"template" mcp:"required"`
 	UserNames []string   `json:"user_names" mcp:"required"`
 	Operation *Operation `json:"operation"`
 }
@@ -466,6 +477,7 @@ type User struct {
 	LastSignIn string   `json:"last_sign_in" mcp:"required"`
 	Created    string   `json:"created" mcp:"required"`
 	CreatedBy  string   `json:"created_by" mcp:"required"`
+	Template   string   `json:"template" mcp:"required"`
 }
 
 // UserList holds one window of users.

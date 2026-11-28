@@ -115,7 +115,7 @@ func TestWalkUnrecordedCopy(t *testing.T) {
 }
 
 func TestSharedDisks(t *testing.T) {
-	// R-YAI5-EXW7 R-YCXY-6HDL R-YGLN-BSLO R-YFDQ-Y0UZ R-YE5U-K94A R-Y9A9-165I
+	// R-YAI5-EXW7 R-YCXY-6HDL R-YGLN-BSLO R-XHV4-NS89 R-YE5U-K94A R-Y9A9-165I
 	disks := machine.NewDisks()
 	now := fixtureTime
 	first := backupMachine(&now, disks, nil)

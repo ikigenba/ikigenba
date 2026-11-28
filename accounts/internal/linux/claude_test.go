@@ -439,7 +439,7 @@ type failingKeyReader struct{ err error }
 func (r failingKeyReader) Read([]byte) (int, error) { return 0, r.err }
 
 func TestApplyClaudeDownloadsKey(t *testing.T) {
-	// R-FKNN-X12D R-CI9W-KZVM R-CH20-784X R-SSM0-A1YK R-R5AD-X4CD
+	// R-FKNN-X12D R-XCZJ-4P9H R-XP6I-YEOF R-SSM0-A1YK R-R5AD-X4CD
 	const pinnedListing = "pub:fixture\nfpr:::::::::" + linux.ClaudeKeyFingerprint + ":\nsub:fixture\nfpr:::::::::SUBKEY:\n"
 	for _, tc := range []struct {
 		name, listing string
@@ -647,7 +647,7 @@ func TestApplyClaudeFailureIsNonfatalAndPaced(t *testing.T) {
 }
 
 func TestApplyClaudeReportsOtherFailures(t *testing.T) {
-	// R-R7Q6-ONTR R-CI9W-KZVM
+	// R-R7Q6-ONTR R-XCZJ-4P9H
 	f := newClaudeFixture(t)
 	cmdErr := errors.New("cannot execute\r\ncommand")
 	execute := f.env.Execute

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/ikigenba/ikigenba/accounts/internal/machine"
@@ -101,6 +102,9 @@ func resolveCommand(name, path string) (string, error) {
 	return "", &exec.Error{Name: name, Err: exec.ErrNotFound}
 }
 
+// cloneProcessGroup marks commands whose descendants must stop before clone cleanup.
+type cloneProcessGroup struct{}
+
 // Exec runs a command without a shell, bounding any output retained in memory.
 func Exec(ctx context.Context, c Command) (Result, error) {
 	for _, entry := range c.Env {
@@ -126,12 +130,27 @@ func Exec(ctx context.Context, c Command) (Result, error) {
 		Env:   append(append(os.Environ(), "PATH="+commandPath), c.Env...),
 		Stdin: c.Stdin, Stdout: out, Stderr: &stderr, WaitDelay: time.Second,
 	}
+	group, _ := ctx.Value(cloneProcessGroup{}).(bool)
+	if group {
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	}
 	if err := cmd.Start(); err != nil {
 		return Result{}, err
 	}
-	stop := context.AfterFunc(ctx, func() { _ = cmd.Process.Kill() })
+	cancelled := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		defer close(cancelled)
+		if group {
+			// Direct runuser commands keep the group for git and its helpers.
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			return
+		}
+		_ = cmd.Process.Kill()
+	})
 	err = cmd.Wait()
-	stop()
+	if !stop() {
+		<-cancelled
+	}
 	result := Result{Stdout: stdout.prefix, Stderr: stderr.prefix, ExitCode: cmd.ProcessState.ExitCode()}
 	if ctx.Err() != nil && result.ExitCode == -1 {
 		return result, ctx.Err()
@@ -165,6 +184,8 @@ type Host struct {
 	dataVolumeID      string
 	dataSize          string
 	written           map[string]struct{}
+	seedCommits       map[int64]string
+	homeCommits       map[int64]string
 	backups           []string
 	claudeFailed      bool
 	claudeFailAt      time.Time
@@ -193,14 +214,21 @@ type Host struct {
 func New(env Env) *Host {
 	return &Host{
 		env: env, written: make(map[string]struct{}), signIns: make(map[string]time.Time),
+		seedCommits: make(map[int64]string), homeCommits: make(map[int64]string),
 	}
 }
 
 // Apply brings the host to the desired state in fail-fast order.
-func (h *Host) Apply(ctx context.Context, s protocol.DesiredState) error {
+func (h *Host) Apply(ctx context.Context, s protocol.DesiredState) (applyErr error) {
+	defer func() {
+		if err := h.removeClone(); applyErr == nil {
+			applyErr = err
+		}
+	}()
 	if err := validateState(s); err != nil {
 		return err
 	}
+	h.pruneTemplateCommits(s)
 	h.rememberLegacyBackupGIDs(s)
 	defer h.clearBackups()
 	clear(h.written)
@@ -254,15 +282,24 @@ func (h *Host) Apply(ctx context.Context, s protocol.DesiredState) error {
 	if err := h.sshd(ctx); err != nil {
 		return err
 	}
-	for _, part := range []func(context.Context, protocol.DesiredState) error{
-		h.slices, h.accounts, h.users, h.removedAccounts, h.isolation,
-	} {
-		if err := part(ctx, s); err != nil {
-			return err
-		}
+	if err := h.slices(ctx, s); err != nil {
+		return err
+	}
+	clone := cloneFor(s)
+	if err := h.accounts(ctx, s, &clone); err != nil {
+		return err
+	}
+	if err := h.users(ctx, s, &clone); err != nil {
+		return err
+	}
+	if err := h.removedAccounts(ctx, s); err != nil {
+		return err
+	}
+	if err := h.isolation(ctx, s, clone.skippedUsers); err != nil {
+		return err
 	}
 	h.applyClaude(ctx)
-	return nil
+	return clone.failed
 }
 
 func (h *Host) restoreReady(id string) bool {

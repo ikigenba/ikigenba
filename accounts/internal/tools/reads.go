@@ -62,6 +62,7 @@ func userAnswer(u store.User) User {
 	return User{
 		User: u.Name, Account: u.Account, Admin: u.Admin, State: u.State, Pending: u.Pending,
 		Keys: keys, LastSignIn: stamp(u.LastSignIn), Created: stamp(u.Created), CreatedBy: u.CreatedBy,
+		Template: u.Template,
 	}
 }
 
@@ -222,6 +223,6 @@ func (cfg Config) account(ctx context.Context, args AccountArgs) (AccountRead, e
 	return AccountRead{
 		Account: answer.Account, Host: answer.Host, DNSName: answer.DNSName, State: answer.State,
 		Reason: answer.Reason, Users: answer.Users, Invites: answer.Invites, Created: answer.Created, CreatedBy: answer.CreatedBy,
-		UserNames: names, Operation: op,
+		Template: a.Template, UserNames: names, Operation: op,
 	}, nil
 }

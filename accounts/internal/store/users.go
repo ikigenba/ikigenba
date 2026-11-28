@@ -9,13 +9,13 @@ import (
 	"github.com/ikigenba/ikigenba/appkit/identity"
 )
 
-const userFields = `u.name, u.account, u.state, u.uid, u.version, u.last_sign_in, u.created, u.created_by`
+const userFields = `u.name, u.account, u.state, u.uid, u.version, u.last_sign_in, u.created, u.created_by, u.template`
 const userSelect = `SELECT ` + userFields + `, u.version > h.applied, EXISTS (SELECT 1 FROM user_admins WHERE uid = u.uid)
 	FROM ssh_users u JOIN accounts a ON a.slug = u.account JOIN hosts h ON h.name = a.host`
 
 func scanUser(r scanner) (u User, err error) {
 	err = r.Scan(&u.Name, &u.Account, &u.State, &u.UID, &u.Version, storedTime{&u.LastSignIn},
-		storedTime{&u.Created}, &u.CreatedBy, &u.Pending, &u.Admin)
+		storedTime{&u.Created}, &u.CreatedBy, &u.Template, &u.Pending, &u.Admin)
 	return u, err
 }
 
@@ -61,8 +61,8 @@ func insertKey(q query, name string, k Key) error {
 // AddUser creates a user and its first key on the account's host.
 func (s *Store) AddUser(ctx context.Context, account, name string, k Key, c identity.Caller) (User, error) {
 	return write(ctx, s, allGiven(account, name, k.Type, k.Body, k.Line) && validCaller(c), func(w *writing) (User, error) {
-		a, err := getAccount(w.query, account)
-		if err != nil {
+		a := Account{Slug: account}
+		if err := w.row("SELECT host, state FROM accounts WHERE slug = ?", account).Scan(&a.Host, &a.State); err != nil {
 			return User{}, err
 		}
 		if a.State == AccountRemoving {

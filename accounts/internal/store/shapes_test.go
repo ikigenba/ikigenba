@@ -113,17 +113,17 @@ var _ struct {
 	HostState                                                                      string
 } = store.Update{}
 
-// R-BSCO-Q7FI
+// R-VD1G-K8II
 var _ struct {
 	Slug, Host, State, Reason    string
 	GID, Version, RemovedVersion int64
 	Change, Operation            string
 	Users, Invites               int
 	Created                      time.Time
-	CreatedBy                    string
+	CreatedBy, Template          string
 } = store.Account{}
 
-// R-BTKL-3Z67
+// R-VE9C-Y097
 var (
 	_ struct{ Type, Body, Line string } = store.Key{}
 	_ struct {
@@ -134,7 +134,7 @@ var (
 		Pending             bool
 		Keys                []store.Key
 		LastSignIn, Created time.Time
-		CreatedBy           string
+		CreatedBy, Template string
 	} = store.User{}
 )
 

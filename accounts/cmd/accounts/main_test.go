@@ -22,6 +22,7 @@ import (
 
 	"github.com/ikigenba/ikigenba/accounts/internal/cli"
 	"github.com/ikigenba/ikigenba/accounts/internal/pages"
+	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 	"github.com/ikigenba/ikigenba/accounts/internal/tools"
 	"github.com/ikigenba/ikigenba/accounts/internal/valid"
@@ -288,6 +289,7 @@ func TestBinary(t *testing.T) {
 				Banner: banner, Description: pages.Description, DefaultType: valid.DefaultType, DefaultRootGB: valid.DefaultRootGB, DefaultDataGB: valid.DefaultDataGB,
 				BackupEveryMinutes: defaults.EveryMinutes, BackupHourly: defaults.Hourly, BackupDaily: defaults.Daily, BackupWeekly: defaults.Weekly,
 				BackupWindowDays: defaults.WindowDays, BackupFilesStaleMinutes: defaults.FilesStaleMinutes, BackupDatabaseStaleMinutes: defaults.DatabaseStaleMinutes,
+				TemplateURL: protocol.DefaultTemplateURL, TemplateRef: protocol.DefaultTemplateRef,
 			})
 			if response.StatusCode != 200 || !bytes.Equal(body, want.Body.Bytes()) {
 				t.Fatal("about identity differs")

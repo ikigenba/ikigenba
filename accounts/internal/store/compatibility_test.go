@@ -265,8 +265,9 @@ func TestAdditiveMigrations(t *testing.T) {
 	keptSchema := value(t, result(fs.ReadFile(migrations, "0006_kept_volumes.sql")))
 	backupSchema := value(t, result(fs.ReadFile(migrations, "0007_host_backups.sql")))
 	weeklySchema := value(t, result(fs.ReadFile(migrations, "0008_weekly_retention.sql")))
+	templateSchema := value(t, result(fs.ReadFile(migrations, "0009_team_template.sql")))
 	for _, table := range tableNames(string(old) + string(newSchema) + string(bansSchema) + string(inviteSchema) +
-		string(hostRecordsSchema) + string(keptSchema) + string(backupSchema)) {
+		string(hostRecordsSchema) + string(keptSchema) + string(backupSchema) + string(templateSchema)) {
 		extra.WriteString("ALTER TABLE " + table + " ADD COLUMN future_note TEXT;\n")
 	}
 	extra.WriteString(`ALTER TABLE host_records ADD COLUMN name TEXT;
@@ -278,7 +279,7 @@ ALTER TABLE hosts ADD COLUMN record_reason TEXT;
 		"0003_bans.sql": {Data: bansSchema}, "0004_invites.sql": {Data: inviteSchema},
 		"0005_host_records.sql": {Data: hostRecordsSchema}, "0006_kept_volumes.sql": {Data: keptSchema},
 		"0007_host_backups.sql": {Data: backupSchema}, "0008_weekly_retention.sql": {Data: weeklySchema},
-		"0009_expand.sql": {Data: []byte(extra.String())}}
+		"0009_team_template.sql": {Data: templateSchema}, "0010_expand.sql": {Data: []byte(extra.String())}}
 	cfg.Rand = new(counterRandom)
 	_, withExtra := open(t, filepath.Join(t.TempDir(), "expand.db"), expanded, cfg)
 	for _, s := range []*store.Store{baseline, withoutLegacy, withExtra} {
@@ -301,6 +302,12 @@ ALTER TABLE hosts ADD COLUMN record_reason TEXT;
 		eq(t, exercise(ctx, s, host, opID), want)
 		eq(t, inviteExercise(ctx, s, host), wantInvites)
 		eq(t, value(t, result(s.BackupSettings(ctx))), value(t, result(baseline.BackupSettings(ctx))))
+		eq(t, value(t, result(s.TemplateSettings(ctx))), store.DefaultTemplateSettings())
+		ref := "branch"
+		settings, changed, err := s.SetTemplateSettings(ctx, nil, &ref)
+		checkErr(t, err, nil)
+		eq(t, changed, true)
+		eq(t, settings, store.TemplateSettings{URL: protocol.DefaultTemplateURL, Ref: ref})
 		closed(t, w, true)
 		cancel()
 	}

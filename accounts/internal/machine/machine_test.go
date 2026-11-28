@@ -6,14 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/ikigenba/ikigenba/accounts"
 	"github.com/ikigenba/ikigenba/accounts/internal/machine"
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
 )
@@ -176,7 +174,7 @@ func TestMemoryApplyAndSnapshot(t *testing.T) {
 	}
 }
 
-// R-GNTR-WUUY
+// R-XE7F-IH06
 func TestSnapshotShape(_ *testing.T) {
 	var _ struct {
 		Accounts  []machine.Account
@@ -204,36 +202,53 @@ func TestSnapshotShape(_ *testing.T) {
 		Keys          []string
 	} = machine.User{}
 	var _ struct {
-		Account                string
-		Files                  []string
-		Commits                int
-		Author, Email, Message string
+		Account                        string
+		Files                          []string
+		Commits                        int
+		Author, Email, Message, Commit string
 	} = machine.Seed{}
 	var _ struct {
 		User, Account string
 		Files         []string
+		Commit        string
 	} = machine.Home{}
 }
 
-// R-YFDQ-Y0UZ R-H6HF-3CTF
+// R-XFFB-W8QV R-XGN8-A0HK
+func TestMemoryTemplate(t *testing.T) {
+	type simulatedCommit string
+	const commit simulatedCommit = machine.MemoryTemplateCommit
+	if commit != "0123456789abcdef0123456789abcdef01234567" {
+		t.Fatalf("memory template commit = %q", commit)
+	}
+	for _, tc := range []struct {
+		name  string
+		files func() []string
+		want  []string
+	}{
+		{"seed", machine.MemorySeedFiles, []string{".gitignore", "AGENTS.md", "data/.keep"}},
+		{"home", machine.MemoryHomeFiles, []string{"AGENTS.md"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			first, second := tc.files(), tc.files()
+			if !slices.Equal(first, tc.want) || !slices.Equal(second, tc.want) {
+				t.Fatalf("template paths = %v and %v, want %v", first, second, tc.want)
+			}
+			first[0] = "changed"
+			if !slices.Equal(second, tc.want) || !slices.Equal(tc.files(), tc.want) {
+				t.Fatal("template paths share storage across calls")
+			}
+		})
+	}
+}
+
+// R-XHV4-NS89 R-XQEF-C6F4
 func TestMemorySeeds(t *testing.T) {
 	const message string = machine.SeedMessage
 	if message == "" || strings.ContainsAny(message, "\r\n") {
 		t.Fatalf("SeedMessage = %q, want a nonempty line", message)
 	}
-	var paths []string
-	if err := fs.WalkDir(accounts.Seed(), ".", func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.Type().IsRegular() {
-			paths = append(paths, path)
-		}
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	slices.Sort(paths)
+	paths := machine.MemorySeedFiles()
 	m := fixedMachine()
 	if got := m.State().Seeds; len(got) != 0 {
 		t.Fatalf("initial seeds = %+v", got)
@@ -246,7 +261,10 @@ func TestMemorySeeds(t *testing.T) {
 		},
 	}
 	apply(t, m, state)
-	zebra := machine.Seed{Account: "zebra", Files: paths, Commits: 1, Author: "zebra", Email: "zebra@host01.hosts.example.com", Message: message}
+	zebra := machine.Seed{
+		Account: "zebra", Files: paths, Commits: 1, Author: "zebra", Email: "zebra@host01.hosts.example.com",
+		Message: message, Commit: machine.MemoryTemplateCommit,
+	}
 	if got := m.State().Seeds; !reflect.DeepEqual(got, []machine.Seed{zebra}) {
 		t.Fatalf("seeds after first apply = %+v, want %+v", got, zebra)
 	}
@@ -268,7 +286,7 @@ func TestMemorySeeds(t *testing.T) {
 	state.DataVolume = "vol-00000001"
 	apply(t, m, state)
 	want := []machine.Seed{
-		{Account: "alpaca", Files: paths, Commits: 1, Author: "alpaca", Email: "alpaca@host02", Message: message},
+		{Account: "alpaca", Files: paths, Commits: 1, Author: "alpaca", Email: "alpaca@host02", Message: message, Commit: machine.MemoryTemplateCommit},
 		zebra,
 	}
 	snapshot := m.State()
@@ -306,11 +324,75 @@ func TestMemorySeeds(t *testing.T) {
 		apply(t, m, state)
 		want = slices.Insert(want, len(want)-1, machine.Seed{
 			Account: tc.slug, Files: paths, Commits: 1, Author: tc.slug, Email: tc.slug + "@host02", Message: message,
+			Commit: machine.MemoryTemplateCommit,
 		})
 		if got := m.State().Seeds; !reflect.DeepEqual(got, want) {
 			t.Fatalf("seeds after successful retry for %s = %+v, want %+v", tc.slug, got, want)
 		}
 	}
+}
+
+// R-XKAX-FBPN
+func TestMemoryInspectReportsTemplateCommits(t *testing.T) {
+	m := fixedMachine()
+	state := protocol.DesiredState{
+		Host: "host01", DataVolume: "vol-00000001",
+		Accounts: []protocol.Account{
+			{Slug: "acme", GID: 20000, State: protocol.AccountActive},
+			{Slug: "beta", GID: 20002, State: protocol.AccountActive},
+			{Slug: "cedar", GID: 20004, State: protocol.AccountActive},
+			{Slug: "delta", GID: 20006, State: protocol.AccountRemoved},
+			{Slug: "elm", GID: 20008, State: protocol.AccountActive},
+		},
+		Users: []protocol.User{
+			{Name: "alice", UID: 20001, Account: "acme", State: protocol.UserActive},
+			{Name: "bob", UID: 20003, Account: "beta", State: protocol.UserLocked},
+			{Name: "cora", UID: 20005, Account: "cedar", State: protocol.UserActive},
+			{Name: "dan", UID: 20007, Account: "delta", State: protocol.UserDeleted},
+			{Name: "evan", UID: 20009, Account: "elm", State: protocol.UserActive},
+		},
+	}
+	check := func(s protocol.DesiredState, wantSeeds []protocol.Seed, wantHomes []protocol.Home) {
+		t.Helper()
+		report := inspect(t, m, s)
+		if !slices.Equal(report.Seeds, wantSeeds) || !slices.Equal(report.Homes, wantHomes) {
+			t.Fatalf("report seeds = %v and homes = %v, want %v and %v", report.Seeds, report.Homes, wantSeeds, wantHomes)
+		}
+	}
+	check(state, nil, nil)
+	apply(t, m, protocol.DesiredState{DataVolume: state.DataVolume})
+	check(state, nil, nil)
+	seeded := state
+	seeded.Accounts = state.Accounts[:3]
+	seeded.Users = state.Users[:3]
+	apply(t, m, seeded)
+	check(state, []protocol.Seed{
+		{GID: 20000, Commit: machine.MemoryTemplateCommit},
+		{GID: 20002, Commit: machine.MemoryTemplateCommit},
+		{GID: 20004, Commit: machine.MemoryTemplateCommit},
+	}, []protocol.Home{
+		{UID: 20001, Commit: machine.MemoryTemplateCommit},
+		{UID: 20003, Commit: machine.MemoryTemplateCommit},
+		{UID: 20005, Commit: machine.MemoryTemplateCommit},
+	})
+
+	// Inspect must use the names, states and ids from the supplied state.
+	state.Accounts[0].GID = 20010
+	state.Accounts[2].State = protocol.AccountRemoved
+	state.Accounts[3].State = protocol.AccountActive
+	state.Accounts = state.Accounts[:4]
+	state.Users[0].UID = 20011
+	state.Users[2].State = protocol.UserDeleted
+	state.Users[3].State = protocol.UserLocked
+	state.Users = state.Users[:4]
+	check(state, []protocol.Seed{
+		{GID: 20002, Commit: machine.MemoryTemplateCommit},
+		{GID: 20010, Commit: machine.MemoryTemplateCommit},
+	}, []protocol.Home{
+		{UID: 20003, Commit: machine.MemoryTemplateCommit},
+		{UID: 20011, Commit: machine.MemoryTemplateCommit},
+	})
+	check(protocol.DesiredState{}, nil, nil)
 }
 
 func TestMemoryInspect(t *testing.T) {
@@ -348,6 +430,7 @@ func TestMemoryInspect(t *testing.T) {
 		Allowlist: []string{"198.51.100.0/24", "2001:db8::1"},
 		Hostname:  "host01.hosts.example.com",
 		Backups:   []protocol.AccountBackup{{Account: "alpaca"}, {Account: "beaver"}},
+		Seeds:     []protocol.Seed{{GID: 20001, Commit: machine.MemoryTemplateCommit}},
 	}
 	s.Domain = ""
 	s.RootGB, s.DataGB = 21, 31

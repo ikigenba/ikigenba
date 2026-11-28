@@ -25,7 +25,7 @@ func writer(t *testing.T, sink telemetry.Sink) *telemetry.Writer {
 	return w
 }
 
-// R-9NTT-PE98 R-9P1Q-35ZX R-E3OL-H7GN R-E64E-8QY1 R-0XAC-XLB8 R-1RN7-D10W
+// R-9NTT-PE98 R-9P1Q-35ZX R-E3OL-H7GN R-E64E-8QY1 R-0XAC-XLB8 R-1RN7-D10W R-WG28-SW8Q
 func TestWireConstants(t *testing.T) {
 	const (
 		_ string = trail.EventChangeFinished
@@ -35,6 +35,7 @@ func TestWireConstants(t *testing.T) {
 		_ string = trail.AccountRemoved + trail.ResourceInstance + trail.ResourceVolume + trail.ResourceAddress
 		_ string = trail.EventInviteCreated + trail.EventInviteRevoked + trail.EventInviteUsed + trail.EventAdminChanged
 		_ string = trail.EventVolumeChanged
+		_ string = trail.EventTemplateChanged
 	)
 	got := []string{
 		trail.EventChangeFinished, trail.ResultOK, trail.ResultRefused, trail.ResultFailed,
@@ -42,7 +43,7 @@ func TestWireConstants(t *testing.T) {
 		trail.EventHostSilent, trail.EventHostSynced, trail.EventHostApplyFailed, trail.EventResourceUnexplained,
 		trail.AccountRemoved, trail.ResourceInstance, trail.ResourceVolume, trail.ResourceAddress,
 		trail.EventInviteCreated, trail.EventInviteRevoked, trail.EventInviteUsed, trail.EventAdminChanged,
-		trail.EventVolumeChanged,
+		trail.EventVolumeChanged, trail.EventTemplateChanged,
 	}
 	want := []string{
 		"change.finished", "ok", "refused", "failed",
@@ -50,7 +51,7 @@ func TestWireConstants(t *testing.T) {
 		"host.silent", "host.synced", "host.apply_failed", "resource.unexplained",
 		"removed", "instance", "volume", "address",
 		"invite.created", "invite.revoked", "invite.used", "admin.changed",
-		"volume.changed",
+		"volume.changed", "template.changed",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("wire constants %v, want %v", got, want)
@@ -123,6 +124,10 @@ func notices(tool, host, account, user, ip, result, op, kind, from, to, status, 
 			func(ctx context.Context, w *telemetry.Writer) {
 				trail.VolumeChanged(ctx, w, resource, host, from, to, reason)
 			}},
+		{trail.EventTemplateChanged, telemetry.Attrs{"url": resource, "ref": data},
+			func(ctx context.Context, w *telemetry.Writer) {
+				trail.TemplateChanged(ctx, w, resource, data)
+			}},
 	}
 }
 
@@ -138,6 +143,7 @@ func checkEvent(t *testing.T, e telemetry.Event, want notice, c identity.Caller)
 }
 
 // R-I7QS-EGN0 R-1HW0-AV3C R-E9S3-E264 R-0YI9-BD1X R-1SV3-QSRL
+// R-WG28-SW8Q
 var (
 	_ func(context.Context, *telemetry.Writer, string, string, string, string, string, string)         = trail.Change
 	_ func(context.Context, *telemetry.Writer, string, string, string, string, string)                 = trail.OperationStarted
@@ -153,9 +159,10 @@ var (
 	_ func(context.Context, *telemetry.Writer, string, string, string, string, bool)                   = trail.InviteUsed
 	_ func(context.Context, *telemetry.Writer, string, string, string, bool)                           = trail.AdminChanged
 	_ func(context.Context, *telemetry.Writer, string, string, string, string, string)                 = trail.VolumeChanged
+	_ func(context.Context, *telemetry.Writer, string, string)                                         = trail.TemplateChanged
 )
 
-// R-1J3W-OMU1 R-1KBT-2EKQ R-0ZQ5-P4SM R-1NZI-7PST
+// R-1J3W-OMU1 R-1KBT-2EKQ R-0ZQ5-P4SM R-1NZI-7PST R-WHA5-6NZF
 func TestEachEvent(t *testing.T) {
 	caller := identity.Caller{UserID: "caller", RequestID: "request", Email: "private@example.test"}
 	for _, c := range []identity.Caller{{}, {RequestID: "anonymous-request"}, caller} {
@@ -203,7 +210,7 @@ func (s *blockedSink) Deliver(ctx context.Context, ev telemetry.Event) error {
 	return s.Capture.Deliver(ctx, ev)
 }
 
-// R-9V58-00PE R-9WD4-DSG3 R-1LJP-G6BF R-1NZI-7PST
+// R-9V58-00PE R-9WD4-DSG3 R-1LJP-G6BF R-1NZI-7PST R-WHA5-6NZF
 func TestNoticeQueuesWithoutDelivery(t *testing.T) {
 	const primingEvent, laterEvent = "request.started", "tool.called"
 	for _, n := range example(7) {
@@ -238,7 +245,7 @@ func TestNoticeQueuesWithoutDelivery(t *testing.T) {
 	}
 }
 
-// R-1MRL-TY24 R-1NZI-7PST
+// R-1MRL-TY24 R-1NZI-7PST R-WHA5-6NZF
 func TestConcurrentNotices(t *testing.T) {
 	const callers = 32
 	capture := &telemetry.Capture{}

@@ -10,17 +10,17 @@ import (
 )
 
 const accountFields = `slug, host, state, reason, gid, version, removed_version, change_id, operation, created, created_by`
-const accountSelect = `SELECT ` + accountFields +
+const accountSelect = `SELECT ` + accountFields + `, template` +
 	`, (SELECT count(*) FROM ssh_users WHERE account = accounts.slug) FROM accounts`
 
-const accountSelectWithInvites = `SELECT ` + accountFields +
+const accountSelectWithInvites = `SELECT ` + accountFields + `, template` +
 	`, (SELECT count(*) FROM ssh_users WHERE account = accounts.slug),
 	(SELECT count(*) FROM invites WHERE account = accounts.slug AND gid = accounts.gid AND expires > ?)
 	FROM accounts`
 
 func scanAccount(r scanner, withInvites bool) (a Account, err error) {
 	fields := []any{&a.Slug, &a.Host, &a.State, &a.Reason, &a.GID, &a.Version, &a.RemovedVersion,
-		&a.Change, &a.Operation, storedTime{&a.Created}, &a.CreatedBy, &a.Users}
+		&a.Change, &a.Operation, storedTime{&a.Created}, &a.CreatedBy, &a.Template, &a.Users}
 	if withInvites {
 		fields = append(fields, &a.Invites)
 	}

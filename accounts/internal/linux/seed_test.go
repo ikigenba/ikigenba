@@ -1,6 +1,7 @@
 package linux_test
 
 import (
+	"fmt"
 	"io"
 	"io/fs"
 	"net"
@@ -9,8 +10,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/fstest"
 
-	"github.com/ikigenba/ikigenba/accounts"
 	"github.com/ikigenba/ikigenba/accounts/internal/linux"
 	"github.com/ikigenba/ikigenba/accounts/internal/machine"
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
@@ -48,6 +49,10 @@ func newSeedFixture(t *testing.T) *seedFixture {
 		Host: "host04", DataVolume: "vol-12345678",
 		Accounts: []protocol.Account{{Slug: "citron", GID: 22000, State: protocol.AccountActive}},
 	}}
+	f.template = map[string]string{"seed/*.md": "literal glob\n", "seed/docs/:(exclude)test": "literal magic\n"}
+	for i := range linux.ChownBatch {
+		f.template[fmt.Sprintf("seed/docs/file%03d", i)] = fmt.Sprintf("fixture %d\n", i)
+	}
 	f.observe = f.executeSeedCommand
 	f.answer = func(call string) (linux.Result, bool) {
 		switch call {
@@ -295,7 +300,7 @@ func TestApplyStopsWhenHeadQueryFails(t *testing.T) {
 }
 
 func TestApplyLeavesSeedWritesToRunuser(t *testing.T) {
-	// R-KR34-ANBD R-QYMO-5NWI
+	// R-X38C-2JBX R-XSU8-3PWI
 	f := newSeedFixture(t)
 	f.recordOnly = true
 	f.head = 1
@@ -316,7 +321,7 @@ func TestApplyLeavesSeedWritesToRunuser(t *testing.T) {
 }
 
 func TestApplyLeavesMarkerPendingOnCommitFailure(t *testing.T) {
-	// R-QYMO-5NWI R-S739-S0BW
+	// R-XSU8-3PWI R-S739-S0BW R-X6W1-7UK0
 	f := newSeedFixture(t)
 	f.head = 1
 	f.put(seedMarker, seedPending, 0o600)
@@ -324,6 +329,10 @@ func TestApplyLeavesMarkerPendingOnCommitFailure(t *testing.T) {
 	f.applyFails(f.state, f.fail, "runuser")
 	f.forbidCalls(f.tee(seedMarker))
 	f.expectFile(seedMarker, seedPending, 0o600)
+	out, err := f.host.Inspect(t.Context(), f.state)
+	if err != nil || len(out.Seeds) != 0 {
+		t.Fatalf("failed commit recorded: %v, %v", out.Seeds, err)
+	}
 
 	f.commands = nil
 	f.fail = ""
@@ -331,10 +340,15 @@ func TestApplyLeavesMarkerPendingOnCommitFailure(t *testing.T) {
 	f.apply(f.state)
 	f.expectSeedCommands(f.chown(seedFolder), f.acl(seedFolder), f.headQuery(), f.tee(seedMarker))
 	f.expectFile(seedMarker, "done\n", 0o600)
+	f.forbidCalls("runuser -u " + linux.CloneUser + " ")
+	out, err = f.host.Inspect(t.Context(), f.state)
+	if err != nil || len(out.Seeds) != 0 {
+		t.Fatalf("preexisting commit recorded: %v, %v", out.Seeds, err)
+	}
 }
 
 func TestApplySeedsAndCommitsOnce(t *testing.T) {
-	// R-29GM-HUAP R-KR34-ANBD R-QXER-RW5T R-QYMO-5NWI R-H6HF-3CTF
+	// R-29GM-HUAP R-X38C-2JBX R-X4G8-GB2M R-XSU8-3PWI
 	for _, tc := range []struct {
 		name, domain, hostname string
 		retryDone              bool
@@ -348,7 +362,7 @@ func TestApplySeedsAndCommitsOnce(t *testing.T) {
 			f.put(seedMarker, seedPending, 0o600)
 			f.head = 1
 			want, files, names := f.seedPlan()
-			addPrefix := []string{"-u", "citron", "--", "git", "-C", f.path(seedFolder), "add", "--force", "--"}
+			addPrefix := []string{"-u", "citron", "--", "git", "--literal-pathspecs", "-C", f.path(seedFolder), "add", "--force", "--"}
 			commit := f.seedCommit(tc.hostname)
 			var added, addCalls []string
 			f.check = func(c linux.Command) {
@@ -386,6 +400,11 @@ func TestApplySeedsAndCommitsOnce(t *testing.T) {
 			want = append(want, addCalls...)
 			want = append(want, "runuser "+strings.Join(commit, " "), f.tee(seedMarker))
 			f.expectSeedCommands(want...)
+			out, err := f.host.Inspect(t.Context(), f.state)
+			wantReport := []protocol.Seed{{GID: f.state.Accounts[0].GID, Commit: fixtureCommit}}
+			if err != nil || !slices.Equal(out.Seeds, wantReport) {
+				t.Fatalf("reported seeds = %v, %v, want %v", out.Seeds, err, wantReport)
+			}
 			for path, contents := range files {
 				f.expectFile(path, contents, 0o600)
 			}
@@ -413,7 +432,13 @@ func TestApplySeedsAndCommitsOnce(t *testing.T) {
 
 func (f *seedFixture) seedPlan() ([]string, map[string]string, []string) {
 	f.t.Helper()
-	source := accounts.Seed()
+	source := fstest.MapFS{}
+	for filename, contents := range f.template {
+		name, ok := strings.CutPrefix(filename, "seed/")
+		if ok {
+			source[name] = &fstest.MapFile{Data: []byte(contents)}
+		}
+	}
 	want := []string{f.chown(seedFolder), f.acl(seedFolder), f.headQuery()}
 	files := map[string]string{}
 	var names []string

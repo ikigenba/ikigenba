@@ -154,7 +154,7 @@ func TestMemoryCloseFinalRetryAfterConcurrentApply(t *testing.T) {
 }
 
 func TestMemoryWholeHostRestore(t *testing.T) {
-	// R-Z3RQ-LFOV R-YFDQ-Y0UZ R-7SBD-GFUL
+	// R-Z3RQ-LFOV R-XHV4-NS89 R-7SBD-GFUL
 	s := backupState()
 	s.Accounts = nil
 	now := fixtureTime

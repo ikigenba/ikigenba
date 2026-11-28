@@ -260,6 +260,7 @@ func TestMCPRegistrationAndIdentity(t *testing.T) {
 		tools.ToolKeptVolumes, tools.ToolDeleteKeptVolume,
 		tools.ToolCloseHost, tools.ToolOpenHost, tools.ToolReplaceHost, tools.ToolBackupStatus, tools.ToolRestorePoints,
 		tools.ToolRestoreDatabase, tools.ToolRestoreFiles, tools.ToolDeleteAccountBackups,
+		tools.ToolTeamTemplate, tools.ToolSetTeamTemplate,
 	}
 	registered := f.cfg.MCP.Tools()
 	names := make([]string, 0, len(registered))

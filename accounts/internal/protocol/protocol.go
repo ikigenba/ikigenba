@@ -38,7 +38,7 @@ const (
 const (
 	Version        = 1
 	MaxStateBytes  = 2 << 20
-	MaxReportBytes = 256 << 10
+	MaxReportBytes = 320 << 10
 	MaxBinaryBytes = 64 << 20
 	MaxBoxRequest  = 64 << 10
 	MaxBoxAnswer   = 1 << 20
@@ -71,19 +71,21 @@ var (
 
 // DesiredState contains the configuration the host should apply.
 type DesiredState struct {
-	Protocol   int       `json:"protocol"`
-	Host       string    `json:"host"`
-	Version    int64     `json:"version"`
-	Daemon     string    `json:"daemon"`
-	DataVolume string    `json:"data_volume"`
-	RootGB     int       `json:"root_gb"`
-	DataGB     int       `json:"data_gb"`
-	Accounts   []Account `json:"accounts"`
-	Users      []User    `json:"users"`
-	Allowlist  []string  `json:"allowlist"`
-	Unban      []string  `json:"unban"`
-	Domain     string    `json:"domain"`
-	Backup     *Backup   `json:"backup"`
+	Protocol    int       `json:"protocol"`
+	Host        string    `json:"host"`
+	Version     int64     `json:"version"`
+	Daemon      string    `json:"daemon"`
+	DataVolume  string    `json:"data_volume"`
+	RootGB      int       `json:"root_gb"`
+	DataGB      int       `json:"data_gb"`
+	Accounts    []Account `json:"accounts"`
+	Users       []User    `json:"users"`
+	Allowlist   []string  `json:"allowlist"`
+	Unban       []string  `json:"unban"`
+	Domain      string    `json:"domain"`
+	Backup      *Backup   `json:"backup"`
+	TemplateURL string    `json:"template_url"`
+	TemplateRef string    `json:"template_ref"`
 }
 
 // Account describes a group and its service account.
@@ -136,6 +138,8 @@ type Report struct {
 	Backups         []AccountBackup `json:"backups"`
 	HostBackup      HostBackup      `json:"host_backup"`
 	Restores        []RestoreResult `json:"restores"`
+	Seeds           []Seed          `json:"seeds"`
+	Homes           []Home          `json:"homes"`
 }
 
 // Disk reports filesystem usage.
@@ -317,6 +321,8 @@ func (r Report) Bounded() Report {
 	}
 	r.OS = jsonStringPrefix(r.OS, 256)
 	r.boundBackups()
+	r.Seeds = boundTemplateEntries(r.Seeds, MaxSeeds, func(seed Seed) (int64, string) { return seed.GID, seed.Commit })
+	r.Homes = boundTemplateEntries(r.Homes, MaxHomes, func(home Home) (int64, string) { return home.UID, home.Commit })
 	return r
 }
 

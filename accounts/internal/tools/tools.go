@@ -49,6 +49,8 @@ func Register(srv *mcp.Server, cfg Config) {
 	mcp.AddTool(srv, mcp.Tool[RestoreDatabaseArgs, RestoreMade]{Name: ToolRestoreDatabase, Description: DescribeRestoreDatabase, Effect: mcp.Additive, Handler: change(cfg, ToolRestoreDatabase, cfg.restoreDatabase)})
 	mcp.AddTool(srv, mcp.Tool[RestoreFilesArgs, RestoreMade]{Name: ToolRestoreFiles, Description: DescribeRestoreFiles, Effect: mcp.Additive, Handler: change(cfg, ToolRestoreFiles, cfg.restoreFiles)})
 	mcp.AddTool(srv, mcp.Tool[AccountArgs, BackupsDeletion]{Name: ToolDeleteAccountBackups, Description: DescribeDeleteAccountBackups, Effect: mcp.Destructive, Handler: change(cfg, ToolDeleteAccountBackups, cfg.deleteAccountBackups)})
+	mcp.AddTool(srv, mcp.Tool[TeamTemplateArgs, TeamTemplate]{Name: ToolTeamTemplate, Description: DescribeTeamTemplate, Effect: mcp.Read, Handler: read(cfg, cfg.teamTemplate)})
+	mcp.AddTool(srv, mcp.Tool[SetTeamTemplateArgs, TeamTemplate]{Name: ToolSetTeamTemplate, Description: DescribeSetTeamTemplate, Effect: mcp.Additive, Handler: change(cfg, ToolSetTeamTemplate, cfg.setTeamTemplate)})
 }
 
 func read[A, R any](cfg Config, handle func(context.Context, A) (R, error)) func(context.Context, identity.Caller, A) (R, error) {

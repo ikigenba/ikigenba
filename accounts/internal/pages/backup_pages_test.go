@@ -41,6 +41,7 @@ func aboutData(banner page.Banner, b store.BackupSettings) pages.AboutData {
 		DefaultRootGB: valid.DefaultRootGB, DefaultDataGB: valid.DefaultDataGB,
 		BackupEveryMinutes: b.EveryMinutes, BackupHourly: b.Hourly, BackupDaily: b.Daily, BackupWeekly: b.Weekly,
 		BackupWindowDays: b.WindowDays, BackupFilesStaleMinutes: b.FilesStaleMinutes, BackupDatabaseStaleMinutes: b.DatabaseStaleMinutes,
+		TemplateURL: protocol.DefaultTemplateURL, TemplateRef: protocol.DefaultTemplateRef,
 	}
 }
 
@@ -134,6 +135,12 @@ func checkBackupHostPage(t *testing.T, f *fixture, h store.Host, view pages.Host
 	target := "/hosts/" + h.Name
 	data.Banner = banner(f, target, []page.Level{pages.HostLevel(h.Name)})
 	data.Host = view
+	if data.Seeds == nil {
+		data.Seeds = make([]pages.SeedRow, 0, len(data.Backups))
+		for _, row := range data.Backups {
+			data.Seeds = append(data.Seeds, pages.SeedRow{Account: row.Account})
+		}
+	}
 	if !reported.IsZero() {
 		record, err := f.cfg.Store.Host(t.Context(), h.Name)
 		checkPageStore(t, err)

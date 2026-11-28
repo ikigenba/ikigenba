@@ -27,6 +27,7 @@ func TestDesiredReportAndWatch(t *testing.T) {
 	d := value(t, result(s.Desired(ctx, h.Name)))
 	eq(t, d, protocol.DesiredState{Protocol: protocol.Version, Host: h.Name, Version: h.Version,
 		DataVolume: h.DataVolume, RootGB: h.RootGB, DataGB: h.DataGB,
+		TemplateURL: protocol.DefaultTemplateURL, TemplateRef: protocol.DefaultTemplateRef,
 		Allowlist: []string{}, Unban: []string{},
 		Backup:   &protocol.Backup{HostPrefix: protocol.HostPrefix(h.Name, h.Seq), Restores: []protocol.RestoreRequest{}},
 		Accounts: []protocol.Account{{Slug: a.Slug, GID: a.GID, State: protocol.AccountActive}},

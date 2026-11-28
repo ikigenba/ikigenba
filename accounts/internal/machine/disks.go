@@ -99,6 +99,26 @@ func (d *memoryDisk) snapshot(out *Snapshot) {
 	slices.SortFunc(out.Homes, func(a, b Home) int { return cmp.Compare(a.User, b.User) })
 }
 
+func (d *memoryDisk) templateReport(s protocol.DesiredState) ([]protocol.Seed, []protocol.Home) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	var seeds []protocol.Seed
+	var homes []protocol.Home
+	for _, account := range s.Accounts {
+		if seed, exists := d.seeds[account.Slug]; exists && account.State == protocol.AccountActive {
+			seeds = append(seeds, protocol.Seed{GID: account.GID, Commit: seed.Commit})
+		}
+	}
+	for _, user := range s.Users {
+		if home, exists := d.homes[user.Name]; exists && (user.State == protocol.UserActive || user.State == protocol.UserLocked) {
+			homes = append(homes, protocol.Home{UID: user.UID, Commit: home.Commit})
+		}
+	}
+	slices.SortFunc(seeds, func(a, b protocol.Seed) int { return cmp.Compare(a.GID, b.GID) })
+	slices.SortFunc(homes, func(a, b protocol.Home) int { return cmp.Compare(a.UID, b.UID) })
+	return seeds, homes
+}
+
 func (d *memoryDisk) addDatabase(account, path string, wal bool) {
 	if d.databases[account] == nil {
 		d.databases[account] = make(map[string]*memoryDatabase)

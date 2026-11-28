@@ -56,7 +56,18 @@ func Handler(cfg Config) http.Handler {
 }
 
 func about(w http.ResponseWriter, r *http.Request, cfg Config, banner page.Banner) {
-	settings, err := cfg.Store.BackupSettings(r.Context())
+	ctx := r.Context()
+	var settings store.BackupSettings
+	var teamTemplate store.TemplateSettings
+	err := store.ReadSnapshot(ctx, cfg.Store, func(snapshot *store.Snapshot) error {
+		var err error
+		settings, err = snapshot.BackupSettings(ctx)
+		if err != nil {
+			return err
+		}
+		teamTemplate, err = snapshot.TemplateSettings(ctx)
+		return err
+	})
 	if err != nil {
 		refusal(w, r, store.Unreachable)
 		return
@@ -68,6 +79,7 @@ func about(w http.ResponseWriter, r *http.Request, cfg Config, banner page.Banne
 		BackupEveryMinutes: settings.EveryMinutes, BackupHourly: settings.Hourly,
 		BackupDaily: settings.Daily, BackupWeekly: settings.Weekly, BackupWindowDays: settings.WindowDays,
 		BackupFilesStaleMinutes: settings.FilesStaleMinutes, BackupDatabaseStaleMinutes: settings.DatabaseStaleMinutes,
+		TemplateURL: teamTemplate.URL, TemplateRef: teamTemplate.Ref,
 	})
 }
 
@@ -173,7 +185,8 @@ func hostDetail(w http.ResponseWriter, r *http.Request, cfg Config, banner page.
 		data.Report = reportView(report, h.Version)
 		data.Backups, data.DatabaseCount = backupRows(facts, accounts, report, settings, now)
 		data.Restores, data.RestoreTotal = restoreRows(restores), total
-		return nil
+		data.Seeds, data.Homes, err = templateRows(ctx, snapshot, accounts)
+		return err
 	})
 	if errors.Is(err, store.ErrNotFound) {
 		notFound()

@@ -24,6 +24,7 @@ const (
 	EventInviteUsed          = "invite.used"
 	EventAdminChanged        = "admin.changed"
 	EventVolumeChanged       = "volume.changed"
+	EventTemplateChanged     = "template.changed"
 )
 
 // Change results, account removal and resource kinds.
@@ -125,4 +126,9 @@ func AdminChanged(ctx context.Context, w *telemetry.Writer, account, host, user 
 // VolumeChanged queues a kept volume state transition.
 func VolumeChanged(ctx context.Context, w *telemetry.Writer, volume, host, from, to, reason string) {
 	w.Emit(ctx, EventVolumeChanged, telemetry.Attrs{"volume": volume, "host": host, "from": from, "to": to, "reason": reason})
+}
+
+// TemplateChanged queues a change to the team template setting.
+func TemplateChanged(ctx context.Context, w *telemetry.Writer, url, ref string) {
+	w.Emit(ctx, EventTemplateChanged, telemetry.Attrs{"url": url, "ref": ref})
 }

@@ -338,6 +338,7 @@ func (h *Host) Inspect(ctx context.Context, s protocol.DesiredState) (protocol.R
 	out.Allowlist = h.appliedAllowlist()
 	out.Hostname = h.staticHostname()
 	h.backupReport(s, &out)
+	h.templateReport(s, &out)
 	h.previousInspect, h.inspected = now, true
 	return out, ctx.Err()
 }

@@ -23,6 +23,7 @@ func TestFirstLine(t *testing.T) {
 }
 
 // R-Y3NM-ABQI R-YH2I-HSW5 R-ZB0K-I008 R-ZC8G-VRQX R-CSDA-A2TO R-CPXH-IJCA R-0VXT-EZQU R-YFUM-415G R-0UPX-1805 R-HIWJ-5E6D R-HLCB-WXNR R-HHOM-RMFO R-4JHB-J3J5
+// R-VVBY-ASMX R-VWJU-OKDM
 func TestCopyAndTimeout(t *testing.T) {
 	const (
 		_ = tools.NotConfigured
@@ -93,6 +94,10 @@ func TestCopyAndTimeout(t *testing.T) {
 		_ = tools.ArgDataGB
 		_ = tools.ArgKeepData
 		_ = tools.ArgVolume
+		_ = tools.ArgURL
+		_ = tools.ArgRef
+		_ = tools.InvalidURL
+		_ = tools.InvalidRef
 	)
 	refusals := []string{
 		tools.NotConfigured, tools.InvalidName, tools.ReservedName, tools.NameTaken,
@@ -106,6 +111,7 @@ func TestCopyAndTimeout(t *testing.T) {
 		tools.HostNotClosed, tools.HostWithheld, tools.NoDataVolume, tools.KeepsVolumeSize, tools.BadReplace, tools.InvalidPath,
 		tools.BadTime, tools.AccountNotActive, tools.NoDatabase, tools.NotRestorable, tools.NoSnapshot,
 		tools.TooManyRestores, tools.AccountExists, tools.NameHasBackups, tools.BackupsDeleting, tools.NoAddress,
+		tools.InvalidURL, tools.InvalidRef,
 	}
 	seen := map[string]bool{store.Unreachable: true}
 	for _, copy := range refusals {
@@ -119,6 +125,7 @@ func TestCopyAndTimeout(t *testing.T) {
 		tools.ArgType, tools.ArgRootGB, tools.ArgDataGB, tools.ArgIP,
 		tools.ArgAdmin, tools.ArgInvite, tools.ArgKeepData, tools.ArgVolume,
 		tools.ArgFrom, tools.ArgLost, tools.ArgPath, tools.ArgAsOf, tools.ArgSnapshot,
+		tools.ArgURL, tools.ArgRef,
 	} {
 		if copy == "" || strings.Contains(copy, "\n") {
 			t.Fatalf("invalid argument description %q", copy)

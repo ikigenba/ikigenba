@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -435,7 +434,7 @@ func TestSandboxResumesAndSynchronizesHosts(t *testing.T) {
 	})
 }
 
-// R-R5Y2-GACO R-H8X7-UWAT
+// R-R5Y2-GACO R-XLIT-T3GC
 func TestSandboxListsSeededAccountFolder(t *testing.T) {
 	clock := newDrivenClock()
 	looks := make(chan chan time.Time, 1)
@@ -507,14 +506,16 @@ func TestSandboxListsSeededAccountFolder(t *testing.T) {
 	nextLook = waitForLook()
 
 	var want strings.Builder
-	for _, file := range embeddedRegularFiles(t, accounts.Seed()) {
+	seedFiles := machine.MemorySeedFiles()
+	slices.Sort(seedFiles)
+	for _, file := range seedFiles {
 		fmt.Fprintf(&want, "%s %s file %s\n", hostName, accountName, file)
 	}
 	fmt.Fprintf(&want, "%s %s commit %s %s@%s.%s %s\n", hostName, accountName, accountName,
 		accountName, hostName, settings.SandboxHosts.Domain, machine.SeedMessage)
 	assertSandboxSeedListing(t, path, want.String())
 
-	// R-GTX9-TPKF
+	// R-XMQQ-6V71
 	const userName = "alice"
 	run.call(tools.ToolAddUser, tools.UserKeyArgs{Account: accountName, User: userName, Key: validKey()}, nil)
 	driveUntil(t, clock, func() bool {
@@ -526,29 +527,38 @@ func TestSandboxListsSeededAccountFolder(t *testing.T) {
 	clock.advance(sim.WatchInterval)
 	nextLook <- clock.now()
 	waitForLook()
-	for _, file := range embeddedRegularFiles(t, accounts.Home()) {
+	homeFiles := machine.MemoryHomeFiles()
+	slices.Sort(homeFiles)
+	for _, file := range homeFiles {
 		fmt.Fprintf(&want, "%s %s home %s %s\n", hostName, accountName, userName, file)
 	}
 	assertSandboxSeedListing(t, path, want.String())
+
+	// R-XNYM-KMXQ. Wait for a daemon report received after the listing.
+	listedAt := clock.now()
+	driveUntil(t, clock, func() bool {
+		var host tools.HostRead
+		run.call(tools.ToolHost, tools.HostArgs{Host: hostName}, &host)
+		reported, err := time.Parse(time.RFC3339, host.Reported)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return reported.After(listedAt)
+	})
+	var account tools.AccountRead
+	run.call(tools.ToolAccount, tools.AccountArgs{Account: accountName}, &account)
+	if account.Template != machine.MemoryTemplateCommit {
+		t.Fatalf("account template = %q, want %q", account.Template, machine.MemoryTemplateCommit)
+	}
+	filter := accountName
+	var users tools.UserList
+	run.call(tools.ToolUsers, tools.UsersArgs{Account: &filter}, &users)
+	if len(users.Users) != 1 || users.Users[0].User != userName || users.Users[0].Template != machine.MemoryTemplateCommit {
+		t.Fatalf("users = %+v, want %s with template %q", users.Users, userName, machine.MemoryTemplateCommit)
+	}
 	if run.stop() != cli.ExitSuccess {
 		t.Fatal(run.err.String())
 	}
-}
-
-func embeddedRegularFiles(t *testing.T, source fs.FS) []string {
-	t.Helper()
-	var files []string
-	err := fs.WalkDir(source, ".", func(path string, entry fs.DirEntry, err error) error {
-		if err == nil && entry.Type().IsRegular() {
-			files = append(files, path)
-		}
-		return err
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	slices.Sort(files)
-	return files
 }
 
 func assertSandboxSeedListing(t *testing.T, path, want string) {

@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// R-TUOF-MNIY, R-TVWC-0F9N, R-TYC4-RYR1, R-U4FM-OTGI.
+// R-TUOF-MNIY, R-V5Q2-9M2C, R-TYC4-RYR1, R-U4FM-OTGI.
 func TestConstantsAndSignatures(t *testing.T) {
 	wantStrings := []string{"/accountsd", "/accountsd/v1/state", "/accountsd/v1/report", "after", "digest", "application/json", "application/octet-stream", "sha256:", "active", "removed", "active", "locked", "deleted"}
 	gotStrings := []string{BinaryPath, StatePath, ReportPath, QueryAfter, QueryDigest, ContentJSON, ContentBinary, DigestPrefix, AccountActive, AccountRemoved, UserActive, UserLocked, UserDeleted}
@@ -20,7 +20,7 @@ func TestConstantsAndSignatures(t *testing.T) {
 		t.Fatalf("wire strings = %q, want %q", gotStrings, wantStrings)
 	}
 	gotInts := []int{Version, MaxStateBytes, MaxReportBytes, MaxBinaryBytes, MaxErrorBytes, MaxFailedUnits, MaxSlices, MaxSignIns, DigestBuffer}
-	wantInts := []int{1, 2 << 20, 256 << 10, 64 << 20, 4096, 100, 50, 200, 32 << 10}
+	wantInts := []int{1, 2 << 20, 320 << 10, 64 << 20, 4096, 100, 50, 200, 32 << 10}
 	if !reflect.DeepEqual(gotInts, wantInts) || LongPoll != 45*time.Second {
 		t.Fatalf("wire limits = %v, poll = %v", gotInts, LongPoll)
 	}
@@ -68,23 +68,25 @@ func TestBanLimits(t *testing.T) {
 	}
 }
 
-// R-CEUB-229G, R-CJPW-L588, R-8BTR-KRPP, R-U0RX-JI8F, R-U37Q-B1PT, R-X5Z0-MBL9.
+// R-V3A9-I2KY, R-V4I5-VUBN, R-3J0Y-UCP7, R-U0RX-JI8F, R-U37Q-B1PT, R-X5Z0-MBL9.
 func TestWireObjects(t *testing.T) {
 	// Struct conversion checks the ordered Go fields independently of their JSON tags.
 	_ = struct {
-		Protocol   int
-		Host       string
-		Version    int64
-		Daemon     string
-		DataVolume string
-		RootGB     int
-		DataGB     int
-		Accounts   []Account
-		Users      []User
-		Allowlist  []string
-		Unban      []string
-		Domain     string
-		Backup     *Backup
+		Protocol    int
+		Host        string
+		Version     int64
+		Daemon      string
+		DataVolume  string
+		RootGB      int
+		DataGB      int
+		Accounts    []Account
+		Users       []User
+		Allowlist   []string
+		Unban       []string
+		Domain      string
+		Backup      *Backup
+		TemplateURL string
+		TemplateRef string
 	}(DesiredState{})
 	_ = struct {
 		Protocol        int
@@ -119,8 +121,10 @@ func TestWireObjects(t *testing.T) {
 		Backups         []AccountBackup
 		HostBackup      HostBackup
 		Restores        []RestoreResult
+		Seeds           []Seed
+		Homes           []Home
 	}(Report{})
-	const emptyReportBackups = `,"backups":null,"host_backup":{"snapshot":"0001-01-01T00:00:00Z","error":"","final":{"id":"","state":"","at":"0001-01-01T00:00:00Z","code":""},"restored":{"id":"","state":"","at":"0001-01-01T00:00:00Z","code":""}},"restores":null}`
+	const emptyReportBackups = `,"backups":null,"host_backup":{"snapshot":"0001-01-01T00:00:00Z","error":"","final":{"id":"","state":"","at":"0001-01-01T00:00:00Z","code":""},"restored":{"id":"","state":"","at":"0001-01-01T00:00:00Z","code":""}},"restores":null`
 	when := time.Date(2026, 11, 17, 12, 13, 14, 0, time.UTC)
 	banned := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
 	ban := Ban{"192.0.2.77", banned, banned.Add(10 * time.Minute)}
@@ -134,22 +138,30 @@ func TestWireObjects(t *testing.T) {
 		version, applied, memoryUsed, memoryAvailable, swapUsed, swapTotal int64   = 7, 6, 6, 7, 8, 9
 		cpuPercent                                                         float64 = 5
 	)
-	state := DesiredState{protocol, "host01", version, "", "", rootGB, dataGB, []Account{account}, []User{user}, []string{"192.0.2.0/24"}, []string{}, "hosts.example.com", nil}
-	report := Report{protocol, version, applied, "failure", "instance", "instance-type", "image", "os", "kernel", when, "digest", [3]float64{1, 2, 3}, cpuPercent, memoryUsed, memoryAvailable, swapUsed, swapTotal, disk, Disk{10, 11, 12, 13}, sessions, updates, true, []string{"unit"}, []Slice{slice}, []SignIn{signIn}, []Ban{ban}, total, []string{"192.0.2.0/24"}, "host01.hosts.example.com", nil, HostBackup{}, nil}
+	state := DesiredState{protocol, "host01", version, "", "", rootGB, dataGB, []Account{account}, []User{user}, []string{"192.0.2.0/24"}, []string{}, "hosts.example.com", nil, "", ""}
+	report := Report{protocol, version, applied, "failure", "instance", "instance-type", "image", "os", "kernel", when, "digest", [3]float64{1, 2, 3}, cpuPercent, memoryUsed, memoryAvailable, swapUsed, swapTotal, disk, Disk{10, 11, 12, 13}, sessions, updates, true, []string{"unit"}, []Slice{slice}, []SignIn{signIn}, []Ban{ban}, total, []string{"192.0.2.0/24"}, "host01.hosts.example.com", nil, HostBackup{}, nil, []Seed{{20000, "seed-commit"}}, []Home{{20001, "home-commit"}}}
 	for _, tt := range []struct {
 		value any
 		json  string
 	}{
-		{state, `{"protocol":1,"host":"host01","version":7,"daemon":"","data_volume":"","root_gb":20,"data_gb":50,"accounts":[{"slug":"acme","gid":20000,"state":"active"}],"users":[{"name":"daffy","account":"acme","uid":20001,"state":"locked","keys":[]}],"allowlist":["192.0.2.0/24"],"unban":[],"domain":"hosts.example.com","backup":null}`},
-		{report, `{"protocol":1,"attempted":7,"applied":6,"error":"failure","instance_id":"instance","type":"instance-type","ami":"image","os":"os","kernel":"kernel","booted":"2026-11-17T12:13:14Z","daemon_version":"digest","load":[1,2,3],"cpu_percent":5,"memory_used":6,"memory_available":7,"swap_used":8,"swap_total":9,"root":{"used_bytes":1,"size_bytes":2,"inodes_used":3,"inodes_total":4},"data":{"used_bytes":10,"size_bytes":11,"inodes_used":12,"inodes_total":13},"sessions":14,"updates":15,"reboot":true,"failed_units":["unit"],"slices":[{"account":"acme","cpu_percent":6,"memory_bytes":7}],"sign_ins":[{"user":"daffy","at":"2026-11-17T12:13:14Z"}],"bans":[{"address":"192.0.2.77","banned":"2026-11-18T12:00:00Z","expires":"2026-11-18T12:10:00Z"}],"ban_total":16,"allowlist":["192.0.2.0/24"],"hostname":"host01.hosts.example.com"` + emptyReportBackups},
-		{DesiredState{}, `{"protocol":0,"host":"","version":0,"daemon":"","data_volume":"","root_gb":0,"data_gb":0,"accounts":null,"users":null,"allowlist":null,"unban":null,"domain":"","backup":null}`},
+		{state, `{"protocol":1,"host":"host01","version":7,"daemon":"","data_volume":"","root_gb":20,"data_gb":50,"accounts":[{"slug":"acme","gid":20000,"state":"active"}],"users":[{"name":"daffy","account":"acme","uid":20001,"state":"locked","keys":[]}],"allowlist":["192.0.2.0/24"],"unban":[],"domain":"hosts.example.com","backup":null,"template_url":"","template_ref":""}`},
+		{DesiredState{TemplateURL: "https://github.com/example/template", TemplateRef: "test-ref"}, `{"protocol":0,"host":"","version":0,"daemon":"","data_volume":"","root_gb":0,"data_gb":0,"accounts":null,"users":null,"allowlist":null,"unban":null,"domain":"","backup":null,"template_url":"https://github.com/example/template","template_ref":"test-ref"}`},
+		{report, `{"protocol":1,"attempted":7,"applied":6,"error":"failure","instance_id":"instance","type":"instance-type","ami":"image","os":"os","kernel":"kernel","booted":"2026-11-17T12:13:14Z","daemon_version":"digest","load":[1,2,3],"cpu_percent":5,"memory_used":6,"memory_available":7,"swap_used":8,"swap_total":9,"root":{"used_bytes":1,"size_bytes":2,"inodes_used":3,"inodes_total":4},"data":{"used_bytes":10,"size_bytes":11,"inodes_used":12,"inodes_total":13},"sessions":14,"updates":15,"reboot":true,"failed_units":["unit"],"slices":[{"account":"acme","cpu_percent":6,"memory_bytes":7}],"sign_ins":[{"user":"daffy","at":"2026-11-17T12:13:14Z"}],"bans":[{"address":"192.0.2.77","banned":"2026-11-18T12:00:00Z","expires":"2026-11-18T12:10:00Z"}],"ban_total":16,"allowlist":["192.0.2.0/24"],"hostname":"host01.hosts.example.com"` + emptyReportBackups + `,"seeds":[{"gid":20000,"commit":"seed-commit"}],"homes":[{"uid":20001,"commit":"home-commit"}]}`},
+		{DesiredState{}, `{"protocol":0,"host":"","version":0,"daemon":"","data_volume":"","root_gb":0,"data_gb":0,"accounts":null,"users":null,"allowlist":null,"unban":null,"domain":"","backup":null,"template_url":"","template_ref":""}`},
 		{account, `{"slug":"acme","gid":20000,"state":"active"}`},
 		{user, `{"name":"daffy","account":"acme","uid":20001,"state":"locked","keys":[]}`},
 		{disk, `{"used_bytes":1,"size_bytes":2,"inodes_used":3,"inodes_total":4}`},
 		{slice, `{"account":"acme","cpu_percent":6,"memory_bytes":7}`},
 		{signIn, `{"user":"daffy","at":"2026-11-17T12:13:14Z"}`},
 		{ban, `{"address":"192.0.2.77","banned":"2026-11-18T12:00:00Z","expires":"2026-11-18T12:10:00Z"}`},
-		{Report{}, `{"protocol":0,"attempted":0,"applied":0,"error":"","instance_id":"","type":"","ami":"","os":"","kernel":"","booted":"0001-01-01T00:00:00Z","daemon_version":"","load":[0,0,0],"cpu_percent":0,"memory_used":0,"memory_available":0,"swap_used":0,"swap_total":0,"root":{"used_bytes":0,"size_bytes":0,"inodes_used":0,"inodes_total":0},"data":{"used_bytes":0,"size_bytes":0,"inodes_used":0,"inodes_total":0},"sessions":0,"updates":0,"reboot":false,"failed_units":null,"slices":null,"sign_ins":null,"bans":null,"ban_total":0,"allowlist":null,"hostname":""` + emptyReportBackups},
+		{Report{}, `{"protocol":0,"attempted":0,"applied":0,"error":"","instance_id":"","type":"","ami":"","os":"","kernel":"","booted":"0001-01-01T00:00:00Z","daemon_version":"","load":[0,0,0],"cpu_percent":0,"memory_used":0,"memory_available":0,"swap_used":0,"swap_total":0,"root":{"used_bytes":0,"size_bytes":0,"inodes_used":0,"inodes_total":0},"data":{"used_bytes":0,"size_bytes":0,"inodes_used":0,"inodes_total":0},"sessions":0,"updates":0,"reboot":false,"failed_units":null,"slices":null,"sign_ins":null,"bans":null,"ban_total":0,"allowlist":null,"hostname":""` + emptyReportBackups + `,"seeds":null,"homes":null}`},
+		{Account{}, `{"slug":"","gid":0,"state":""}`},
+		{User{}, `{"name":"","account":"","uid":0,"state":"","keys":null}`},
+		{Slice{}, `{"account":"","cpu_percent":0,"memory_bytes":0}`},
+		{SignIn{}, `{"user":"","at":"0001-01-01T00:00:00Z"}`},
+		{Ban{}, `{"address":"","banned":"0001-01-01T00:00:00Z","expires":"0001-01-01T00:00:00Z"}`},
+		{Seed{}, `{"gid":0,"commit":""}`},
+		{Home{}, `{"uid":0,"commit":""}`},
 	} {
 		got, err := json.Marshal(tt.value)
 		if err != nil || string(got) != tt.json {
@@ -267,13 +279,24 @@ func TestDecodeReport(t *testing.T) {
 	}
 }
 
-// R-GLHD-0XVJ.
+// R-3K8V-84FW.
 func TestBounded(t *testing.T) {
-	original := Report{Attempted: 7, Error: strings.Repeat("e", MaxErrorBytes-1) + "é", OS: strings.Repeat("a", 300)}
-	want := Report{Attempted: 7, Error: strings.Repeat("e", MaxErrorBytes-1), OS: strings.Repeat("a", 254)}
+	base := Report{
+		Protocol: Version, Attempted: 7, Applied: 6,
+		InstanceID: "instance", Type: "instance-type", AMI: "image", Kernel: "kernel",
+		Booted: time.Date(2026, 11, 18, 11, 30, 0, 0, time.UTC), DaemonVersion: "digest",
+		Load: [3]float64{1.5, 2.5, 3.5}, CPUPercent: 4.5, MemoryUsed: 5, MemoryAvailable: 6,
+		SwapUsed: 7, SwapTotal: 8, Root: Disk{9, 10, 11, 12}, Data: Disk{13, 14, 15, 16},
+		Sessions: 17, Updates: 18, Reboot: true, Hostname: strings.Repeat("<", 50),
+	}
+	original, want := base, base
+	want.Error, want.OS = strings.Repeat("e", MaxErrorBytes-1), strings.Repeat("a", 254)
+	original.Error, original.OS = want.Error+"é", strings.Repeat("a", 300)
 	for i := MaxSignIns + 10; i >= 0; i-- {
 		name := fmt.Sprintf("name%03d", i)
-		original.FailedUnits = append(original.FailedUnits, name)
+		if i < 150 {
+			original.FailedUnits = append(original.FailedUnits, name)
+		}
 		original.Slices = append(original.Slices, Slice{Account: name})
 		original.SignIns = append(original.SignIns, SignIn{User: name})
 	}
@@ -320,10 +343,28 @@ func TestBounded(t *testing.T) {
 	if got := original.Bounded(); !reflect.DeepEqual(got, want) {
 		t.Errorf("bounded report with original total 300 = %+v, want %+v", got, want)
 	}
-	tied := Report{OS: strings.Repeat("<", 50), Bans: []Ban{{Address: "198.51.100.7", Banned: start}, {Address: "192.0.2.77", Banned: start}}}
-	wantBans := []Ban{tied.Bans[1], tied.Bans[0]}
-	if got := tied.Bounded(); !reflect.DeepEqual(got.Bans, wantBans) || got.OS != strings.Repeat("<", 42) {
-		t.Errorf("bounded tied bans = %+v, want %+v, OS = %q", got.Bans, wantBans, got.OS)
+	tied := Report{
+		OS: strings.Repeat("<", 50),
+		Bans: []Ban{
+			{Address: "198.51.100.7", Banned: start},
+			{Address: "192.0.2.77", Banned: start},
+			{Address: "192.0.2.2", Banned: start},
+			{Address: "192.0.2.10", Banned: start},
+		},
+		Allowlist: []string{"192.0.2.2/32", "192.0.2.10/32"},
+	}
+	wantBans := []Ban{tied.Bans[3], tied.Bans[2], tied.Bans[1], tied.Bans[0]}
+	wantAllowlist := []string{tied.Allowlist[1], tied.Allowlist[0]}
+	boundedTied := tied.Bounded()
+	if !reflect.DeepEqual(boundedTied.Bans, wantBans) || !reflect.DeepEqual(boundedTied.Allowlist, wantAllowlist) {
+		t.Errorf("bounded tied bans and allowlist = %v, %v, want %v, %v", boundedTied.Bans, boundedTied.Allowlist, wantBans, wantAllowlist)
+	}
+	if boundedTied.OS != strings.Repeat("<", 42) {
+		t.Errorf("bounded escaped OS = %q, want 42 copies of %q", boundedTied.OS, "<")
+	}
+	prefix := strings.Repeat("a", 253)
+	if got := (Report{OS: prefix + "é"}).Bounded().OS; got != prefix {
+		t.Errorf("bounded OS = %q, want %q", got, prefix)
 	}
 }
 

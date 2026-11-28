@@ -87,7 +87,7 @@ func TestRunReadAndPageTrail(t *testing.T) {
 		switch event.Name {
 		case "request.finished":
 			requests[event.RequestID] = true
-		case trail.EventChangeFinished, trail.EventOperationStarted, trail.EventOperationFinished, trail.EventHostChanged, trail.EventAccountChanged:
+		case trail.EventChangeFinished, trail.EventOperationStarted, trail.EventOperationFinished, trail.EventHostChanged, trail.EventAccountChanged, trail.EventTemplateChanged:
 			t.Errorf("%s: unexpected event %s", event.RequestID, event.Name)
 		}
 	}

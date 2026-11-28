@@ -25,7 +25,7 @@ type accountShape = struct {
 	Created, CreatedBy                    string
 }
 
-// R-GLZ8-TL5M R-0JQT-LABW check Go shapes alongside their wire encodings below.
+// R-GLZ8-TL5M R-0JQT-LABW R-W2NC-LF33 R-W3V8-Z6TS R-VYZN-G3V0
 func TestOutputTypes(t *testing.T) {
 	t.Helper()
 	_ = hostShape(tools.Host{})
@@ -47,17 +47,17 @@ func TestOutputTypes(t *testing.T) {
 	_ = struct {
 		Account, Host, DNSName, State, Reason string
 		Users, Invites                        int
-		Created, CreatedBy                    string
+		Created, CreatedBy, Template          string
 		UserNames                             []string
 		Operation                             *tools.Operation
 	}(tools.AccountRead{})
 	_ = struct {
-		User, Account                  string
-		Admin                          bool
-		State                          string
-		Pending                        bool
-		Keys                           []string
-		LastSignIn, Created, CreatedBy string
+		User, Account                            string
+		Admin                                    bool
+		State                                    string
+		Pending                                  bool
+		Keys                                     []string
+		LastSignIn, Created, CreatedBy, Template string
 	}(tools.User{})
 	_ = struct {
 		Users []tools.User
@@ -76,6 +76,7 @@ func TestOutputTypes(t *testing.T) {
 		Pending       bool
 		KeysLeft      int
 	}(tools.KeyRemoved{})
+	_ = struct{ URL, Ref string }(tools.TeamTemplate{})
 }
 
 func wireMembers(t *testing.T, raw json.RawMessage, names ...string) {
@@ -123,11 +124,11 @@ func wireArray(t *testing.T, obj json.RawMessage, name string, members ...string
 	wireMembers(t, items[0], members...)
 }
 
-// R-GLZ8-TL5M R-YS1L-XQKE R-0JQT-LABW R-CHE6-U55F R-CEYE-2LO1 R-CG6A-GDEQ R-XTWF-85SY
+// R-GLZ8-TL5M R-YS1L-XQKE R-0JQT-LABW R-W2NC-LF33 R-W3V8-Z6TS R-CG6A-GDEQ R-XTWF-85SY R-VYZN-G3V0
 func TestOutputEncoding(t *testing.T) {
 	hostFields := []string{"host", "dns_name", "state", "reason", "on_delete", "health", "type", "root_gb", "data_gb", "eip", "accounts", "reported", "closed", "replace"}
 	accountFields := []string{"account", "host", "dns_name", "state", "reason", "users", "invites", "created", "created_by"}
-	userFields := []string{"user", "account", "admin", "state", "pending", "keys", "last_sign_in", "created", "created_by"}
+	userFields := []string{"user", "account", "admin", "state", "pending", "keys", "last_sign_in", "created", "created_by", "template"}
 	opFields := []string{"operation", "kind", "step", "status", "error", "started"}
 	next := "next-page"
 	hosts := testEncoding(t, tools.HostList{Hosts: []tools.Host{{}}, Next: &next})
@@ -142,6 +143,9 @@ func TestOutputEncoding(t *testing.T) {
 	var usersWire []json.RawMessage
 	if err := json.Unmarshal(field(t, users, "users"), &usersWire); err != nil {
 		t.Fatal(err)
+	}
+	if string(field(t, usersWire[0], "admin")) != "false" {
+		t.Fatalf("admin should be a JSON boolean, got %s", usersWire[0])
 	}
 	wireArray(t, usersWire[0], "keys")
 	for _, raw := range []json.RawMessage{hosts, accounts, users} {
@@ -162,7 +166,7 @@ func TestOutputEncoding(t *testing.T) {
 	wireMembers(t, emptyUsers, "users")
 	wireArray(t, emptyUsers, "users")
 
-	accountReadFields := slices.Concat(accountFields, []string{"user_names"})
+	accountReadFields := slices.Concat(accountFields, []string{"template", "user_names"})
 	emptyAccount := testEncoding(t, tools.AccountRead{})
 	wireMembers(t, emptyAccount, accountReadFields...)
 	wireArray(t, emptyAccount, "user_names")
@@ -174,6 +178,7 @@ func TestOutputEncoding(t *testing.T) {
 	wireMembers(t, testEncoding(t, tools.HostResize{}), "host", "state", "operation", "restarts")
 	wireMembers(t, testEncoding(t, tools.UserChange{}), "user", "account", "admin", "state", "pending")
 	wireMembers(t, testEncoding(t, tools.KeyRemoved{}), "user", "account", "admin", "state", "pending", "keys_left")
+	wireMembers(t, testEncoding(t, tools.TeamTemplate{}), "url", "ref")
 
 	f := setup(t)
 	refusal(t, f.call(tools.ToolHost, tools.HostArgs{Host: "missing"}), tools.NoHost)

@@ -3,13 +3,11 @@ package machine
 import (
 	"context"
 	"io"
-	"io/fs"
 	"slices"
 	"sort"
 	"sync"
 	"time"
 
-	"github.com/ikigenba/ikigenba/accounts"
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
 	"github.com/ikigenba/ikigenba/accounts/internal/valid"
 )
@@ -25,6 +23,19 @@ const (
 	MemoryInodesTotal int64 = 10000000
 	MemoryBanTime           = 10 * time.Minute
 )
+
+// MemoryTemplateCommit identifies the simulated template.
+const MemoryTemplateCommit = "0123456789abcdef0123456789abcdef01234567"
+
+// MemorySeedFiles returns the paths of the simulated template's seed files.
+func MemorySeedFiles() []string {
+	return []string{".gitignore", "AGENTS.md", "data/.keep"}
+}
+
+// MemoryHomeFiles returns the paths of the simulated template's home files.
+func MemoryHomeFiles() []string {
+	return []string{"AGENTS.md"}
+}
 
 // MemoryConfig controls timing on a simulated host.
 type MemoryConfig struct {
@@ -51,16 +62,17 @@ type User struct {
 
 // Seed records the files and first commit of a simulated account folder.
 type Seed struct {
-	Account                string
-	Files                  []string
-	Commits                int
-	Author, Email, Message string
+	Account                        string
+	Files                          []string
+	Commits                        int
+	Author, Email, Message, Commit string
 }
 
 // Home records the template paths installed for a simulated user.
 type Home struct {
 	User, Account string
 	Files         []string
+	Commit        string
 }
 
 // Snapshot describes the current contents of a simulated host.
@@ -271,8 +283,9 @@ func (m *Memory) Apply(ctx context.Context, s protocol.DesiredState) error {
 			if _, exists := m.disk.folders[account.Slug]; !exists {
 				m.disk.folders[account.Slug] = struct{}{}
 				m.disk.seeds[account.Slug] = Seed{
-					Account: account.Slug, Files: templateFiles(accounts.Seed()), Commits: 1,
+					Account: account.Slug, Files: MemorySeedFiles(), Commits: 1,
 					Author: account.Slug, Email: account.Slug + "@" + host, Message: SeedMessage,
+					Commit: MemoryTemplateCommit,
 				}
 			}
 		case protocol.AccountRemoved:
@@ -286,7 +299,9 @@ func (m *Memory) Apply(ctx context.Context, s protocol.DesiredState) error {
 		switch user.State {
 		case protocol.UserActive, protocol.UserLocked:
 			if _, exists := m.disk.homes[user.Name]; !held && !exists {
-				m.disk.homes[user.Name] = Home{User: user.Name, Account: user.Account, Files: templateFiles(accounts.Home())}
+				m.disk.homes[user.Name] = Home{
+					User: user.Name, Account: user.Account, Files: MemoryHomeFiles(), Commit: MemoryTemplateCommit,
+				}
 			}
 			m.users[user.Name] = User{Name: user.Name, Account: user.Account, UID: user.UID, Locked: user.State == protocol.UserLocked, Keys: slices.Clone(user.Keys)}
 		case protocol.UserDeleted:
@@ -319,25 +334,7 @@ func (m *Memory) Apply(ctx context.Context, s protocol.DesiredState) error {
 	return nil
 }
 
-func templateFiles(template fs.FS) []string {
-	var paths []string
-	err := fs.WalkDir(template, ".", func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.Type().IsRegular() {
-			paths = append(paths, path)
-		}
-		return nil
-	})
-	if err != nil {
-		panic(err) // Templates are embedded file systems.
-	}
-	slices.Sort(paths)
-	return paths
-}
-
-// Inspect returns fixed simulated usage and the current set of account slices.
+// Inspect reports simulated usage, accounts and template commits.
 func (m *Memory) Inspect(_ context.Context, s protocol.DesiredState) (protocol.Report, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -353,6 +350,9 @@ func (m *Memory) Inspect(_ context.Context, s protocol.DesiredState) (protocol.R
 	report.BanTotal = len(report.Bans)
 	if s.DataVolume != "" {
 		report.Data = disk(s.DataGB)
+	}
+	if m.disk != nil {
+		report.Seeds, report.Homes = m.disk.templateReport(s)
 	}
 	for slug := range m.accounts {
 		report.Slices = append(report.Slices, protocol.Slice{Account: slug})

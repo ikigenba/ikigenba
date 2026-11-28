@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -282,12 +283,12 @@ func (h *Host) removedAccounts(ctx context.Context, s protocol.DesiredState) err
 	return nil
 }
 
-func (h *Host) users(ctx context.Context, s protocol.DesiredState) error {
+func (h *Host) users(ctx context.Context, s protocol.DesiredState, clone *templateClone) error {
 	var recipients map[string]bool
 	for _, u := range s.Users {
 		switch u.State {
 		case protocol.UserActive, protocol.UserLocked:
-			if err := h.ensureUser(ctx, u); err != nil {
+			if err := h.ensureUser(ctx, u, clone); err != nil {
 				return err
 			}
 		case protocol.UserDeleted:
@@ -305,10 +306,32 @@ func (h *Host) users(ctx context.Context, s protocol.DesiredState) error {
 	return nil
 }
 
-func (h *Host) ensureUser(ctx context.Context, u protocol.User) error {
+func (h *Host) ensureUser(ctx context.Context, u protocol.User, clone *templateClone) error {
 	local, err := h.identity(u.Name, u.UID, u.Account)
 	if err != nil {
 		return err
+	}
+	home := filepath.Join("/home", u.Name)
+	var populate bool
+	if !local.account {
+		_, err := os.Lstat(h.path(home))
+		populate = errors.Is(err, fs.ErrNotExist)
+		if err != nil && !populate {
+			return hostError(home, err)
+		}
+		if populate {
+			ready, err := clone.ensure(ctx, h)
+			if err != nil {
+				return err
+			}
+			if !ready {
+				if clone.skippedUsers == nil {
+					clone.skippedUsers = make(map[string]bool)
+				}
+				clone.skippedUsers[u.Name] = true
+				return nil
+			}
+		}
 	}
 	id := strconv.FormatInt(u.UID, 10)
 	groups := ShellGroup + "," + u.Account
@@ -318,7 +341,6 @@ func (h *Host) ensureUser(ctx context.Context, u protocol.User) error {
 		}
 	}
 	if !local.account {
-		home := filepath.Join("/home", u.Name)
 		args := []string{"--uid", id, "--gid", u.Name, "--groups", groups, "--create-home",
 			"--home-dir", h.path(home), "--skel", h.path(SkelDir), "--key", "HOME_MODE=0700", "--shell", "/bin/bash"}
 		if u.State == protocol.UserLocked {
@@ -327,8 +349,11 @@ func (h *Host) ensureUser(ctx context.Context, u protocol.User) error {
 		if _, err := h.run(ctx, "useradd", append(args, u.Name)...); err != nil {
 			return err
 		}
-		if err := h.populateHome(ctx, u, home); err != nil {
-			return err
+		if populate {
+			if err := h.populateHome(ctx, u, home); err != nil {
+				return err
+			}
+			h.homeCommits[u.UID] = clone.commit
 		}
 	} else if !local.inShell || !local.groupOfAccount {
 		if _, err := h.run(ctx, "usermod", "--append", "--groups", groups, u.Name); err != nil {

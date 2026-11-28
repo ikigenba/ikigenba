@@ -191,7 +191,7 @@ func TestApplyAbortsWhenStoppingUserSliceFails(t *testing.T) {
 }
 
 func TestApplyAccountsAndUsers(t *testing.T) {
-	// R-CM22-DSSX R-0FNF-5G1G R-CQXN-WVRP R-KZ69-MFRD R-CTDG-OF93 R-82VL-4Z30 R-CX15-TQH6 R-0JB4-AR9J R-SM70-07MK R-CH20-784X
+	// R-CM22-DSSX R-0FNF-5G1G R-CQXN-WVRP R-KZ69-MFRD R-XXPT-MSVA R-82VL-4Z30 R-CX15-TQH6 R-XYXQ-0KLZ R-SM70-07MK
 	f := newHardeningFixture(t)
 	const groups = "willow:x:21000:\nperry:x:21001:maia\nmaia:x:21003:\nwheel:x:10:maia\n"
 	f.put("/etc/group", groups, 0o644)
@@ -577,7 +577,7 @@ func TestApplyLeavesGroupAlreadyRemovedByUserdel(t *testing.T) {
 }
 
 func TestApplySecuresUnlistedUsersKeysAndPreservesOtherFiles(t *testing.T) {
-	// R-KVIK-H4JA R-KWQG-UW9Z R-KXYD-8O0O
+	// R-XU24-HHN7 R-KWQG-UW9Z R-KXYD-8O0O
 	f := newHardeningFixture(t)
 	const passwd = "retained:x:25001:25001::/home/retained:/bin/bash\nforeign:x:25002:25002::/srv/foreign:/usr/sbin/nologin\n"
 	const group = "shell:x:990:retained\nforeign:x:25002:\nretained:x:25001:\n"

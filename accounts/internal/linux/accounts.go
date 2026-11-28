@@ -18,32 +18,14 @@ import (
 
 const accountMode = fs.ModeSetgid | 0o770
 
-func (h *Host) accounts(ctx context.Context, s protocol.DesiredState) error {
+func (h *Host) accounts(ctx context.Context, s protocol.DesiredState, clone *templateClone) error {
 	var knownDirectories map[string]bool
 	for _, account := range s.Accounts {
 		if account.State != protocol.AccountActive {
 			continue
 		}
-		local, err := h.identity(account.Slug, account.GID, account.Slug)
-		if err != nil {
-			return err
-		}
-		id := strconv.FormatInt(account.GID, 10)
-		if !local.group {
-			if _, err := h.run(ctx, "groupadd", "--system", "--gid", id, account.Slug); err != nil {
-				return err
-			}
-		}
 		path := filepath.Join("/srv", account.Slug)
-		if !local.account {
-			if _, err := h.run(ctx, "useradd", "--system", "--uid", id, "--gid", account.Slug, "--home-dir", path, "--no-create-home", "--shell", "/usr/sbin/nologin", account.Slug); err != nil {
-				return err
-			}
-		}
-		if err := h.ensureAccountFolder(ctx, account, path); err != nil {
-			return err
-		}
-		if err := h.seedAccountFolder(ctx, s, account, path); err != nil {
+		if err := h.reconcileAccount(ctx, s, account, path, clone); err != nil {
 			return err
 		}
 		gitConfig := h.path("/etc/gitconfig")
@@ -68,28 +50,56 @@ func (h *Host) accounts(ctx context.Context, s protocol.DesiredState) error {
 	return nil
 }
 
-func (h *Host) ensureAccountFolder(ctx context.Context, account protocol.Account, path string) error {
+func (h *Host) reconcileAccount(ctx context.Context, s protocol.DesiredState, account protocol.Account, path string, clone *templateClone) error {
+	local, err := h.identity(account.Slug, account.GID, account.Slug)
+	if err != nil {
+		return err
+	}
+	id := strconv.FormatInt(account.GID, 10)
+	if !local.group {
+		if _, err := h.run(ctx, "groupadd", "--system", "--gid", id, account.Slug); err != nil {
+			return err
+		}
+	}
+	if !local.account {
+		if _, err := h.run(ctx, "useradd", "--system", "--uid", id, "--gid", account.Slug, "--home-dir", path, "--no-create-home", "--shell", "/usr/sbin/nologin", account.Slug); err != nil {
+			return err
+		}
+	}
 	staging := filepath.Join("/srv", "."+account.Slug+".seed")
 	if err := os.RemoveAll(h.path(staging)); err != nil {
 		return hostError(staging, err)
 	}
-	full := h.path(path)
-	info, err := os.Lstat(full)
+	info, err := os.Lstat(h.path(path))
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
-		if err := h.stageAccountFolder(ctx, account, staging, path); err != nil {
+		ready, err := clone.ensure(ctx, h)
+		if !ready || err != nil {
 			return err
 		}
 	case err != nil:
 		return hostError(path, err)
 	case !info.IsDir():
 		return hostError(path, fs.ErrInvalid)
-	case !ownerIs(info, account.GID, account.GID):
+	}
+	if err := h.ensureAccountFolder(ctx, account, path, staging, info); err != nil {
+		return err
+	}
+	return h.seedAccountFolder(ctx, s, account, path, clone)
+}
+
+func (h *Host) ensureAccountFolder(ctx context.Context, account protocol.Account, path, staging string, info fs.FileInfo) error {
+	if info == nil {
+		if err := h.stageAccountFolder(ctx, account, staging, path); err != nil {
+			return err
+		}
+	} else if !ownerIs(info, account.GID, account.GID) {
 		if err := h.accountFolderPermissions(ctx, account.Slug, path); err != nil {
 			return err
 		}
 	}
-	_, err = os.Lstat(filepath.Join(full, ".git"))
+	full := h.path(path)
+	_, err := os.Lstat(filepath.Join(full, ".git"))
 	if errors.Is(err, fs.ErrNotExist) {
 		_, err = h.run(ctx, "runuser", "-u", account.Slug, "--", "git", "init", "--shared=group", full)
 		return err
@@ -217,7 +227,7 @@ func (h *Host) secure(ctx context.Context, path string) error {
 	return h.mode(path, (info.Mode()&permissionBits)&^mask)
 }
 
-func (h *Host) isolation(ctx context.Context, s protocol.DesiredState) error {
+func (h *Host) isolation(ctx context.Context, s protocol.DesiredState, skippedUsers map[string]bool) error {
 	for _, path := range []string{DaemonPath, "/etc/accountsd.env", SessionHelper, HostKeyDir, filepath.Join(HostKeyDir, "ssh_host_ed25519_key"), filepath.Join(HostKeyDir, "ssh_host_ed25519_key.pub"), KeysDir} {
 		if err := h.secure(ctx, path); err != nil {
 			return err
@@ -229,7 +239,7 @@ func (h *Host) isolation(ctx context.Context, s protocol.DesiredState) error {
 		}
 	}
 	if err := h.visitChildren(KeysDir, func(entry fs.DirEntry) error {
-		if entry.IsDir() {
+		if entry.IsDir() || skippedUsers[entry.Name()] {
 			return nil
 		}
 		path := filepath.Join(KeysDir, entry.Name())
@@ -242,13 +252,20 @@ func (h *Host) isolation(ctx context.Context, s protocol.DesiredState) error {
 	}
 	for _, a := range s.Accounts {
 		if a.State == protocol.AccountActive {
-			if err := h.mode(filepath.Join("/srv", a.Slug), accountMode); err != nil {
-				return err
+			path := filepath.Join("/srv", a.Slug)
+			info, err := os.Lstat(h.path(path))
+			if err != nil && !errors.Is(err, fs.ErrNotExist) {
+				return hostError(path, err)
+			}
+			if info != nil && info.IsDir() {
+				if err := h.mode(path, accountMode); err != nil {
+					return err
+				}
 			}
 		}
 	}
 	for _, u := range s.Users {
-		if u.State == protocol.UserActive || u.State == protocol.UserLocked {
+		if !skippedUsers[u.Name] && (u.State == protocol.UserActive || u.State == protocol.UserLocked) {
 			exists, err := h.hasAccount(u.Name)
 			if err != nil {
 				return err
@@ -260,17 +277,17 @@ func (h *Host) isolation(ctx context.Context, s protocol.DesiredState) error {
 			}
 		}
 	}
-	return h.removeOtherGroups(ctx, s.Users)
+	return h.removeOtherGroups(ctx, s.Users, skippedUsers)
 }
 
-func (h *Host) removeOtherGroups(ctx context.Context, users []protocol.User) error {
+func (h *Host) removeOtherGroups(ctx context.Context, users []protocol.User, skippedUsers map[string]bool) error {
 	var commandErr error
 	err := h.groups(func(group string, _ int64, members []string) {
 		if group == ShellGroup || commandErr != nil {
 			return
 		}
 		for _, user := range users {
-			if group == user.Account || group == user.Name {
+			if skippedUsers[user.Name] || group == user.Account || group == user.Name {
 				continue
 			}
 			for _, member := range members {

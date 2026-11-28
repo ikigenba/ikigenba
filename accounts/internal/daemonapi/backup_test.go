@@ -371,7 +371,7 @@ func TestBackupCredentialsStayInSuccessfulStateBodies(t *testing.T) {
 	reject("standard logger", logs.String())
 }
 
-// R-OEHS-RNZA.
+// R-WR1C-8TWZ.
 func TestLargestStateAnswerFitsWireBudget(t *testing.T) {
 	_, st, host := fixtureStore(t)
 	ctx := t.Context()
@@ -446,6 +446,11 @@ func TestLargestStateAnswerFitsWireBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	templateURL := "https://" + strings.Repeat("a", 504)
+	templateRef := strings.Repeat("a", valid.MaxTemplateRef)
+	if _, changed, err := st.SetTemplateSettings(ctx, &templateURL, &templateRef); err != nil || !changed {
+		t.Fatalf("set the largest template setting: changed %t, error %v", changed, err)
+	}
 	grant := cloud.Credentials{
 		AccessKeyID: strings.Repeat("A", 40), SecretAccessKey: strings.Repeat("B", 40),
 		SessionToken: strings.Repeat(`"`, (MaxCredentialBytes-2*40-6)/2), Expires: fixtureNow.Add(time.Hour),
@@ -475,7 +480,8 @@ func TestLargestStateAnswerFitsWireBudget(t *testing.T) {
 	}
 	state := stateResponse(t, res)
 	b := state.Backup
-	if state.Domain != domain || len(state.Accounts) != valid.MaxAccountsPerHost || len(state.Users) != valid.MaxUsersPerHost ||
+	if state.Domain != domain || state.TemplateURL != templateURL || state.TemplateRef != templateRef ||
+		len(state.Accounts) != valid.MaxAccountsPerHost || len(state.Users) != valid.MaxUsersPerHost ||
 		!slices.Equal(state.Allowlist, allowlist) || !slices.Equal(state.Unban, unbans) ||
 		b.Close != closeOp.ID || len(b.Restores) != valid.MaxRestoresPerHost {
 		t.Fatal("state did not carry the full worst-case fixture")

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"io/fs"
 	"runtime"
 	"slices"
 	"strings"
@@ -12,7 +11,6 @@ import (
 	"testing/iotest"
 	"time"
 
-	"github.com/ikigenba/ikigenba/accounts"
 	"github.com/ikigenba/ikigenba/accounts/internal/machine"
 	"github.com/ikigenba/ikigenba/accounts/internal/protocol"
 )
@@ -110,25 +108,17 @@ func TestFillHomeBoundedAllocation(t *testing.T) {
 	}
 }
 
-// R-4I51-WJ8E
+// R-XJ31-1JYY
 func TestMemoryHomes(t *testing.T) {
-	var paths []string
-	if err := fs.WalkDir(accounts.Home(), ".", func(path string, entry fs.DirEntry, err error) error {
-		if err == nil && entry.Type().IsRegular() {
-			paths = append(paths, path)
+	homeFor := func(user protocol.User) machine.Home {
+		return machine.Home{
+			User: user.Name, Account: user.Account, Files: machine.MemoryHomeFiles(), Commit: machine.MemoryTemplateCommit,
 		}
-		return err
-	}); err != nil {
-		t.Fatal(err)
-	}
-	slices.Sort(paths)
-	if len(paths) == 0 {
-		t.Fatal("Home contains no regular files")
 	}
 	check := func(m *machine.Memory, want []machine.Home) {
 		t.Helper()
 		if got := m.State().Homes; !slices.EqualFunc(got, want, func(a, b machine.Home) bool {
-			return a.User == b.User && a.Account == b.Account && slices.Equal(a.Files, b.Files)
+			return a.User == b.User && a.Account == b.Account && slices.Equal(a.Files, b.Files) && a.Commit == b.Commit
 		}) {
 			t.Fatalf("homes = %+v, want %+v", got, want)
 		}
@@ -149,7 +139,7 @@ func TestMemoryHomes(t *testing.T) {
 	zoe := protocol.User{Name: "zoe", Account: "zebra", UID: 20002, State: protocol.UserLocked}
 	ada := protocol.User{Name: "ada", Account: "acme", UID: 20003, State: protocol.UserActive}
 	state := protocol.DesiredState{DataVolume: volume, Users: []protocol.User{zoe, ada}}
-	want := []machine.Home{{User: ada.Name, Account: ada.Account, Files: paths}, {User: zoe.Name, Account: zoe.Account, Files: paths}}
+	want := []machine.Home{homeFor(ada), homeFor(zoe)}
 	apply(t, m, state)
 	check(m, want)
 	apply(t, m, state)
@@ -182,7 +172,7 @@ func TestMemoryHomes(t *testing.T) {
 	check(m, want)
 	m.SetFailure(nil)
 	apply(t, m, update)
-	check(m, []machine.Home{{User: newUser.Name, Account: newUser.Account, Files: paths}, want[1]})
+	check(m, []machine.Home{homeFor(newUser), want[1]})
 	apply(t, m, protocol.DesiredState{})
 	check(m, nil)
 }

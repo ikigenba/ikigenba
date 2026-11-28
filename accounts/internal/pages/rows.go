@@ -2,12 +2,30 @@ package pages
 
 import (
 	"cmp"
+	"context"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/ikigenba/ikigenba/accounts/internal/store"
 )
+
+func templateRows(ctx context.Context, snapshot *store.Snapshot, accounts []store.Account) ([]SeedRow, []HomeRow, error) {
+	seeds := make([]SeedRow, 0, len(accounts))
+	homes := make([]HomeRow, 0)
+	for _, account := range accounts {
+		seeds = append(seeds, SeedRow{Account: account.Slug, Commit: account.Template})
+		users, err := snapshot.UsersOf(ctx, account.Slug)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, user := range users {
+			homes = append(homes, HomeRow{User: user.Name, Account: account.Slug, Commit: user.Template})
+		}
+	}
+	slices.SortFunc(homes, func(a, b HomeRow) int { return strings.Compare(a.User, b.User) })
+	return seeds, homes, nil
+}
 
 func stamps(t time.Time, layout string) (string, string) {
 	utc := t.UTC()

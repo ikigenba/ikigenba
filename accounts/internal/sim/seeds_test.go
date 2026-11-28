@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -12,7 +11,6 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/ikigenba/ikigenba/accounts"
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud"
 	"github.com/ikigenba/ikigenba/accounts/internal/cloud/memory"
 	"github.com/ikigenba/ikigenba/accounts/internal/machine"
@@ -33,8 +31,8 @@ func TestSeedListing(t *testing.T) {
 	}
 	b.applyState(1, state)
 	b.look()
-	previous := seedListing(t, "host03", "host01", "barn", "yard") +
-		homeListing(t, "host03", "yard", "alice") + homeListing(t, "host03", "barn", "bob")
+	previous := seedListing("host03", "host01", "barn", "yard") +
+		homeListing("host03", "yard", "alice") + homeListing("host03", "barn", "bob")
 	assertSeedListing(t, path, previous)
 
 	reader, err := os.Open(filepath.Clean(path))
@@ -46,7 +44,7 @@ func TestSeedListing(t *testing.T) {
 	applySeedState(b, 2, "acme")
 	b.look()
 	assertListingRename(t, watch, filepath.Base(path), false)
-	assertSeedListing(t, path, seedListing(t, "host02", "host02", "acme")+previous)
+	assertSeedListing(t, path, seedListing("host02", "host02", "acme")+previous)
 	after, err := os.Lstat(path)
 	must(t, err)
 	if os.SameFile(before, after) {
@@ -61,7 +59,7 @@ func TestSeedListing(t *testing.T) {
 	must(t, b.cloud.StopInstance(t.Context(), first.ID))
 	b.clock.advance(memory.StopDelay)
 	b.look()
-	assertSeedListing(t, path, seedListing(t, "host02", "host02", "acme"))
+	assertSeedListing(t, path, seedListing("host02", "host02", "acme"))
 }
 
 func watchDirectory(t *testing.T, path string) int {
@@ -213,7 +211,7 @@ func TestSeedListingAbsentWithoutSeedsOrHomes(t *testing.T) {
 	state.Users = []protocol.User{{Name: "alice", Account: "acme", UID: 4242, State: protocol.UserActive}}
 	b.applyState(1, state)
 	b.look()
-	assertSeedListing(t, path, homeListing(t, "host01", "acme", "alice"))
+	assertSeedListing(t, path, homeListing("host01", "acme", "alice"))
 	must(t, b.cloud.StopInstance(t.Context(), b.hosts[0].ID))
 	b.clock.advance(memory.StopDelay)
 	b.look()
@@ -258,7 +256,7 @@ func TestLoopsShareDisks(t *testing.T) {
 	b := newSandbox(t, "", path, 2, nil)
 	applySeedState(b, 1, "acme")
 	b.look()
-	assertSeedListing(t, path, seedListing(t, "host01", "host01", "acme"))
+	assertSeedListing(t, path, seedListing("host01", "host01", "acme"))
 	must(t, b.cloud.StopInstance(t.Context(), b.hosts[0].ID))
 	b.look()
 	expectAbsent(t, path)
@@ -270,7 +268,7 @@ func TestLoopsShareDisks(t *testing.T) {
 		Accounts: []protocol.Account{{Slug: "acme", GID: 4040, State: protocol.AccountActive}},
 	})
 	b.look()
-	assertSeedListing(t, path, seedListing(t, "host02", "host01", "acme"))
+	assertSeedListing(t, path, seedListing("host02", "host01", "acme"))
 }
 
 func applySeedState(b *sandboxBox, host int, slugs ...string) {
@@ -298,9 +296,8 @@ func seedState(b *sandboxBox, host int, slugs ...string) protocol.DesiredState {
 	return state
 }
 
-func seedListing(t *testing.T, tag, host string, slugs ...string) string {
-	t.Helper()
-	files := listingFiles(t, accounts.Seed())
+func seedListing(tag, host string, slugs ...string) string {
+	files := machine.MemorySeedFiles()
 	var want strings.Builder
 	for _, slug := range slugs {
 		for _, path := range files {
@@ -311,26 +308,12 @@ func seedListing(t *testing.T, tag, host string, slugs ...string) string {
 	return want.String()
 }
 
-func homeListing(t *testing.T, tag, account, user string) string {
-	t.Helper()
+func homeListing(tag, account, user string) string {
 	var want strings.Builder
-	for _, path := range listingFiles(t, accounts.Home()) {
+	for _, path := range machine.MemoryHomeFiles() {
 		want.WriteString(tag + " " + account + " home " + user + " " + path + "\n")
 	}
 	return want.String()
-}
-
-func listingFiles(t *testing.T, template fs.FS) []string {
-	t.Helper()
-	var files []string
-	must(t, fs.WalkDir(template, ".", func(path string, d fs.DirEntry, err error) error {
-		if err == nil && d.Type().IsRegular() {
-			files = append(files, path)
-		}
-		return err
-	}))
-	slices.Sort(files)
-	return files
 }
 
 func assertSeedListing(t *testing.T, path, want string) {

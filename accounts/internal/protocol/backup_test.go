@@ -56,7 +56,7 @@ func TestBackupConstants(t *testing.T) {
 	}
 }
 
-// R-CG27-FU05, R-8ALV-6ZZ0, R-CII0-7DHJ, R-CM5P-COPM, R-CNDL-QGGB, R-COLI-4870, R-8BTR-KRPP.
+// R-CG27-FU05, R-8ALV-6ZZ0, R-CII0-7DHJ, R-CM5P-COPM, R-CNDL-QGGB, R-COLI-4870, R-3J0Y-UCP7.
 func TestBackupWireObjects(t *testing.T) {
 	// Struct conversion checks the ordered Go fields independently of their JSON tags.
 	_ = struct {
@@ -159,7 +159,7 @@ func TestBackupWireObjects(t *testing.T) {
 	request := RestoreRequest{"restore-part", "acme", RestoreFiles, "example.txt", "daffy", when}
 	backup := Backup{"example-bucket", "us-east-1", settings, credentials, []AccountCredentials{accountCredentials}, "hosts/host01/1/", "close-host", &hostRestore, []RestoreRequest{request}}
 	db := Database{"data/example.db", when, when, when, "database fault"}
-	step := Step{"close-host", StepDone, when, ""}
+	step := Step{"op_0123456789abcdef", StepDone, when, ""}
 	account := AccountBackup{"acme", when, []int64{10}, when, "account fault", []Database{db}, total, failures, when, when, step, step}
 	host := HostBackup{when, "host fault", step, step}
 	result := RestoreResult{"restore-part", StepFailed, "restored/example.txt", "restore fault"}
@@ -170,7 +170,7 @@ func TestBackupWireObjects(t *testing.T) {
 	const restoreAccountJSON = `{"slug":"acme","gid":20001,"databases":["data/example.db"]}`
 	const hostRestoreJSON = `{"id":"restore-host","accounts":[` + restoreAccountJSON + `]}`
 	const requestJSON = `{"id":"restore-part","account":"acme","kind":"files","path":"example.txt","user":"daffy","as_of":` + stamp + `}`
-	const stepJSON = `{"id":"close-host","state":"done","at":` + stamp + `,"code":""}`
+	const stepJSON = `{"id":"op_0123456789abcdef","state":"done","at":` + stamp + `,"code":""}`
 	const dbJSON = `{"path":"data/example.db","oldest":` + stamp + `,"written":` + stamp + `,"synced":` + stamp + `,"error":"database fault"}`
 	for _, tt := range []struct {
 		value any
@@ -189,6 +189,13 @@ func TestBackupWireObjects(t *testing.T) {
 		{account, `{"account":"acme","snapshot":` + stamp + `,"snapshots":[10],"checked":` + stamp + `,"error":"account fault","databases":[` + dbJSON + `],"database_total":3,"database_errors":1,"synced":` + stamp + `,"written":` + stamp + `,"final":` + stepJSON + `,"restored":` + stepJSON + `}`},
 		{host, `{"snapshot":` + stamp + `,"error":"host fault","final":` + stepJSON + `,"restored":` + stepJSON + `}`},
 		{result, `{"id":"restore-part","state":"failed","copy":"restored/example.txt","error":"restore fault"}`},
+		{AccountCredentials{}, `{"account":"","credentials":{"access_key_id":"","secret_access_key":"","session_token":"","expires":"0001-01-01T00:00:00Z"}}`},
+		{RestoreAccount{}, `{"slug":"","gid":0,"databases":null}`},
+		{HostRestore{}, `{"id":"","accounts":null}`},
+		{RestoreRequest{}, `{"id":"","account":"","kind":"","path":"","user":"","as_of":"0001-01-01T00:00:00Z"}`},
+		{Database{}, `{"path":"","oldest":"0001-01-01T00:00:00Z","written":"0001-01-01T00:00:00Z","synced":"0001-01-01T00:00:00Z","error":""}`},
+		{AccountBackup{}, `{"account":"","snapshot":"0001-01-01T00:00:00Z","snapshots":null,"checked":"0001-01-01T00:00:00Z","error":"","databases":null,"database_total":0,"database_errors":0,"synced":"0001-01-01T00:00:00Z","written":"0001-01-01T00:00:00Z","final":{"id":"","state":"","at":"0001-01-01T00:00:00Z","code":""},"restored":{"id":"","state":"","at":"0001-01-01T00:00:00Z","code":""}}`},
+		{RestoreResult{}, `{"id":"","state":"","copy":"","error":""}`},
 	} {
 		got, err := json.Marshal(tt.value)
 		if err != nil || string(got) != tt.want {
@@ -211,7 +218,7 @@ func TestDecodePreviousBackupWire(t *testing.T) {
 	}
 }
 
-// R-CS97-9JF3, R-GLHD-0XVJ.
+// R-CS97-9JF3, R-3K8V-84FW.
 func TestBoundedBackups(t *testing.T) {
 	longEscaped := strings.Repeat("<", 50)
 	longMultibyte := strings.Repeat("a", 253) + "é"
@@ -308,8 +315,8 @@ func TestBoundedBackups(t *testing.T) {
 	}
 }
 
-// R-GNX5-SHCX.
-func TestBackupReportBudget(t *testing.T) {
+// R-VBTK-6GRT.
+func TestReportBudget(t *testing.T) {
 	n := int64(math.MaxInt64)
 	f := -1.2345678901234567e-06
 	when := time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC)
@@ -355,6 +362,13 @@ func TestBackupReportBudget(t *testing.T) {
 	}
 	for range 20 {
 		report.Restores = append(report.Restores, RestoreResult{step.ID, StepPending, strings.Repeat("a", 638), backupError})
+	}
+	commit := strings.Repeat("a", 64)
+	for i := range 60 {
+		report.Seeds = append(report.Seeds, Seed{n - int64(i), commit})
+	}
+	for i := range 250 {
+		report.Homes = append(report.Homes, Home{n - int64(i), commit})
 	}
 	raw, err := json.Marshal(report.Bounded())
 	const budget = MaxReportBytes - 32<<10
